@@ -1,0 +1,778 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="sql-challenge-wrapper">
+    <div class="sql-challenge-container">
+        <div id="resize-container" class="d-flex h-100">
+        <!-- Left Panel: Challenge Description -->
+        <div id="left-panel" class="challenge-panel">
+            <div class="challenge-info p-4">
+                <h2 class="challenge-name">{{ challenge.name }}</h2>
+                <span class="badge bg-info mb-3">{{ challenge.category }}</span>
+                <span class="badge bg-success mb-3">{{ challenge.value }} points</span>
+                
+                <div class="challenge-description mt-4">
+                    <div class="markdown-content">
+                        {{ challenge.description | safe }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Resize Handle -->
+        <div id="resize-handle" class="resize-handle"></div>
+        
+        <!-- Right Panel: SQL Editor and Results -->
+        <div id="right-panel" class="editor-panel">
+            <div class="sql-editor-section p-4 pb-5 d-flex flex-column">
+                <input id="challenge-id" type="hidden" value="{{ challenge.id }}">
+                
+                <!-- Editor Section -->
+                <div id="editor-section" class="editor-top-section">
+                    <h5 class="mb-3">SQL Query Editor</h5>
+                    <div class="editor-wrapper">
+                        <textarea 
+                            id="challenge-input" 
+                            class="form-control" 
+                            name="submission" 
+                            rows="10" 
+                            placeholder="-- Enter your SQL query here
+SELECT column1, column2
+FROM table_name
+WHERE condition;"
+                            style="font-family: 'Courier New', monospace; font-size: 14px; display: none;"
+                        ></textarea>
+                        <div id="sql-editor-container" style="border: 1px solid var(--bs-border-color); border-radius: 0.25rem; height: 100%;"></div>
+                        <small class="form-text text-muted mt-1">Press Ctrl+Enter to submit</small>
+                    </div>
+                </div>
+                
+                <!-- Vertical Resize Handle -->
+                <div id="vertical-resize-handle" class="vertical-resize-handle"></div>
+                
+                <!-- Result Section -->
+                <div id="result-section" class="result-bottom-section">
+                    <h5 class="mb-3">Execution Results</h5>
+                    <div id="query-result-container" class="result-container">
+                        <div class="text-muted text-center py-5">
+                            <i class="fas fa-database fa-3x mb-3"></i>
+                            <p>Execute a query to see results</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+    
+    <!-- Fixed Submit Button Bar -->
+    <div class="submit-button-bar">
+    <div class="container-fluid">
+        <div class="d-flex justify-content-end">
+            <button
+                id="challenge-submit"
+                class="btn btn-primary" 
+                type="button"
+                onclick="submitSQLChallenge()"
+            >
+                <i class="fas fa-play"></i> Execute Query
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Prevent body scroll on SQL challenge page */
+body {
+    overflow: hidden;
+    height: 100vh;
+}
+
+.sql-challenge-wrapper {
+    position: fixed;
+    top: 56px; /* Below navbar */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.sql-challenge-container {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+#resize-container {
+    height: 100%;
+    position: relative;
+}
+
+.challenge-panel {
+    width: 40%;
+    min-width: 300px;
+    height: 100%;
+    overflow-y: auto;
+    background-color: var(--bs-body-bg);
+    border-right: 1px solid var(--bs-border-color);
+}
+
+.editor-panel {
+    flex: 1;
+    min-width: 400px;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.resize-handle {
+    width: 5px;
+    background: var(--bs-border-color);
+    cursor: col-resize;
+    position: relative;
+    transition: background-color 0.2s;
+    flex-shrink: 0;
+}
+
+.resize-handle:hover {
+    background: var(--bs-primary);
+}
+
+.resize-handle::before {
+    content: '';
+    position: absolute;
+    left: -2px;
+    right: -2px;
+    top: 0;
+    bottom: 0;
+}
+
+.challenge-info {
+    height: 100%;
+    overflow-y: auto;
+}
+
+.sql-editor-section {
+    height: 100%;
+    overflow: hidden;
+}
+
+.editor-top-section {
+    height: 50%;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.editor-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+#sql-editor-container {
+    flex: 1;
+    min-height: 150px;
+}
+
+.vertical-resize-handle {
+    height: 5px;
+    background: var(--bs-border-color);
+    cursor: row-resize;
+    position: relative;
+    transition: background-color 0.2s;
+    margin: 10px 0;
+}
+
+.vertical-resize-handle:hover {
+    background: var(--bs-primary);
+}
+
+.vertical-resize-handle::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+}
+
+.result-bottom-section {
+    flex: 1;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.result-container {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+/* Submit Button Bar */
+.submit-button-bar {
+    height: 50px;
+    background: var(--bs-body-bg);
+    border-top: 1px solid var(--bs-border-color);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.submit-button-bar .container-fluid {
+    flex: 1;
+}
+
+.submit-button-bar .btn {
+    padding: 8px 20px;
+}
+
+/* Dark mode support for button bar */
+[data-bs-theme="dark"] .submit-button-bar {
+    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Markdown Styles - Default Theme */
+.markdown-content {
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--bs-body-color);
+}
+
+.markdown-content h1, .markdown-content h2, .markdown-content h3,
+.markdown-content h4, .markdown-content h5, .markdown-content h6 {
+    color: var(--bs-body-color);
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+    font-weight: 600;
+}
+
+.markdown-content pre {
+    background-color: var(--bs-gray-100);
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    border: 1px solid var(--bs-border-color);
+}
+
+.markdown-content code {
+    background-color: var(--bs-gray-100);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    color: var(--bs-danger);
+}
+
+.markdown-content pre code {
+    background-color: transparent;
+    padding: 0;
+    color: var(--bs-body-color);
+}
+
+.markdown-content ul, .markdown-content ol {
+    padding-left: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.markdown-content li {
+    margin-bottom: 0.25rem;
+}
+
+.markdown-content table {
+    width: 100%;
+    margin: 1rem 0;
+    border-collapse: collapse;
+}
+
+.markdown-content table th {
+    background-color: var(--bs-gray-100);
+    padding: 8px;
+    border: 1px solid var(--bs-border-color);
+    font-weight: 600;
+}
+
+.markdown-content table td {
+    padding: 8px;
+    border: 1px solid var(--bs-border-color);
+}
+
+.markdown-content blockquote {
+    border-left: 4px solid var(--bs-primary);
+    padding-left: 1rem;
+    margin: 1rem 0;
+    color: var(--bs-secondary-color);
+}
+
+.markdown-content a {
+    color: var(--bs-link-color);
+    text-decoration: none;
+}
+
+.markdown-content a:hover {
+    text-decoration: underline;
+}
+
+/* Dark mode support */
+[data-bs-theme="dark"] .markdown-content pre {
+    background-color: var(--bs-gray-900);
+    border-color: var(--bs-gray-700);
+}
+
+[data-bs-theme="dark"] .markdown-content code {
+    background-color: var(--bs-gray-900);
+}
+
+[data-bs-theme="dark"] .markdown-content table th {
+    background-color: var(--bs-gray-900);
+    border-color: var(--bs-gray-700);
+}
+
+[data-bs-theme="dark"] .markdown-content table td {
+    border-color: var(--bs-gray-700);
+}
+
+.table-responsive {
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.card {
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.card-header {
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+}
+
+.alert {
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+@media (max-width: 768px) {
+    .sql-challenge-container {
+        height: auto;
+    }
+    
+    #resize-container {
+        flex-direction: column !important;
+    }
+    
+    .challenge-panel {
+        width: 100% !important;
+        min-width: unset;
+        border-right: none;
+        border-bottom: 1px solid var(--bs-border-color);
+        max-height: 50vh;
+    }
+    
+    .editor-panel {
+        width: 100% !important;
+        min-width: unset;
+        min-height: 600px;
+    }
+    
+    .resize-handle {
+        display: none;
+    }
+    
+    .submit-button-bar {
+        padding: 8px 0;
+    }
+    
+    .vertical-resize-handle {
+        display: none;
+    }
+    
+    .editor-top-section,
+    .result-bottom-section {
+        height: auto !important;
+        min-height: 300px;
+    }
+}
+</style>
+
+<script>
+let sqlEditor = null;
+
+// Initialize SQL Editor
+function initSQLEditor() {
+    const textarea = document.getElementById('challenge-input');
+    const container = document.getElementById('sql-editor-container');
+    
+    if (!textarea || !container) {
+        console.log('SQL Editor: Elements not found');
+        return false;
+    }
+    
+    // Clean up existing editor if any
+    if (sqlEditor) {
+        try {
+            sqlEditor.toTextArea();
+        } catch(e) {}
+        sqlEditor = null;
+    }
+    container.innerHTML = '';
+    
+    // Check if CodeMirror is available
+    if (typeof CodeMirror === 'undefined') {
+        console.log('SQL Editor: Loading CodeMirror from CDN...');
+        
+        // Load CSS
+        if (!document.querySelector('link[href*="codemirror"]')) {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css';
+            document.head.appendChild(link);
+            
+            const theme = document.createElement('link');
+            theme.rel = 'stylesheet';
+            theme.href = 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css';
+            document.head.appendChild(theme);
+        }
+        
+        // Load JS
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js';
+        script.onload = function() {
+            const sqlMode = document.createElement('script');
+            sqlMode.src = 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/sql/sql.min.js';
+            sqlMode.onload = function() {
+                initSQLEditor();
+            };
+            document.head.appendChild(sqlMode);
+        };
+        document.head.appendChild(script);
+        return false;
+    }
+    
+    // Create CodeMirror instance
+    sqlEditor = CodeMirror(container, {
+        value: textarea.value || '',
+        mode: 'text/x-sql',
+        theme: 'monokai',
+        lineNumbers: true,
+        indentUnit: 4,
+        lineWrapping: true,
+        autofocus: true,
+        extraKeys: {
+            "Ctrl-Enter": function() {
+                document.getElementById('challenge-submit').click();
+            }
+        }
+    });
+    
+    // Sync with textarea
+    sqlEditor.on('change', function() {
+        textarea.value = sqlEditor.getValue();
+    });
+    
+    return true;
+}
+
+// Submit SQL Challenge
+async function submitSQLChallenge() {
+    const challengeId = document.getElementById('challenge-id').value;
+    const submission = sqlEditor ? sqlEditor.getValue() : document.getElementById('challenge-input').value;
+    
+    if (!submission.trim()) {
+        alert('Please enter a SQL query');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/v1/challenges/attempt', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'CSRF-Token': init.csrfNonce
+            },
+            body: JSON.stringify({
+                challenge_id: parseInt(challengeId),
+                submission: submission
+            })
+        });
+        
+        const result = await response.json();
+        displayResult(result);
+        
+    } catch (error) {
+        console.error('Error submitting challenge:', error);
+        alert('Error submitting challenge. Please try again.');
+    }
+}
+
+// Display Result
+function displayResult(result) {
+    const container = document.getElementById('query-result-container');
+    
+    // Clear and prepare container
+    container.innerHTML = '';
+    
+    // Create status message
+    const statusDiv = document.createElement('div');
+    statusDiv.className = result.data.status === 'correct' ? 'alert alert-success' : 
+                          result.data.status === 'incorrect' ? 'alert alert-danger' : 
+                          'alert alert-warning';
+    statusDiv.innerHTML = '<span id="status-text"></span>';
+    
+    // Parse message for results
+    const message = result.data.message || '';
+    const lines = message.split('\n');
+    let statusTextContent = '';
+    let userResult = null;
+    let expectedResult = null;
+    let isUserResult = false;
+    let isExpectedResult = false;
+    let tempContent = [];
+    
+    for (const line of lines) {
+        if (line === '[USER_RESULT]') {
+            isUserResult = true;
+            tempContent = [];
+        } else if (line === '[/USER_RESULT]') {
+            isUserResult = false;
+            try {
+                userResult = JSON.parse(tempContent.join(''));
+            } catch(e) {
+                console.error('Failed to parse user result:', e);
+            }
+        } else if (line === '[EXPECTED_RESULT]') {
+            isExpectedResult = true;
+            tempContent = [];
+        } else if (line === '[/EXPECTED_RESULT]') {
+            isExpectedResult = false;
+            try {
+                expectedResult = JSON.parse(tempContent.join(''));
+            } catch(e) {
+                console.error('Failed to parse expected result:', e);
+            }
+        } else if (isUserResult || isExpectedResult) {
+            tempContent.push(line);
+        } else {
+            statusTextContent += line + '\n';
+        }
+    }
+    
+    container.appendChild(statusDiv);
+    document.getElementById('status-text').innerHTML = statusTextContent.trim();
+    
+    // Render user result
+    if (userResult) {
+        const userCard = document.createElement('div');
+        userCard.className = 'card mb-2';
+        userCard.innerHTML = `
+            <div class="card-header bg-primary text-white">
+                <h6 class="mb-0"><i class="fas fa-code"></i> Your Query Result</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">${renderTable(userResult)}</div>
+            </div>
+        `;
+        container.appendChild(userCard);
+    }
+    
+    // Render expected result if incorrect
+    if (expectedResult && result.data.status === 'incorrect') {
+        const expectedCard = document.createElement('div');
+        expectedCard.className = 'card';
+        expectedCard.innerHTML = `
+            <div class="card-header bg-warning text-dark">
+                <h6 class="mb-0"><i class="fas fa-check-circle"></i> Expected Result</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">${renderTable(expectedResult)}</div>
+            </div>
+        `;
+        container.appendChild(expectedCard);
+    }
+}
+
+// Render Table
+function renderTable(data) {
+    if (!data || !data.columns || !data.rows) {
+        return '<p class="p-3 text-muted">No data to display</p>';
+    }
+    
+    if (data.rows.length === 0) {
+        return '<p class="p-3 text-muted">Empty result set</p>';
+    }
+    
+    let html = '<table class="table table-sm table-striped mb-0">';
+    
+    // Header
+    html += '<thead class="table-dark"><tr>';
+    for (const col of data.columns) {
+        html += `<th>${escapeHtml(col)}</th>`;
+    }
+    html += '</tr></thead>';
+    
+    // Body
+    html += '<tbody>';
+    for (const row of data.rows) {
+        html += '<tr>';
+        for (const cell of row) {
+            html += `<td>${escapeHtml(cell)}</td>`;
+        }
+        html += '</tr>';
+    }
+    html += '</tbody>';
+    
+    html += '</table>';
+    html += `<div class="p-2 bg-light text-muted small">${data.row_count} row(s) returned</div>`;
+    
+    return html;
+}
+
+// Escape HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Panel Resize Functionality
+function initPanelResize() {
+    const resizeHandle = document.getElementById('resize-handle');
+    const leftPanel = document.getElementById('left-panel');
+    const rightPanel = document.getElementById('right-panel');
+    const container = document.getElementById('resize-container');
+    
+    let isResizing = false;
+    let startX = 0;
+    let startLeftWidth = 0;
+    
+    resizeHandle.addEventListener('mousedown', function(e) {
+        isResizing = true;
+        startX = e.clientX;
+        startLeftWidth = leftPanel.offsetWidth;
+        
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        
+        e.preventDefault();
+    });
+    
+    document.addEventListener('mousemove', function(e) {
+        if (!isResizing) return;
+        
+        const containerWidth = container.offsetWidth;
+        const newLeftWidth = startLeftWidth + (e.clientX - startX);
+        const leftWidthPercent = (newLeftWidth / containerWidth) * 100;
+        
+        // Limit resize between 20% and 70%
+        if (leftWidthPercent >= 20 && leftWidthPercent <= 70) {
+            leftPanel.style.width = leftWidthPercent + '%';
+            rightPanel.style.width = (100 - leftWidthPercent) + '%';
+            
+            // Trigger CodeMirror refresh after resize
+            if (sqlEditor) {
+                setTimeout(() => sqlEditor.refresh(), 10);
+            }
+        }
+    });
+    
+    document.addEventListener('mouseup', function() {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            
+            // Save panel width to localStorage
+            const leftWidth = leftPanel.style.width;
+            if (leftWidth) {
+                localStorage.setItem('sql-challenge-left-width', leftWidth);
+            }
+        }
+    });
+    
+    // Restore saved panel width
+    const savedWidth = localStorage.getItem('sql-challenge-left-width');
+    if (savedWidth) {
+        leftPanel.style.width = savedWidth;
+        rightPanel.style.width = (100 - parseFloat(savedWidth)) + '%';
+    }
+}
+
+// Vertical Panel Resize Functionality
+function initVerticalResize() {
+    const resizeHandle = document.getElementById('vertical-resize-handle');
+    const editorSection = document.getElementById('editor-section');
+    const resultSection = document.getElementById('result-section');
+    const container = document.querySelector('.sql-editor-section');
+    
+    if (!resizeHandle || !editorSection || !resultSection) return;
+    
+    let isResizing = false;
+    let startY = 0;
+    let startEditorHeight = 0;
+    
+    resizeHandle.addEventListener('mousedown', function(e) {
+        isResizing = true;
+        startY = e.clientY;
+        startEditorHeight = editorSection.offsetHeight;
+        
+        document.body.style.cursor = 'row-resize';
+        document.body.style.userSelect = 'none';
+        
+        e.preventDefault();
+    });
+    
+    document.addEventListener('mousemove', function(e) {
+        if (!isResizing) return;
+        
+        const containerHeight = container.offsetHeight;
+        const newEditorHeight = startEditorHeight + (e.clientY - startY);
+        const editorHeightPercent = (newEditorHeight / containerHeight) * 100;
+        
+        // Limit resize between 20% and 80%
+        if (editorHeightPercent >= 20 && editorHeightPercent <= 80) {
+            editorSection.style.height = editorHeightPercent + '%';
+            resultSection.style.height = (100 - editorHeightPercent - 2) + '%'; // 2% for handle
+            
+            // Trigger CodeMirror refresh after resize
+            if (sqlEditor) {
+                setTimeout(() => sqlEditor.refresh(), 10);
+            }
+        }
+    });
+    
+    document.addEventListener('mouseup', function() {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            
+            // Save editor height to localStorage
+            const editorHeight = editorSection.style.height;
+            if (editorHeight) {
+                localStorage.setItem('sql-challenge-editor-height', editorHeight);
+            }
+        }
+    });
+    
+    // Restore saved editor height
+    const savedHeight = localStorage.getItem('sql-challenge-editor-height');
+    if (savedHeight) {
+        editorSection.style.height = savedHeight;
+        resultSection.style.height = (100 - parseFloat(savedHeight) - 2) + '%';
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    initSQLEditor();
+    initPanelResize();
+    initVerticalResize();
+});
+</script>
+{% endblock %}

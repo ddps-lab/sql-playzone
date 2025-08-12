@@ -296,6 +296,17 @@ Alpine.data("ChallengeBoard", () => ({
   },
 
   async loadChallenge(challengeId) {
+    // Check if this is a SQL challenge first
+    const challenges = await CTFd.pages.challenges.getChallenges();
+    const challenge = challenges.find(c => c.id === challengeId);
+    
+    if (challenge && challenge.type === 'sql') {
+      // Redirect to SQL challenge page
+      window.location.href = `/challenges/sql/${challengeId}`;
+      return;
+    }
+    
+    // Load regular challenge in modal
     await CTFd.pages.challenge.displayChallenge(challengeId, challenge => {
       challenge.data.view = addTargetBlank(challenge.data.view);
       Alpine.store("challenge").data = challenge.data;

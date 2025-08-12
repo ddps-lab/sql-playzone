@@ -26,6 +26,7 @@ from CTFd.constants.config import (
 from CTFd.constants.themes import DEFAULT_THEME
 from CTFd.models import (
     Admins,
+    Challenges,
     Files,
     Notifications,
     Pages,
@@ -42,7 +43,7 @@ from CTFd.utils.config import can_send_mail, is_setup, is_teams_mode
 from CTFd.utils.config.pages import build_markdown, get_page
 from CTFd.utils.config.visibility import challenges_visible
 from CTFd.utils.dates import ctf_ended, ctftime, view_after_ctf
-from CTFd.utils.decorators import authed_only
+from CTFd.utils.decorators import authed_only, during_ctf_time_only
 from CTFd.utils.email import (
     DEFAULT_PASSWORD_RESET_BODY,
     DEFAULT_PASSWORD_RESET_SUBJECT,
@@ -210,7 +211,7 @@ def setup():
     <div class="col-md-6 offset-md-3">
         <img class="w-100 mx-auto d-block" style="max-width: 500px;padding: 50px;padding-top: 14vh;" src="{default_ctf_banner_location}" />
         <h3 class="text-center">
-            <p>A cool CTF platform from <a href="https://ctfd.io">ctfd.io</a></p>
+            <p>A cool SQL CTF platform from <a href="https://ctfd.io">ctfd.io</a></p>
             <p>Follow us on social media:</p>
             <a href="https://twitter.com/ctfdio"><i class="fab fa-twitter fa-2x" aria-hidden="true"></i></a>&nbsp;
             <a href="https://facebook.com/ctfdio"><i class="fab fa-facebook fa-2x" aria-hidden="true"></i></a>&nbsp;
@@ -219,6 +220,7 @@ def setup():
         <br>
         <h4 class="text-center">
             <a href="admin">Click here</a> to login and setup your CTF
+            ss
         </h4>
     </div>
 </div>"""
@@ -596,3 +598,46 @@ def robots():
     r = make_response(text, 200)
     r.mimetype = "text/plain"
     return r
+
+
+@views.route("/challenges/sql/<int:challenge_id>")
+@authed_only
+def sql_challenge_page(challenge_id):
+    """Render SQL challenge on a dedicated page"""
+    if not is_setup():
+        return redirect(url_for("views.setup"))
+    
+    challenge = Challenges.query.filter_by(id=challenge_id).first_or_404()
+    
+    # Check if this is a SQL challenge
+    if challenge.type != "sql":
+        abort(404)
+    
+    # Check if challenges are visible
+    if not challenges_visible():
+        abort(403)
+    
+    # Check if CTF has ended
+    if ctf_ended() and not view_after_ctf():
+        abort(403)
+    
+    from CTFd.plugins.sql_challenges import SQLChallenge
+    from CTFd.utils.config.pages import build_markdown
+    
+    sql_challenge = SQLChallenge.query.filter_by(id=challenge_id).first_or_404()
+    
+    # Render markdown description
+    description_html = build_markdown(challenge.description or "")
+    
+    return render_template(
+        "sql_challenge.html",
+        challenge={
+            "id": challenge.id,
+            "name": challenge.name,
+            "description": description_html,
+            "value": challenge.value,
+            "category": challenge.category,
+            "init_query": sql_challenge.init_query,
+            "type": "sql"
+        }
+    )
