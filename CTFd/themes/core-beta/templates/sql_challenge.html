@@ -24,18 +24,18 @@
         
         <!-- Right Panel: SQL Editor and Results -->
         <div id="right-panel" class="editor-panel">
-            <div class="sql-editor-section p-4 pb-5 d-flex flex-column">
+            <div class="sql-editor-section d-flex flex-column">
                 <input id="challenge-id" type="hidden" value="{{ challenge.id }}">
                 
                 <!-- Editor Section -->
-                <div id="editor-section" class="editor-top-section">
+                <div id="editor-section" class="editor-top-section p-2">
                     <h5 class="mb-3">SQL Query Editor</h5>
                     <div class="editor-wrapper">
                         <textarea 
                             id="challenge-input" 
                             class="form-control" 
                             name="submission" 
-                            rows="10" 
+                            rows="5" 
                             placeholder="-- Enter your SQL query here
 SELECT column1, column2
 FROM table_name
@@ -51,7 +51,7 @@ WHERE condition;"
                 <div id="vertical-resize-handle" class="vertical-resize-handle"></div>
                 
                 <!-- Result Section -->
-                <div id="result-section" class="result-bottom-section">
+                <div id="result-section" class="result-bottom-section p-2">
                     <h5 class="mb-3">Execution Results</h5>
                     <div id="query-result-container" class="result-container">
                         <div class="text-muted text-center py-5">
@@ -171,11 +171,24 @@ body {
     display: flex;
     flex-direction: column;
     min-height: 0;
+    overflow: hidden;
 }
 
 #sql-editor-container {
     flex: 1;
     min-height: 150px;
+    overflow: hidden;
+}
+
+/* CodeMirror specific styles */
+#sql-editor-container .CodeMirror {
+    height: 100%;
+    max-height: 100%;
+    font-size: 14px;
+}
+
+#sql-editor-container .CodeMirror-scroll {
+    max-height: 100%;
 }
 
 .vertical-resize-handle {
@@ -285,6 +298,7 @@ body {
 }
 
 .markdown-content table {
+    font-size: 0.9em;
     width: 100%;
     margin: 1rem 0;
     border-collapse: collapse;
@@ -464,12 +478,18 @@ function initSQLEditor() {
         indentUnit: 4,
         lineWrapping: true,
         autofocus: true,
+        scrollbarStyle: 'native',
         extraKeys: {
             "Ctrl-Enter": function() {
                 document.getElementById('challenge-submit').click();
             }
         }
     });
+    
+    // Force CodeMirror to fit container
+    setTimeout(() => {
+        sqlEditor.refresh();
+    }, 100);
     
     // Sync with textarea
     sqlEditor.on('change', function() {
