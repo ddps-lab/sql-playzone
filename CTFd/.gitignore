@@ -80,3 +80,6 @@ node_modules/
 
 # Flask Profiler files
 flask_profiler.sql
+
+# Go binaries and build files
+CTFd/plugins/sql_challenges/sql-judge-server

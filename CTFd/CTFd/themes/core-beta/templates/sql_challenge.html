@@ -540,13 +540,23 @@ function displayResult(result) {
     
     // Create status message
     const statusDiv = document.createElement('div');
-    statusDiv.className = result.data.status === 'correct' ? 'alert alert-success' : 
+    const isAlreadySolved = result.data.status === 'already_solved';
+    statusDiv.className = result.data.status === 'correct' || isAlreadySolved ? 'alert alert-success' : 
                           result.data.status === 'incorrect' ? 'alert alert-danger' : 
                           'alert alert-warning';
     statusDiv.innerHTML = '<span id="status-text"></span>';
     
     // Parse message for results
-    const message = result.data.message || '';
+    let message = result.data.message || '';
+    
+    // Remove "but you already solved this" from message for parsing
+    if (isAlreadySolved) {
+        message = message.replace(' but you already solved this', '');
+    }
+    
+    console.log('Raw message:', message);  // Debug log
+    console.log('Status:', result.data.status);  // Debug log
+    
     const lines = message.split('\n');
     let statusTextContent = '';
     let userResult = null;
@@ -562,9 +572,12 @@ function displayResult(result) {
         } else if (line === '[/USER_RESULT]') {
             isUserResult = false;
             try {
-                userResult = JSON.parse(tempContent.join(''));
+                const jsonStr = tempContent.join('');
+                console.log('Parsing user result JSON:', jsonStr);  // Debug log
+                userResult = JSON.parse(jsonStr);
+                console.log('Parsed user result:', userResult);  // Debug log
             } catch(e) {
-                console.error('Failed to parse user result:', e);
+                console.error('Failed to parse user result:', e, 'JSON string:', tempContent.join(''));
             }
         } else if (line === '[EXPECTED_RESULT]') {
             isExpectedResult = true;
@@ -572,9 +585,12 @@ function displayResult(result) {
         } else if (line === '[/EXPECTED_RESULT]') {
             isExpectedResult = false;
             try {
-                expectedResult = JSON.parse(tempContent.join(''));
+                const jsonStr = tempContent.join('');
+                console.log('Parsing expected result JSON:', jsonStr);  // Debug log
+                expectedResult = JSON.parse(jsonStr);
+                console.log('Parsed expected result:', expectedResult);  // Debug log
             } catch(e) {
-                console.error('Failed to parse expected result:', e);
+                console.error('Failed to parse expected result:', e, 'JSON string:', tempContent.join(''));
             }
         } else if (isUserResult || isExpectedResult) {
             tempContent.push(line);
@@ -584,46 +600,77 @@ function displayResult(result) {
     }
     
     container.appendChild(statusDiv);
-    document.getElementById('status-text').innerHTML = statusTextContent.trim();
+    let finalStatusText = statusTextContent.trim();
+    if (isAlreadySolved) {
+        finalStatusText += ' (Already solved)';
+    }
+    document.getElementById('status-text').innerHTML = finalStatusText;
     
     // Render user result
     if (userResult) {
+        console.log('Rendering user result table with data:', userResult);  // Debug log
         const userCard = document.createElement('div');
         userCard.className = 'card mb-2';
-        userCard.innerHTML = `
-            <div class="card-header bg-primary text-white">
-                <h6 class="mb-0"><i class="fas fa-code"></i> Your Query Result</h6>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">${renderTable(userResult)}</div>
-            </div>
-        `;
+        const tableHtml = renderTable(userResult);
+        console.log('Generated table HTML:', tableHtml);  // Debug log
+        
+        // Create card structure manually to avoid template literal issues
+        const cardHeader = document.createElement('div');
+        cardHeader.className = 'card-header bg-primary text-white';
+        cardHeader.innerHTML = '<h6 class="mb-0"><i class="fas fa-code"></i> Your Query Result</h6>';
+        
+        const cardBody = document.createElement('div');
+        cardBody.className = 'card-body p-0';
+        
+        const tableContainer = document.createElement('div');
+        tableContainer.className = 'table-responsive';
+        tableContainer.innerHTML = tableHtml;
+        
+        cardBody.appendChild(tableContainer);
+        userCard.appendChild(cardHeader);
+        userCard.appendChild(cardBody);
         container.appendChild(userCard);
+    } else {
+        console.log('No user result to render');  // Debug log
     }
     
     // Render expected result if incorrect
     if (expectedResult && result.data.status === 'incorrect') {
+        console.log('Rendering expected result table with data:', expectedResult);  // Debug log
         const expectedCard = document.createElement('div');
         expectedCard.className = 'card';
-        expectedCard.innerHTML = `
-            <div class="card-header bg-warning text-dark">
-                <h6 class="mb-0"><i class="fas fa-check-circle"></i> Expected Result</h6>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">${renderTable(expectedResult)}</div>
-            </div>
-        `;
+        const tableHtml = renderTable(expectedResult);
+        
+        // Create card structure manually to avoid template literal issues
+        const cardHeader = document.createElement('div');
+        cardHeader.className = 'card-header bg-warning text-dark';
+        cardHeader.innerHTML = '<h6 class="mb-0"><i class="fas fa-check-circle"></i> Expected Result</h6>';
+        
+        const cardBody = document.createElement('div');
+        cardBody.className = 'card-body p-0';
+        
+        const tableContainer = document.createElement('div');
+        tableContainer.className = 'table-responsive';
+        tableContainer.innerHTML = tableHtml;
+        
+        cardBody.appendChild(tableContainer);
+        expectedCard.appendChild(cardHeader);
+        expectedCard.appendChild(cardBody);
         container.appendChild(expectedCard);
     }
 }
 
 // Render Table
 function renderTable(data) {
+    console.log('renderTable called with:', data);  // Debug log
+    
     if (!data || !data.columns || !data.rows) {
+        console.log('Invalid data structure for table');  // Debug log
         return '<p class="p-3 text-muted">No data to display</p>';
     }
     
     if (data.rows.length === 0) {
+        console.log('Empty rows array');  // Debug log
         return '<p class="p-3 text-muted">Empty result set</p>';
     }
     
@@ -655,9 +702,15 @@ function renderTable(data) {
 
 // Escape HTML
 function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    if (text === null || text === undefined) {
+        return '';
+    }
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 // Panel Resize Functionality

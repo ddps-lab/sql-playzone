@@ -8,7 +8,8 @@ A CTFd plugin that adds SQL challenge type where users submit SQL queries to sol
 - **Initialization Queries**: Set up database schema and initial data with CREATE and INSERT statements
 - **Solution Query**: Define the correct SQL query that produces the expected result
 - **Test Interface**: Test your queries directly in the admin interface before publishing
-- **Secure Execution**: SQL queries run in isolated temporary SQLite databases
+- **Go-based MySQL Server**: Uses go-mysql-server for better MySQL compatibility and performance
+- **Auto-start Server**: Automatically starts the Go judge server when running `python serve.py`
 - **Custom Query Testing**: Admins can test custom queries against the initialized database
 
 ## Installation
@@ -16,6 +17,50 @@ A CTFd plugin that adds SQL challenge type where users submit SQL queries to sol
 The plugin is automatically loaded when CTFd starts. It's located in:
 ```
 CTFd/plugins/sql_challenges/
+```
+
+### Running with Docker Compose
+
+```bash
+docker-compose up -d
+```
+
+This will start:
+- CTFd application
+- SQL Judge server (Go-based MySQL server)
+- MariaDB database
+- Redis cache
+- Nginx proxy
+
+### Running with Python serve.py
+
+The SQL Judge server will **automatically start** when you run CTFd:
+
+```bash
+python serve.py
+```
+
+The plugin will:
+1. Check if the Go judge server is already running
+2. If not, run `go mod tidy` to download dependencies
+3. Build the server binary
+4. Start the server on port 8080
+5. Automatically stop the server when CTFd shuts down
+
+**Requirements for auto-start:**
+- Go 1.21+ installed on your system
+- Port 8080 available
+- `go.sum` file present (created automatically on first run)
+
+If Go is not installed, you can still use Docker Compose or manually start the server.
+
+### Manual Server Start
+
+To manually build and run the SQL Judge server:
+
+```bash
+cd CTFd/plugins/sql_challenges
+./build.sh run
 ```
 
 ## Usage
@@ -73,10 +118,11 @@ Participants will:
 
 ## Security
 
-- Each query execution happens in an isolated temporary SQLite database
+- Each query execution happens in an isolated in-memory MySQL database (go-mysql-server)
 - Databases are created and destroyed for each test/submission
 - No persistent data or access to the main CTFd database
-- File system access is restricted to temporary files only
+- Query execution timeout of 5 seconds to prevent long-running queries
+- Server runs in a separate process with limited permissions
 
 ## File Structure
 
@@ -84,6 +130,11 @@ Participants will:
 sql_challenges/
 ├── __init__.py          # Main plugin code
 ├── README.md            # This file
+├── sql_judge_server.go  # Go-based MySQL judge server
+├── go.mod               # Go module dependencies
+├── go.sum               # Go dependency checksums (auto-generated)
+├── Dockerfile           # Docker image for judge server
+├── build.sh             # Build script for judge server
 └── assets/
     ├── create.html      # Challenge creation template
     ├── create.js        # Creation page JavaScript
