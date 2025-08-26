@@ -28,6 +28,12 @@ class ChallengeResponse:
     status: str
     message: str
 
+    def __iter__(self):
+        """Allow tuple-like unpacking for backwards compatibility."""
+        # TODO: CTFd 4.0 remove this behavior as we should move away from the tuple strategy
+        yield (True if self.status == "correct" else False)
+        yield self.message
+
 
 class BaseChallenge(object):
     id = None
@@ -144,10 +150,7 @@ class BaseChallenge(object):
         elif challenge.logic == "team":
             return challenge_attempt_team(submission, challenge, flags)
         else:
-            return ChallengeResponse(
-                status="incorrect",
-                message="Challenge logic is not defined",
-            )
+            return challenge_attempt_any(submission, challenge, flags)
 
     @classmethod
     def partial(cls, user, team, challenge, request):
