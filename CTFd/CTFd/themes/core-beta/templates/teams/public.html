@@ -5,7 +5,7 @@
     <div class="container">
       <h1 id="team-id" data-ctfd-team-id="{{ team.id }}">{{ team.name }}</h1>
 
-      {% if team.oauth_id %}
+      {% if team.oauth_id and not team.oauth_id.startswith('google_') %}
         <a href="https://majorleaguecyber.org/t/{{ team.name }}">
           <h3 class="d-inline-block mx-1"><span class="badge bg-primary rounded-pill">{% trans %}Official{% endtrans %}</span></h3>
         </a>

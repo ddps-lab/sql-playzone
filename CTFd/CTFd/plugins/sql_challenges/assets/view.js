@@ -234,22 +234,7 @@ function displaySQLResults(message, status) {
         resultHtml += '</div>';
     }
     
-    // Expected result (only for incorrect)
-    if (expectedMatch && status === 'incorrect') {
-        var expectedResult = expectedMatch[1].trim();
-        var tableHtml = createTable(expectedResult);
-        
-        resultHtml += '<div class="card border-0 shadow-sm">';
-        resultHtml += '<div class="card-header bg-warning text-dark border-0">';
-        resultHtml += '<h6 class="mb-0"><i class="fas fa-check-circle"></i> Expected Result</h6>';
-        resultHtml += '</div>';
-        resultHtml += '<div class="card-body p-0">';
-        resultHtml += '<div class="table-responsive" style="max-height: 400px; overflow-y: auto;">';
-        resultHtml += tableHtml;
-        resultHtml += '</div>';
-        resultHtml += '</div>';
-        resultHtml += '</div>';
-    }
+
     
     resultHtml += '</div>';
     

@@ -81,11 +81,52 @@ WHERE condition;"
     </div>
 </div>
 
+<!-- Success Modal -->
+<div class="modal fade" id="successModal" tabindex="-1" aria-labelledby="successModalLabel" aria-hidden="true" data-bs-backdrop="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="successModalLabel">
+                    <i class="fas fa-check-circle"></i> Challenge Solved!
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div class="mb-4">
+                    <i class="fas fa-trophy fa-3x text-success mb-3"></i>
+                    <h4>Congratulations!</h4>
+                    <p class="lead">You have successfully solved the SQL challenge!</p>
+                </div>
+                <div class="alert alert-info">
+                    <strong>Points Earned:</strong> <span id="earned-points">{{ challenge.value }}</span> points
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Close
+                </button>
+                <a href="{{ url_for('challenges.listing') }}" class="btn btn-primary">
+                    <i class="fas fa-list"></i> Go to Challenges
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
 /* Prevent body scroll on SQL challenge page */
 body {
     overflow: hidden;
     height: 100vh;
+}
+
+/* High z-index for success modal */
+#successModal {
+    z-index: 9999 !important;
+}
+
+#successModal .modal-dialog {
+    z-index: 10000 !important;
 }
 
 .sql-challenge-wrapper {
@@ -634,30 +675,38 @@ function displayResult(result) {
         console.log('No user result to render');  // Debug log
     }
     
-    // Render expected result if incorrect
-    if (expectedResult && result.data.status === 'incorrect') {
-        console.log('Rendering expected result table with data:', expectedResult);  // Debug log
-        const expectedCard = document.createElement('div');
-        expectedCard.className = 'card';
-        const tableHtml = renderTable(expectedResult);
+    // Show success modal if correct
+    if (result.data.status === 'correct') {
+        console.log('Challenge solved! Showing success modal...'); // Debug log
         
-        // Create card structure manually to avoid template literal issues
-        const cardHeader = document.createElement('div');
-        cardHeader.className = 'card-header bg-warning text-dark';
-        cardHeader.innerHTML = '<h6 class="mb-0"><i class="fas fa-check-circle"></i> Expected Result</h6>';
+        // Update earned points if available
+        if (result.data.points) {
+            document.getElementById('earned-points').textContent = result.data.points;
+        }
         
-        const cardBody = document.createElement('div');
-        cardBody.className = 'card-body p-0';
-        
-        const tableContainer = document.createElement('div');
-        tableContainer.className = 'table-responsive';
-        tableContainer.innerHTML = tableHtml;
-        
-        cardBody.appendChild(tableContainer);
-        expectedCard.appendChild(cardHeader);
-        expectedCard.appendChild(cardBody);
-        container.appendChild(expectedCard);
+        // Show modal after a short delay to let the result display first
+        setTimeout(() => {
+            try {
+                const modalElement = document.getElementById('successModal');
+                console.log('Modal element found:', modalElement); // Debug log
+                
+                if (modalElement) {
+                    // Manually show modal
+                    modalElement.classList.add('show');
+                    modalElement.style.display = 'block';
+                    modalElement.setAttribute('aria-hidden', 'false');
+                    document.body.classList.add('modal-open');
+                    console.log('Modal shown manually'); // Debug log
+                } else {
+                    console.error('Modal element not found!'); // Debug log
+                }
+            } catch (error) {
+                console.error('Error showing modal:', error); // Debug log
+            }
+        }, 1000);
     }
+    
+
 }
 
 // Render Table
@@ -846,6 +895,20 @@ document.addEventListener('DOMContentLoaded', function() {
     initSQLEditor();
     initPanelResize();
     initVerticalResize();
+    
+    // Add modal close functionality
+    const modalCloseButtons = document.querySelectorAll('[data-bs-dismiss="modal"]');
+    modalCloseButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const modal = this.closest('.modal');
+            if (modal) {
+                modal.classList.remove('show');
+                modal.style.display = 'none';
+                modal.setAttribute('aria-hidden', 'true');
+                document.body.classList.remove('modal-open');
+            }
+        });
+    });
 });
 </script>
 {% endblock %}

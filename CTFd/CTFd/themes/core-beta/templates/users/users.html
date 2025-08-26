@@ -65,7 +65,7 @@
                   <span class="badge bg-secondary ms-2">{{ user.bracket.name }}</span>
                 {% endif %}
 
-                {% if user.oauth_id %}
+                {% if user.oauth_id and not user.oauth_id.startswith('google_') %}
                   <a href="https://majorleaguecyber.org/u/{{ user.name }}">
                     <span class="badge bg-primary ms-2">{% trans %}Official{% endtrans %}</span>
                   </a>

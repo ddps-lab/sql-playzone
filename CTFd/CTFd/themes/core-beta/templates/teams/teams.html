@@ -67,7 +67,7 @@
                   <span class="badge bg-secondary ms-2">{{ team.bracket.name }}</span>
                 {% endif %}
 
-                {% if team.oauth_id %}
+                {% if team.oauth_id and not team.oauth_id.startswith('google_') %}
                   <a href="https://majorleaguecyber.org/t/{{ team.name }}">
                     <span class="badge bg-primary ms-2">Official</span>
                   </a>

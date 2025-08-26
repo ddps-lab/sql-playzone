@@ -259,6 +259,8 @@ class ServerConfig(object):
     # === OAUTH ===
     OAUTH_CLIENT_ID: str = empty_str_cast(config_ini["oauth"]["OAUTH_CLIENT_ID"])
     OAUTH_CLIENT_SECRET: str = empty_str_cast(config_ini["oauth"]["OAUTH_CLIENT_SECRET"])
+    GOOGLE_CLIENT_ID: str = empty_str_cast(config_ini["oauth"]["GOOGLE_CLIENT_ID"])
+    GOOGLE_CLIENT_SECRET: str = empty_str_cast(config_ini["oauth"]["GOOGLE_CLIENT_SECRET"])
 
     # === EXTRA ===
     # Since the configurations in section "[extra]" will be loaded later, it is not necessary to declare them here.

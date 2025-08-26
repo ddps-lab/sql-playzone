@@ -1,4 +1,5 @@
 import requests
+import secrets
 from flask import Blueprint, abort
 from flask import current_app as app
 from flask import redirect, render_template, request, session, url_for
@@ -629,6 +630,179 @@ def oauth_redirect():
         log("logins", "[{date}] {ip} - Received redirect without OAuth code")
         error_for(
             endpoint="auth.login", message="Received redirect without OAuth code."
+        )
+        return redirect(url_for("auth.login"))
+
+
+@auth.route("/google/login")
+def google_login():
+    google_client_id = get_app_config("GOOGLE_CLIENT_ID") or get_config("google_client_id")
+    
+    if google_client_id is None:
+        error_for(
+            endpoint="auth.login",
+            message="Google OAuth Settings not configured. "
+            "Ask your CTF administrator to configure Google integration.",
+        )
+        return redirect(url_for("auth.login"))
+    
+    # Generate state token for CSRF protection
+    state = secrets.token_urlsafe(32)
+    session["google_oauth_state"] = state
+    
+    # Google OAuth authorization endpoint
+    authorization_endpoint = "https://accounts.google.com/o/oauth2/v2/auth"
+    
+    # Required scopes for Google login
+    scope = "openid email profile"
+    
+    # Build the authorization URL
+    redirect_uri = url_for("auth.google_callback", _external=True)
+    redirect_url = (
+        f"{authorization_endpoint}?"
+        f"response_type=code&"
+        f"client_id={google_client_id}&"
+        f"redirect_uri={redirect_uri}&"
+        f"scope={scope}&"
+        f"state={state}&"
+        f"access_type=offline&"
+        f"prompt=consent&"
+        f"hd=hanyang.ac.kr"
+    )
+    
+    return redirect(redirect_url)
+
+
+@auth.route("/google/callback")
+@ratelimit(method="GET", limit=10, interval=60)
+def google_callback():
+    code = request.args.get("code")
+    state = request.args.get("state")
+    
+    # Verify state token
+    if "google_oauth_state" not in session or session["google_oauth_state"] != state:
+        log("logins", "[{date}] {ip} - Google OAuth State validation mismatch")
+        error_for(endpoint="auth.login", message="Google OAuth State validation mismatch.")
+        return redirect(url_for("auth.login"))
+    
+    # Clear the state from session
+    session.pop("google_oauth_state", None)
+    
+    if code:
+        # Exchange authorization code for access token
+        token_endpoint = "https://oauth2.googleapis.com/token"
+        
+        google_client_id = get_app_config("GOOGLE_CLIENT_ID") or get_config("google_client_id")
+        google_client_secret = get_app_config("GOOGLE_CLIENT_SECRET") or get_config("google_client_secret")
+        redirect_uri = url_for("auth.google_callback", _external=True)
+        
+        token_data = {
+            "code": code,
+            "client_id": google_client_id,
+            "client_secret": google_client_secret,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        }
+        
+        token_response = requests.post(token_endpoint, data=token_data)
+        
+        if token_response.status_code == 200:
+            tokens = token_response.json()
+            access_token = tokens["access_token"]
+            
+            # Get user info from Google
+            userinfo_endpoint = "https://www.googleapis.com/oauth2/v2/userinfo"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            userinfo_response = requests.get(userinfo_endpoint, headers=headers)
+            
+            if userinfo_response.status_code == 200:
+                user_data = userinfo_response.json()
+                
+                user_email = user_data.get("email")
+                user_name = user_data.get("name", user_email.split("@")[0])
+                google_id = user_data.get("id")
+                
+                # Check if user exists
+                user = Users.query.filter_by(email=user_email).first()
+                
+                if user is None:
+                    # Check user count limit
+                    num_users_limit = int(get_config("num_users", default=0))
+                    num_users = Users.query.filter_by(banned=False, hidden=False).count()
+                    if num_users_limit and num_users >= num_users_limit:
+                        abort(
+                            403,
+                            description=f"Reached the maximum number of users ({num_users_limit}).",
+                        )
+                    
+                    # Check if registration is allowed
+                    if registration_visible():
+                        # Generate unique username if needed
+                        user_base_name = user_name
+                        unique_name = user_name.split("|")[0]
+                        counter = 1
+                        
+                        while Users.query.filter_by(name=unique_name).first():
+                            unique_name = f"{user_base_name}_{counter}"
+                            counter += 1
+                        
+                        user = Users(
+                            name=unique_name,
+                            email=user_email,
+                            oauth_id=f"google_{google_id}",
+                            verified=True,
+                        )
+
+                        if len(user_name.split("|")) > 1:
+                            user.affiliation = user_name.split("|")[1]
+
+                        db.session.add(user)
+                        db.session.commit()
+                        
+                        log(
+                            "registrations",
+                            format="[{date}] {ip} - {name} registered via Google OAuth with {email}",
+                            name=user.name,
+                            email=user.email,
+                        )
+                    else:
+                        log("logins", "[{date}] {ip} - Public registration via Google blocked")
+                        error_for(
+                            endpoint="auth.login",
+                            message="Public registration is disabled. Please try again later.",
+                        )
+                        return redirect(url_for("auth.login"))
+                
+                # Update oauth_id if user exists but doesn't have one
+                if user and not user.oauth_id:
+                    user.oauth_id = f"google_{google_id}"
+                    user.verified = True
+                    db.session.commit()
+                    clear_user_session(user_id=user.id)
+                
+                # Handle teams mode
+                if get_config("user_mode") == TEAMS_MODE and user.team_id is None:
+                    # For Google OAuth, we don't have team information
+                    # User will need to create or join a team after login
+                    pass
+                
+                login_user(user)
+                log("logins", "[{date}] {ip} - {name} logged in via Google OAuth", name=user.name)
+                
+                return redirect(url_for("challenges.listing" if not (get_config("user_mode") == TEAMS_MODE and user.team_id is None) else "teams.private"))
+            else:
+                log("logins", "[{date}] {ip} - Google OAuth user info retrieval failure")
+                error_for(endpoint="auth.login", message="Failed to retrieve user information from Google.")
+                return redirect(url_for("auth.login"))
+        else:
+            log("logins", "[{date}] {ip} - Google OAuth token retrieval failure")
+            error_for(endpoint="auth.login", message="Google OAuth token retrieval failure.")
+            return redirect(url_for("auth.login"))
+    else:
+        log("logins", "[{date}] {ip} - Received Google OAuth redirect without code")
+        error_for(
+            endpoint="auth.login",
+            message="Received redirect without OAuth code.",
         )
         return redirect(url_for("auth.login"))
 

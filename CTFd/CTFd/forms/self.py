@@ -20,12 +20,12 @@ def SettingsForm(*args, **kwargs):
     class _SettingsForm(BaseForm):
         name = StringField(_l("User Name"))
         email = StringField(_l("Email"))
-        language = SelectField(_l("Language"), choices=SELECT_LANGUAGE_LIST)
+        # language = SelectField(_l("Language"), choices=SELECT_LANGUAGE_LIST)
         password = PasswordField(_l("Password"))
         confirm = PasswordField(_l("Current Password"))
         affiliation = StringField(_l("Affiliation"))
-        website = URLField(_l("Website"))
-        country = SelectField(_l("Country"), choices=SELECT_COUNTRIES_LIST)
+        # website = URLField(_l("Website"))
+        # country = SelectField(_l("Country"), choices=SELECT_COUNTRIES_LIST)
         submit = SubmitField(_l("Submit"))
 
         @property
