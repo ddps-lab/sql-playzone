@@ -83,3 +83,6 @@ flask_profiler.sql
 
 # Mac OS
 .DS_Store
+
+# config
+CTFd/config.ini
