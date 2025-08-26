@@ -51,11 +51,6 @@
                   {{ form.email(class="form-control", value=email) }}
                 </div>
 
-                <div class="mb-3">
-                  <b>{{ form.language.label(class="form-label") }}</b>
-                  {{ form.language(class="form-select", value=language) }}
-                </div>
-
                 <hr>
 
                 <div class="mb-3">
@@ -73,14 +68,7 @@
                   <b>{{ form.affiliation.label(class="form-label") }}</b>
                   {{ form.affiliation(class="form-control", value=affiliation or "") }}
                 </div>
-                <div class="mb-3">
-                  <b>{{ form.website.label(class="form-label") }}</b>
-                  {{ form.website(class="form-control", value=website or "") }}
-                </div>
-                <div class="mb-3">
-                  <b>{{ form.country.label(class="form-label") }}</b>
-                  {{ form.country(class="form-select", value=country) }}
-                </div>
+
 
                 <hr>
 
@@ -123,7 +111,7 @@
             {% with form = Forms.self.TokensForm() %}
               <form method="POST" x-data="TokensForm" @submit.prevent="generateToken()" class="mb-3">
                 <div class="modal fade" tabindex="-1" x-ref="tokenModal">
-                  <div class="modal-dialog modal-lg">
+                  <div class="modal-dialog modal-2xl">
                     <div class="modal-content">
                       <div class="modal-header">
                         <h5 class="modal-title">{% trans %}API Key Generated{% endtrans %}</h5>
