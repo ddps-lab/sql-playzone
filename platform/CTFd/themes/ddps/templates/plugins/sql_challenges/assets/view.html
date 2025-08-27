@@ -1,0 +1,46 @@
+{% extends "challenge.html" %}
+
+{% block input %}
+<input id="challenge-id" class="challenge-id" type="hidden" value="{{ challenge.id }}">
+</div>
+<div class="col-12">
+    <label for="challenge-input" class="form-label">
+        <strong>SQL Query:</strong>
+    </label>
+    <textarea 
+        id="challenge-input" 
+        class="challenge-input form-control" 
+        name="submission" 
+        rows="5" 
+        placeholder="-- Enter your SQL query here
+SELECT column1, column2
+FROM table_name
+WHERE condition;"
+        x-model="submission"
+        style="font-family: 'Courier New', monospace; font-size: 14px; display: none;"
+    ></textarea>
+    <div id="sql-editor-container" style="border: 1px solid #ced4da; border-radius: 0.25rem;"></div>
+    <small class="form-text text-muted">
+        Press Ctrl+Enter to submit
+    </small>
+</div>
+<div style="display: none;">
+{% endblock %}
+
+{% block submit %}
+</div>
+</div>
+<div class="row mt-3">
+    <div class="col-12">
+        <button
+            id="challenge-submit"
+            class="challenge-submit btn btn-primary w-100" 
+            type="submit"
+            @click.debounce.500ms="submitChallenge()"
+        >
+            <i class="fas fa-play"></i> Execute Query
+        </button>
+    </div>
+</div>
+<div style="display: none;">
+{% endblock %}
