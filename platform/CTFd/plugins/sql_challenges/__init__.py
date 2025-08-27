@@ -473,6 +473,14 @@ def load(app):
     # Upgrade database to include SQL challenge tables
     upgrade()
     
+    # Ensure the sql_challenge table exists
+    with app.app_context():
+        # Create table if it doesn't exist
+        inspector = db.inspect(db.engine)
+        if 'sql_challenge' not in inspector.get_table_names():
+            db.create_all()
+            print("Created sql_challenge table")
+    
     # Start the Go SQL judge server
     if not os.environ.get('SQL_JUDGE_SERVER_URL'):
         # Only start if not using external server

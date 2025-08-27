@@ -14,6 +14,7 @@ services:
       - ACCESS_LOG=-
       - ERROR_LOG=-
       - REVERSE_PROXY=true
+      - SQL_JUDGE_SERVER_URL=http://sql-judge:8080
     volumes:
       - .data/CTFd/logs:/var/log/CTFd
       - .data/CTFd/uploads:/var/uploads
@@ -57,6 +58,12 @@ services:
     - .data/redis:/data
     networks:
         internal:
+
+  sql-judge:
+    build: ./CTFd/plugins/sql_challenges
+    restart: always
+    networks:
+      - internal
 
 networks:
     default:
