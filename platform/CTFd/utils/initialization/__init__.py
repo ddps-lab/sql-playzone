@@ -102,6 +102,7 @@ def init_template_globals(app):
         get_registered_admin_stylesheets=get_registered_admin_stylesheets
     )
     app.jinja_env.globals.update(get_config=get_config)
+    app.jinja_env.globals.update(get_app_config=get_app_config)
     app.jinja_env.globals.update(generate_account_url=generate_account_url)
     app.jinja_env.globals.update(get_countries=get_countries)
     app.jinja_env.globals.update(lookup_country_code=lookup_country_code)
