@@ -1,4 +1,4 @@
-<form method="POST" action="{{ script_root }}/api/v1/challenges" enctype="multipart/form-data">
+<form id="create-sql-challenge-form">
     <div class="form-group">
         <label for="name">Name<br>
             <small class="form-text text-muted">
@@ -100,6 +100,6 @@ INSERT INTO users VALUES (2, 'Bob', 30);"></textarea>
     <input type="hidden" name="type" value="sql">
     
     <div class="form-group">
-        <button type="submit" id="submit" tabindex="5" class="btn btn-primary btn-outline-primary float-md-right">Create</button>
+        <button type="button" id="submit" tabindex="5" class="btn btn-primary btn-outline-primary float-md-right">Create</button>
     </div>
 </form>
