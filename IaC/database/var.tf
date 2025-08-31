@@ -4,6 +4,12 @@ variable "prefix" {
   default     = "CTFd"
 }
 
+variable "region" {
+  description = "AWS region"
+  type        = string
+  default     = "ap-northeast-2"
+}
+
 variable "vpc_cidr" {
     description = "The CIDR block for the VPC"
     type        = string
@@ -32,6 +38,19 @@ variable "private_subnet_cidrs" {
 variable "data_subnet_cidrs" {
     description = "The CIDR blocks for the data subnets"
     type        = list(string)
-    # 우선 현재는 단일한 subnet 으로 구성할 것임.
-    default     = ["192.168.30.0/24"]
+    # RDS는 최소 2개의 서브넷이 다른 AZ에 있어야 함
+    default     = ["192.168.30.0/24", "192.168.31.0/24"]
+}
+
+# RDS 관련 변수들
+variable "engine_version" {
+    description = "MariaDB engine version"
+    type        = string
+    default     = "10.11.4"
+}
+
+variable "instance_class" {
+    description = "Instance class for RDS"
+    type        = string
+    default     = "db.t3.medium"
 }
