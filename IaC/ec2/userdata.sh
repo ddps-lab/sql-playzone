@@ -24,12 +24,24 @@ systemctl enable docker
 # Clone the repository
 cd /home/ubuntu
 git clone https://github.com/ddps-lab/sql-playzone.git -b swjeong
-cd sql-playzone/platform
+
+cd sql-playzone/platform/CTFd
+cp config.example.ini config.ini
+cd ..
 
 # Create .env file with database configuration
 cat > .env << EOF
 DATABASE_URL=mysql+pymysql://${DB_USERNAME}:${DB_PASSWORD}@${RDS_ENDPOINT}/ctfd
+SECRET_KEY=${CTFD_SECRET_KEY}
+UPLOAD_FOLDER="/var/uploads"
+REDIS_URL="redis://cache:6379"
+WORKERS=2
+LOG_FOLDER="/var/log/CTFd"
+ACCESS_LOG="/var/log/CTFd-access"
+ERROR_LOG="/var/log/CTFd-error"
+REVERSE_PROXY=true
+SQL_JUDGE_SERVER_URL="http://sql-judge:8080"
 EOF
 
 # Run docker-compose
-docker-compose up -d
+docker compose up -d

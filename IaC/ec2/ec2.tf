@@ -76,6 +76,7 @@ resource "aws_launch_template" "amd64" {
     DB_USERNAME  = var.db_username
     DB_PASSWORD  = var.db_password
     RDS_ENDPOINT = var.rds_endpoint
+    CTFD_SECRET_KEY = var.ctfd_secret_key
     UPLOAD_FOLDER="/var/uploads"
     REDIS_URL="redis://cache:6379"
     WORKERS=2
@@ -118,9 +119,10 @@ resource "aws_launch_template" "arm64" {
     DB_USERNAME  = var.db_username
     DB_PASSWORD  = var.db_password
     RDS_ENDPOINT = var.rds_endpoint
+    CTFD_SECRET_KEY = var.ctfd_secret_key
     UPLOAD_FOLDER="/var/uploads"
     REDIS_URL="redis://cache:6379"
-    WORKERS=2
+    WORKERS=1
     LOG_FOLDER="/var/log/CTFd"
     ACCESS_LOG="/var/log/CTFd-access"
     ERROR_LOG="/var/log/CTFd-error"
@@ -139,7 +141,7 @@ resource "aws_launch_template" "arm64" {
 # Auto Scaling Group
 resource "aws_autoscaling_group" "asg" {
   name                = "${var.prefix}-asg"
-  vpc_zone_identifier = var.private_subnet_ids
+  vpc_zone_identifier = var.public_subnet_ids
   target_group_arns   = [aws_lb_target_group.tg.arn]
   
   min_size         = var.asg_min_size
@@ -210,7 +212,7 @@ resource "aws_autoscaling_group" "asg" {
 
   tag {
     key                 = "Name"
-    value               = "${var.prefix}-asg-instance"
+    value               = "${var.prefix}-server"
     propagate_at_launch = true
   }
 }

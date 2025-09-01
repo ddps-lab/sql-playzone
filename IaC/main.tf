@@ -37,12 +37,12 @@ module "ec2" {
   prefix                           = var.prefix
   vpc_id                           = module.vpc.vpc.id
   public_subnet_ids                = module.vpc.public_subnet_ids
-  private_subnet_ids               = module.vpc.private_subnet_ids
   alb_security_group_id            = module.vpc.alb_security_group_id
   ec2_security_group_id            = module.vpc.ec2_security_group_id
   rds_endpoint                     = module.rds.rds_endpoint
   db_username                      = var.db_username
   db_password                      = var.db_password
+  ctfd_secret_key                  = var.ctfd_secret_key
   hosted_zone_id                   = var.hosted_zone_id
   domain_name                      = var.domain_name
   on_demand_base_capacity          = var.on_demand_base_capacity

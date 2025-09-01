@@ -23,3 +23,15 @@ variable "ssh_key_name" {
     type        = string
     default     = ""
 }
+
+variable "aws_profile" {
+  description = "AWS CLI profile name to use"
+  type        = string
+  default     = "default"
+}
+
+variable "ctfd_secret_key" {
+  description = "CTFd secret key"
+  type        = string
+  default     = ""
+}

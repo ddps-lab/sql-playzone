@@ -1,19 +1,13 @@
 variable "prefix" {
   description = "The prefix to use for all resources"
   type        = string
-  default     = "CTFd"
+  default     = "sql-playground"
 }
 
 variable "region" {
   description = "AWS region"
   type        = string
   default     = "ap-northeast-2"
-}
-
-variable "aws_profile" {
-  description = "AWS CLI profile name to use"
-  type        = string
-  default     = "ddpslab"
 }
 
 variable "vpc_cidr" {
@@ -52,7 +46,7 @@ variable "data_subnet_cidrs" {
 variable "engine_version" {
   description = "MariaDB engine version"
   type        = string
-  default     = "10.11.4"
+  default     = "10.11.14"
 }
 
 variable "database_instance_class" {
