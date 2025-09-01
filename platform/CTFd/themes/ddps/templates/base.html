@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>{{ title or Configs.ctf_name }}</title>
+  <title>DDPS Lab | {{ title or Configs.ctf_name }}</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="shortcut icon" href="{{ Configs.ctf_small_icon }}" type="image/x-icon">
@@ -37,27 +37,101 @@
       }
   </script>
 
+  <style>
+    :root {
+      --footer-height: 120px;
+    }
+    
+    @media (max-width: 767px) {
+      :root {
+        --footer-height: 200px; 
+      }
+    }
+    
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      position: relative;
+    }
+    
+    .main-wrapper {
+      min-height: calc(100vh - var(--footer-height));
+    }
+    
+    .footer-wrapper {
+      position: relative;
+      width: 100%;
+      min-height: var(--footer-height);
+      margin-top: auto;
+      z-index: 10;
+    }
+    
+  
+    @supports (display: flex) {
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+      
+      .main-wrapper {
+        flex: 1;
+      }
+    }
+  </style>
+
   {{ Configs.theme_header }}
 </head>
 <body>
 {% include "components/navbar.html" %}
 
-<main role="main">
-  {% block content %}
-  {% endblock %}
-</main>
+<div class="main-wrapper">
+  <main class="mb-0">
+    {% block content %}
+    {% endblock %}
+  </main>
+</div>
 
 {% include "components/snackbar.html" %}
 
-<footer class="footer">
-  <div class="container text-center">
-    <a href="https://ctfd.io" class="text-secondary">
-      <small class="text-muted">
-        {% trans %}Powered by CTFd{% endtrans %}
-      </small>
-    </a>
+{% if request.endpoint != 'views.sql_challenge_page' %}
+<footer class="footer-wrapper footer py-3 py-md-4 bg-body-tertiary border-top">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-12">
+        <div class="p-2 rounded shadow-sm overflow-hidden mb-2 mb-md-3 border border-opacity-25">
+          <div class="d-flex flex-column flex-md-row align-items-center gap-2 text-center text-md-start">
+            <div style="width: 20px; height: 20px; flex-shrink: 0;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 511 509" style="display: block;">
+                <path fill="#2F7DB6" d="M17.6983 16.4224c-21.15681 21.1568-21.15681 55.4624 0 76.6192.2471.2472.4943.4695.7167.692h-.0247L159.098 234.466l76.644-76.644L95.0343 17.1144c-.2225-.2472-.4696-.4943-.6921-.7168-21.1568-21.15677-55.4624-21.15677-76.6192 0"/>
+                <path fill="#00477F" d="M56.2058 508.442c-26.3471-.075-48.86329-18.958-53.5593-44.885L.916382 454.61v-22.145L109.988 323.344.916382 432.415V301.1h.395458l-.09886-94.242-.17302-88.977L109.839 226.68v74.42h.173v22.244l19.501-19.476L416.366 16.9663l.123.0494c.173-.2225.396-.3955.569-.6179 21.305-21.30513 55.857-21.30513 77.138 0 21.305 21.305 21.305 55.8579 0 77.1383-.717.6673-1.458 1.384-2.175 2.0513L94.8862 492.722l-.1731-.099c-7.8102 7.786-17.8201 12.976-28.6951 14.904-3.1636.569-6.3767.865-9.5898.89h-.2224v.025Z"/>
+                <path fill="#2F7DB6" d="M416.069 491.709c-1.112-1.063-2.101-2.224-3.09-3.386L277363 352.732l76.619-76.595 46.046 45.996 109.047 109.121v19.204c1.532 30.055-21.577 55.66-51.657 57.193-15.422.791-30.45-4.993-41.349-15.917v-.025Zm-16.066-169.6v-92.042l.173-.173h.297l108.898-108.429-.296 134.949v174.815l-109.047-109.12h-.025Z"/>
+              </svg>
+            </div>
+            <div style="flex: 1; min-width: 0;">
+              <p class="mb-0" style="font-size: 0.75rem; line-height: 1.2;">
+                An official web-service of the Hanyang University
+                <a href="https://ddps.cloud" class="text-decoration-none fw-bold text-primary">DDPS Lab</a>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-center text-center text-md-start">
+      <p class="small text-body m-0 lh-1 mb-2 mb-md-0">
+        © 2025 Hanyang University DDPS Lab. All Rights Reserved.
+        <a href="https://portal.hanyang.ac.kr/PiopAct/piopMainDaepyoWeb.do" class="text-secondary text-decoration-none" target="_blank" rel="noopener"> | Privacy Policy</a>
+      </p>
+      
+      <a href="https://ctfd.io" class="text-secondary text-decoration-none lh-1">
+        <small class="text-muted lh-1">{% trans %}Powered by CTFd{% endtrans %}</small>
+      </a>
+    </div>
+    </div>
   </div>
 </footer>
+{% endif %}
 
 {% include "components/notifications.html" %}
 

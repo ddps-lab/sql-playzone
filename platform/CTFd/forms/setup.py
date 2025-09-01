@@ -26,7 +26,8 @@ from CTFd.utils.config import get_themes
 
 class SetupForm(BaseForm):
     ctf_name = StringField(
-        _l("Event Name"), description=_l("The name of your CTF event/workshop")
+        _l("Event Name"), description=_l("The name of your CTF event/workshop"),
+        default="SQL PlayZone"
     )
     ctf_description = TextAreaField(
         _l("Event Description"), description=_l("Description for the CTF")
@@ -34,7 +35,7 @@ class SetupForm(BaseForm):
     user_mode = RadioField(
         _l("User Mode"),
         choices=[("teams", _l("Team Mode")), ("users", _l("User Mode"))],
-        default="teams",
+        default="users",
         description=_l(
             "Controls whether users join together in teams to play (Team Mode) or play as themselves (User Mode)"
         ),
@@ -76,8 +77,7 @@ class SetupForm(BaseForm):
         _l("Theme"),
         description=_l("CTFd Theme to use. Can be changed later."),
         choices=list(zip(get_themes(), get_themes())),
-        ## TODO: Replace back to DEFAULT_THEME (aka core) in CTFd 4.0
-        default="core-beta",
+        default="ddps",
         validators=[InputRequired()],
     )
     theme_color = HiddenField(
@@ -135,8 +135,9 @@ class SetupForm(BaseForm):
             (RegistrationVisibilityTypes.PUBLIC, "Public"),
             (RegistrationVisibilityTypes.PRIVATE, "Private"),
             (RegistrationVisibilityTypes.MLC, "MajorLeagueCyber Only"),
+            (RegistrationVisibilityTypes.GOOGLE_OAUTH_ONLY, "Google OAuth Only"),
         ],
-        default=RegistrationVisibilityTypes.PUBLIC,
+        default=RegistrationVisibilityTypes.GOOGLE_OAUTH_ONLY,
     )
 
     start = StringField(
@@ -152,6 +153,6 @@ class SetupForm(BaseForm):
         _l("Social Shares"),
         description="Control whether users can share links commemorating their challenge solves",
         choices=[("true", "Enabled"), ("false", "Disabled")],
-        default="true",
+        default="false",
     )
     submit = SubmitField(_l("Finish"))

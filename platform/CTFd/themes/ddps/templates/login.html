@@ -39,39 +39,83 @@
 
           {% if get_app_config('GOOGLE_CLIENT_ID') %}
             <a class="btn btn-secondary btn-lg btn-block w-100" href="{{ url_for('auth.google_login') }}">
-              <i class="fab fa-google"></i> Login with Google
+              <i class="fab fa-google"></i> Login with HYU Google Account
             </a>
 
             <hr>
+
+            <!-- Admin Login Toggle -->
+            <div class="text-center mb-3">
+              <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#adminLoginForm" aria-expanded="false" aria-controls="adminLoginForm">
+                <i class="fas fa-user-shield me-2"></i>Admin Login
+              </button>
+            </div>
+
+            <!-- Collapsible Admin Login Form -->
+            <div class="collapse" id="adminLoginForm">
+              <div class="card card-body border-secondary">
+                <small class="text-muted mb-3">
+                  <i class="fas fa-info-circle me-1"></i>Administrator access only
+                </small>
+                
+                {% with form = Forms.auth.LoginForm() %}
+                  <form method="post" accept-charset="utf-8">
+                    <div class="mb-3">
+                      <b>{{ form.name.label(class="form-label") }}</b>
+                      {{ form.name(class="form-control", value=name, autocomplete="username email") }}
+                    </div>
+
+                    <div class="mb-3">
+                      <b>{{ form.password.label(class="form-label") }}</b>
+                      {{ form.password(class="form-control", value=password, autocomplete="current-password") }}
+                    </div>
+
+                    <div class="row pt-3">
+                      <div class="col-6 col-md-8">
+                        <a class="align-middle" href="{{ url_for('auth.reset_password') }}">
+                          {% trans %}Forgot your password?{% endtrans %}
+                        </a>
+                      </div>
+
+                      <div class="col-6 col-md-4">
+                        {{ form.submit(class="btn btn-block btn-primary w-100") }}
+                      </div>
+                    </div>
+
+                    {{ form.nonce() }}
+                  </form>
+                {% endwith %}
+              </div>
+            </div>
+          {% else %}
+            {% with form = Forms.auth.LoginForm() %}
+              <form method="post" accept-charset="utf-8">
+                <div class="mb-3">
+                  <b>{{ form.name.label(class="form-label") }}</b>
+                  {{ form.name(class="form-control", value=name, autocomplete="username email") }}
+                </div>
+
+                <div class="mb-3">
+                  <b>{{ form.password.label(class="form-label") }}</b>
+                  {{ form.password(class="form-control", value=password, autocomplete="current-password") }}
+                </div>
+
+                <div class="row pt-3">
+                  <div class="col-6 col-md-8">
+                    <a class="align-middle" href="{{ url_for('auth.reset_password') }}">
+                      {% trans %}Forgot your password?{% endtrans %}
+                    </a>
+                  </div>
+
+                  <div class="col-6 col-md-4">
+                    {{ form.submit(class="btn btn-block btn-primary w-100") }}
+                  </div>
+                </div>
+
+                {{ form.nonce() }}
+              </form>
+            {% endwith %}
           {% endif %}
-
-          {% with form = Forms.auth.LoginForm() %}
-            <form method="post" accept-charset="utf-8">
-              <div class="mb-3">
-                <b>{{ form.name.label(class="form-label") }}</b>
-                {{ form.name(class="form-control", value=name, autocomplete="username email") }}
-              </div>
-
-              <div class="mb-3">
-                <b>{{ form.password.label(class="form-label") }}</b>
-                {{ form.password(class="form-control", value=password, autocomplete="current-password") }}
-              </div>
-
-              <div class="row pt-3">
-                <div class="col-6 col-md-8">
-                  <a class="align-middle" href="{{ url_for('auth.reset_password') }}">
-                    {% trans %}Forgot your password?{% endtrans %}
-                  </a>
-                </div>
-
-                <div class="col-6 col-md-4">
-                  {{ form.submit(class="btn btn-block btn-primary w-100") }}
-                </div>
-              </div>
-
-              {{ form.nonce() }}
-            </form>
-          {% endwith %}
         </div>
       </div>
     </div>

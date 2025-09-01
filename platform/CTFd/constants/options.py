@@ -41,3 +41,4 @@ class RegistrationVisibilityTypes(str, RawEnum):
     PUBLIC = "public"
     PRIVATE = "private"
     MLC = "mlc"
+    GOOGLE_OAUTH_ONLY = "google_oauth_only"

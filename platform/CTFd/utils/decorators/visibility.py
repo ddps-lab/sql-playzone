@@ -119,5 +119,8 @@ def check_registration_visibility(f):
             return f(*args, **kwargs)
         elif v == RegistrationVisibilityTypes.PRIVATE:
             abort(404)
+        elif v == RegistrationVisibilityTypes.GOOGLE_OAUTH_ONLY:
+            # Redirect to Google OAuth login instead of showing 404
+            return redirect(url_for("auth.google_login"))
 
     return _check_registration_visibility

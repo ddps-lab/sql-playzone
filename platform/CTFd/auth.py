@@ -15,7 +15,7 @@ from CTFd.utils import config, email, get_app_config, get_config
 from CTFd.utils import user as current_user
 from CTFd.utils import validators
 from CTFd.utils.config import can_send_mail, is_teams_mode
-from CTFd.utils.config.integrations import mlc_registration
+from CTFd.utils.config.integrations import mlc_registration, google_oauth_only_registration
 from CTFd.utils.config.visibility import registration_visible
 from CTFd.utils.crypto import verify_password
 from CTFd.utils.decorators import ratelimit
@@ -743,7 +743,7 @@ def google_callback():
                 user_data = userinfo_response.json()
                 
                 user_email = user_data.get("email")
-                user_name = user_data.get("name", user_email.split("@")[0])
+                user_name = user_data.get("name", user_email.split("@")[0]).strip()
                 google_id = user_data.get("id")
                 
                 # Check if user exists
@@ -760,10 +760,10 @@ def google_callback():
                         )
                     
                     # Check if registration is allowed
-                    if registration_visible():
+                    if registration_visible() or google_oauth_only_registration():
                         # Generate unique username if needed
                         user_base_name = user_name
-                        unique_name = user_name.split("|")[0]
+                        unique_name = user_name.split("|")[0].strip()
                         counter = 1
                         
                         while Users.query.filter_by(name=unique_name).first():

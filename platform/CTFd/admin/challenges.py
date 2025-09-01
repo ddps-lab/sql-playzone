@@ -61,8 +61,11 @@ def challenges_detail(challenge_id):
     )
 
     update_script = url_for(
-        "views.static_html", route=challenge_class.scripts["update"].lstrip("/")
+        "views.static_html",
+        route=challenge_class.scripts["update"].split("?")[0].lstrip("/"),
+        **dict(param.split("=", 1) for param in challenge_class.scripts["update"].split("?")[1].split("&"))
     )
+
     return render_template(
         "admin/challenges/challenge.html",
         update_template=update_j2,

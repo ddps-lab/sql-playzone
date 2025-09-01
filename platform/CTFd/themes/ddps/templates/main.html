@@ -1,0 +1,618 @@
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+
+<!-- Gradient Background Wrapper -->
+<div class="gradient-wrapper">
+    
+<style>
+    /* Light mode variables */
+    :root {
+        --gradient-start: #667eea;
+        --gradient-end: #764ba2;
+        --card-bg: rgba(255, 255, 255, 0.95);
+        --feature-card-bg: rgba(255, 255, 255, 0.9);
+        --text-muted-custom: #6b7280;
+        --border-color: rgba(0, 0, 0, 0.1);
+        --shadow-color: rgba(0, 0, 0, 0.1);
+        --badge-bg: rgba(255, 255, 255, 0.9);
+        --network-stroke: #667eea;
+        --database-fill: #667eea;
+        --check-fill: #10b981;
+    }
+
+    /* Dark mode variables */
+    [data-bs-theme="dark"] {
+        --gradient-start: #1e1b4b;
+        --gradient-end: #312e81;
+        --card-bg: rgba(30, 30, 40, 0.95);
+        --feature-card-bg: rgba(40, 40, 50, 0.9);
+        --text-muted-custom: #9ca3af;
+        --border-color: rgba(255, 255, 255, 0.1);
+        --shadow-color: rgba(0, 0, 0, 0.5);
+        --badge-bg: rgba(60, 60, 70, 0.9);
+        --network-stroke: #a78bfa;
+        --database-fill: #a78bfa;
+        --check-fill: #34d399;
+    }
+
+    /* Gradient wrapper styles */
+    .gradient-wrapper {
+        background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 100%);
+        min-height: 100vh;
+        position: relative;
+        overflow: hidden;
+        transition: background 0.3s ease;
+    }
+
+    /* Animated Background Patterns */
+    .bg-pattern {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        top: 0;
+        left: 0;
+        z-index: 1;
+        opacity: 0.03;
+        background-image: 
+            repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(255,255,255,.1) 35px, rgba(255,255,255,.1) 70px),
+            repeating-linear-gradient(-45deg, transparent, transparent 35px, rgba(255,255,255,.05) 35px, rgba(255,255,255,.05) 70px);
+        animation: pattern-move 60s linear infinite;
+    }
+
+    @keyframes pattern-move {
+        0% { transform: translate(0, 0); }
+        100% { transform: translate(70px, 70px); }
+    }
+
+    /* Interactive Background Elements */
+    .bg-animation {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+        opacity: 0.15;
+        pointer-events: none;
+    }
+
+    /* Main content container */
+    .main-content {
+        position: relative;
+        z-index: 2;
+    }
+
+    .floating-shape {
+        animation: float 20s infinite ease-in-out;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .floating-shape:hover {
+        transform: scale(1.2) rotate(45deg);
+        opacity: 0.8;
+    }
+
+    .floating-shape:nth-child(2) {
+        animation-delay: -5s;
+        animation-duration: 25s;
+    }
+
+    .floating-shape:nth-child(3) {
+        animation-delay: -10s;
+        animation-duration: 30s;
+    }
+
+    /* Interactive Particles */
+    .particle {
+        position: absolute;
+        width: 4px;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.6);
+        border-radius: 50%;
+        pointer-events: none;
+        animation: particle-float 8s infinite linear;
+    }
+
+    .particle:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 12s; }
+    .particle:nth-child(2) { left: 20%; animation-delay: 2s; animation-duration: 15s; }
+    .particle:nth-child(3) { left: 30%; animation-delay: 4s; animation-duration: 10s; }
+    .particle:nth-child(4) { left: 40%; animation-delay: 6s; animation-duration: 18s; }
+    .particle:nth-child(5) { left: 50%; animation-delay: 8s; animation-duration: 14s; }
+    .particle:nth-child(6) { left: 60%; animation-delay: 10s; animation-duration: 16s; }
+    .particle:nth-child(7) { left: 70%; animation-delay: 12s; animation-duration: 11s; }
+    .particle:nth-child(8) { left: 80%; animation-delay: 14s; animation-duration: 13s; }
+    .particle:nth-child(9) { left: 90%; animation-delay: 16s; animation-duration: 17s; }
+
+    @keyframes particle-float {
+        0% {
+            transform: translateY(100vh) scale(0);
+            opacity: 0;
+        }
+        10% {
+            opacity: 1;
+            transform: translateY(90vh) scale(1);
+        }
+        90% {
+            opacity: 1;
+            transform: translateY(10vh) scale(1);
+        }
+        100% {
+            transform: translateY(-10vh) scale(0);
+            opacity: 0;
+        }
+    }
+
+    /* Glowing Orbs */
+    .glow-orb {
+        position: absolute;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.1) 70%, transparent 100%);
+        animation: orb-pulse 4s infinite ease-in-out;
+    }
+
+    .glow-orb:nth-child(1) {
+        width: 100px;
+        height: 100px;
+        top: 20%;
+        left: 15%;
+        animation-delay: 0s;
+    }
+
+    .glow-orb:nth-child(2) {
+        width: 150px;
+        height: 150px;
+        top: 60%;
+        right: 10%;
+        animation-delay: 2s;
+    }
+
+    .glow-orb:nth-child(3) {
+        width: 80px;
+        height: 80px;
+        bottom: 30%;
+        left: 25%;
+        animation-delay: 4s;
+    }
+
+    @keyframes orb-pulse {
+        0%, 100% {
+            transform: scale(1);
+            opacity: 0.3;
+        }
+        50% {
+            transform: scale(1.2);
+            opacity: 0.6;
+        }
+    }
+
+    /* Interactive Grid */
+    .interactive-grid {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+        opacity: 0.05;
+        background-image: 
+            linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+        background-size: 50px 50px;
+        animation: grid-move 20s infinite linear;
+    }
+
+    @keyframes grid-move {
+        0% {
+            transform: translate(0, 0);
+        }
+        100% {
+            transform: translate(50px, 50px);
+        }
+    }
+
+    @keyframes float {
+        0%, 100% { 
+            transform: translateY(0) translateX(0) rotate(0deg) scale(1); 
+        }
+        25% { 
+            transform: translateY(-30px) translateX(20px) rotate(90deg) scale(1.1); 
+        }
+        50% { 
+            transform: translateY(20px) translateX(-20px) rotate(180deg) scale(0.9); 
+        }
+        75% { 
+            transform: translateY(-20px) translateX(30px) rotate(270deg) scale(1.05); 
+        }
+    }
+
+    /* Database Icon Animation */
+    .database-icon {
+        animation: pulse-rotate 4s infinite ease-in-out;
+        filter: drop-shadow(0 4px 6px var(--shadow-color));
+    }
+
+    @keyframes pulse-rotate {
+        0%, 100% { 
+            transform: scale(1) rotateY(0deg); 
+        }
+        25% { 
+            transform: scale(1.05) rotateY(90deg); 
+        }
+        50% { 
+            transform: scale(1.1) rotateY(180deg); 
+        }
+        75% { 
+            transform: scale(1.05) rotateY(270deg); 
+        }
+    }
+
+    /* Network Animation */
+    .network-line {
+        stroke-dasharray: 100;
+        stroke-dashoffset: 100;
+        animation: dash 3s infinite linear;
+        filter: drop-shadow(0 0 3px var(--network-stroke));
+    }
+
+    @keyframes dash {
+        to { stroke-dashoffset: 0; }
+    }
+
+    /* Pulse Circles */
+    .pulse-circle {
+        animation: pulse-glow 2s infinite;
+    }
+
+    @keyframes pulse-glow {
+        0%, 100% { 
+            r: 8;
+            opacity: 1;
+        }
+        50% { 
+            r: 12;
+            opacity: 0.6;
+        }
+    }
+
+    /* Glow Effect */
+    .glow {
+        animation: glow 3s ease-in-out infinite alternate;
+    }
+
+    @keyframes glow {
+        from { 
+            filter: drop-shadow(0 0 10px rgba(100, 126, 234, 0.5)); 
+        }
+        to { 
+            filter: drop-shadow(0 0 30px rgba(100, 126, 234, 0.8)) 
+                    drop-shadow(0 0 40px rgba(100, 126, 234, 0.4)); 
+        }
+    }
+
+    /* Card Styles */
+    .main-card {
+        background: var(--card-bg);
+        backdrop-filter: blur(20px);
+        border-radius: 32px;
+        box-shadow: 
+            0 20px 60px var(--shadow-color),
+            inset 0 1px 0 rgba(255,255,255,0.1);
+        border: 1px solid var(--border-color);
+        transition: all 0.3s ease;
+    }
+
+    .main-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 
+            0 30px 80px var(--shadow-color),
+            inset 0 1px 0 rgba(255,255,255,0.2);
+    }
+
+    .feature-card {
+        background: var(--feature-card-bg);
+        backdrop-filter: blur(20px);
+        border-radius: 24px;
+        border: 1px solid var(--border-color);
+        transition: all 0.3s ease;
+        box-shadow: 0 10px 40px var(--shadow-color);
+    }
+
+    .feature-card:hover {
+        transform: translateY(-8px) scale(1.02);
+        box-shadow: 0 20px 60px var(--shadow-color);
+    }
+
+    /* Badge Styles */
+    .badge-custom {
+        background: var(--badge-bg);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--border-color);
+        transition: all 0.3s ease;
+        font-weight: 500;
+        color: #111 !important;
+    }
+
+    [data-bs-theme="dark"] .badge-custom {
+        color: #fff !important;
+    }
+
+    .badge-custom:hover {
+        transform: translateY(-2px) scale(1.05);
+        box-shadow: 0 5px 15px var(--shadow-color);
+    }
+
+    /* Loading Dots Animation */
+    .loading-dots {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .loading-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+        animation: bounce 1.4s infinite ease-in-out;
+    }
+
+    .loading-dot:nth-child(1) { animation-delay: -0.32s; }
+    .loading-dot:nth-child(2) { animation-delay: -0.16s; }
+    .loading-dot:nth-child(3) { animation-delay: 0; }
+
+    @keyframes bounce {
+        0%, 80%, 100% { 
+            transform: scale(0.8);
+            opacity: 0.5;
+        }
+        40% { 
+            transform: scale(1.2);
+            opacity: 1;
+        }
+    }
+
+    /* Typography Enhancement */
+    .display-5 {
+        background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+    }
+
+    /* Dark mode title gradient override */
+    [data-bs-theme="dark"] .display-5 {
+        background: linear-gradient(135deg, #a78bfa, #c4b5fd);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    /* Check Icon Animation */
+    .check-icon {
+        animation: draw-check 0.5s ease-out forwards;
+        animation-delay: 0.3s;
+        stroke-dasharray: 30;
+        stroke-dashoffset: 30;
+    }
+
+    @keyframes draw-check {
+        to {
+            stroke-dashoffset: 0;
+        }
+    }
+
+    /* Responsive Adjustments */
+    @media (max-width: 768px) {
+        .main-card {
+            padding: 2rem !important;
+            border-radius: 24px;
+        }
+        
+        .display-5 {
+            font-size: 2rem;
+        }
+    }
+</style>
+
+    <!-- Background Pattern -->
+    <div class="bg-pattern"></div>
+
+    <!-- Interactive Grid -->
+    <div class="interactive-grid"></div>
+
+    <!-- Glowing Orbs -->
+    <div class="glow-orb"></div>
+    <div class="glow-orb"></div>
+    <div class="glow-orb"></div>
+
+    <!-- Floating Particles -->
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+
+    <!-- Animated Background SVG -->
+    <svg class="bg-animation" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:var(--gradient-start);stop-opacity:0.1" />
+                <stop offset="100%" style="stop-color:var(--gradient-end);stop-opacity:0.1" />
+            </linearGradient>
+        </defs>
+        <g class="floating-shape">
+            <rect x="10%" y="20%" width="100" height="100" fill="url(#grad1)" rx="20" />
+        </g>
+        <g class="floating-shape">
+            <circle cx="80%" cy="60%" r="60" fill="url(#grad1)" />
+        </g>
+        <g class="floating-shape">
+            <polygon points="200,100 250,200 150,200" fill="url(#grad1)" />
+        </g>
+    </svg>
+
+    <!-- Main Content -->
+    <div class="main-content container-fluid min-vh-100 d-flex align-items-center py-5">
+        <div class="container">
+            <div class="row align-items-center g-5">
+                <!-- Left Column - Main Content -->
+                <div class="col-lg-7">
+                    <div class="main-card p-5">
+                        <h6 class="text-uppercase fw-bold small mb-3 opacity-75">
+                            <i class="bi bi-mortarboard-fill me-2"></i>HANYANG UNIVERSITY
+                        </h6>
+                        <h4 class="fw-bold mb-2">
+                            Department of Data Science
+                        </h4>
+                        <h5 class="text-muted mb-4">Database Systems & Applications</h5>
+                        <h1 class="display-5 fw-bold mb-4">SQL Practice Platform</h1>
+                        
+                        <p class="lead mb-5 opacity-75">
+                            Master SQL through hands-on practice in a secure cloud environment. 
+                            Experience real-world database challenges with automatic grading and instant feedback.
+                        </p>
+                        
+                        <!-- Feature Pills with Gradient Icons -->
+                        <div class="d-flex flex-wrap gap-3 mb-4">
+                            <span class="badge badge-custom px-4 py-2 rounded-pill">
+                                <i class="bi bi-cloud-fill text-primary me-2"></i>Cloud Computing
+                            </span>
+                            <span class="badge badge-custom px-4 py-2 rounded-pill">
+                                <i class="bi bi-check2-circle text-success me-2"></i>Auto Grading
+                            </span>
+                            <span class="badge badge-custom px-4 py-2 rounded-pill">
+                                <i class="bi bi-graph-up text-info me-2"></i>Progress Tracking
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Right Column - Interactive Features -->
+                <div class="col-lg-5">
+                    <!-- Hanyang University Logo -->
+                    <div class="text-center mb-4">
+                        <svg width="200" height="200" viewBox="0 0 277.8 277.8" class="glow">
+                            <defs>
+                                <style>
+                                    .hyu-logo {
+                                        fill: #ffffff;
+                                        transition: fill 0.3s ease;
+                                        opacity: 0.9;
+                                        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+                                    }
+                                    [data-bs-theme="dark"] .hyu-logo {
+                                        fill: #a78bfa;
+                                        opacity: 0.9;
+                                        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+                                    }
+                                </style>
+                            </defs>
+                            <g>
+                                <path class="hyu-logo" d="M0,138.9c0,76.59,62.31,138.89,138.9,138.89s138.89-62.31,138.89-138.89S215.49,0,138.9,0,0,62.32,0,138.9M1.07,138.9C1.07,62.9,62.9,1.07,138.9,1.07s137.82,61.83,137.82,137.83-61.83,137.83-137.82,137.83S1.07,214.91,1.07,138.9"/>
+                                <path class="hyu-logo" d="M174.06,93.67v4.6h-44.79v-4.57h-21.52v4.57h-34.06v19.29s2.19,0,3.31,0c-3.39,4.29-5.06,9.4-5.06,16.02,0,5.36,2.32,11.28,6.21,15.83,4.54,5.87,12.5,9.54,20.75,9.54h41.65v-4.17h2.37v4.06l61.56.1-.03-19.99h-8.86v-20.92h8.9l.04-19.76h-8.63v-4.65l-21.83.05ZM194.78,94.72v4.65h8.63c0,1-.04,16.56-.04,17.56h-8.89v23.12h8.86c0,1.01.03,16.78.03,17.79-1.07,0-58.29-.1-59.36-.1v-4.06h-4.56v4.17h-40.56c-7.92,0-15.55-3.5-19.9-9.13-3.74-4.37-5.96-10.03-5.96-15.13,0-6.8,1.73-11.95,5.44-16.22l.79-.91s-3.68.01-4.49.02v-17.09h34.06v-4.57h19.31v4.57h46.99v-4.6c1.01,0,18.61-.04,19.63-.04"/>
+                                <path class="hyu-logo" d="M162.28,119.09c0-3.49-2.25-5.83-5.02-5.83s-5.01,2.34-5.01,5.83,2.26,5.86,5.01,5.86,5.02-2.27,5.02-5.86M113.46,123.01c0-2.99-2.05-5.24-4.6-5.24s-4.59,2.26-4.59,5.24,2.06,5.25,4.59,5.25,4.6-2.21,4.6-5.25M163.02,132.85c-3.15,0-6,2.04-6,5.43s2.85,5.42,6,5.42,6-2.06,6-5.42-2.83-5.43-6-5.43M199.97,114.1v-11.33h-8.73v-4.42h-12.77v4.42h-53.55v-4.42h-12.77v4.42h-33.61v11.33h10.11c-7.01,3.06-11.54,9.75-11.54,19.52,0,13.11,12.33,20.58,22.26,20.58h37.08v-3.98h10.49v3.98h53.02v-11.33h-8.73v-28.76h8.73ZM103.79,110.1h10.16v2.99h-10.16v-2.99ZM99.4,123.01c0-2.3,1.35-4.34,3.52-5.68h-3.6v-3h19.09v3h-3.6c2.16,1.33,3.51,3.37,3.51,5.68,0,4-4.07,7.26-9.46,7.26s-9.46-3.25-9.46-7.26M127.1,145.59l-17.8-.02c-3.67,0-5.93-2.12-5.93-5.6v-6.93h5.64v9.55h18.09v3ZM130.99,121.79h-4.23v12.72h-5.19v-24.41h5.19v8.7h4.23v2.99ZM146.95,119.09c0-4.64,4.45-8.41,10.3-8.41s10.32,3.77,10.32,8.41-4.44,8.42-10.32,8.42-10.3-3.76-10.3-8.42M178.62,117.49h-4.4v4.3h4.4v2.99h-4.4v13.5h-.01c-.04,4.57-4.97,8.3-11.18,8.3s-11.14-3.73-11.18-8.3c.04-4.58,4.97-8.3,11.18-8.3,2.21,0,4.27.47,6,1.3v-21.18h5.2v4.39h4.4v3Z"/>
+                                <path class="hyu-logo" d="M139.42,7.63C66.94,7.35,7.93,65.88,7.64,138.38c-.28,72.5,58.26,131.49,130.74,131.78,72.49.29,131.49-58.24,131.77-130.74.29-72.5-58.25-131.5-130.74-131.79M260.14,120.83l-10.13,4v.07s10.77,1.17,10.77,1.17l.36,4.56-14.5-3.39-8.86,1.11-.58-4.44,8.71-1.08,13.44-6.73.79,4.73ZM249.72,158.42c-.04,3.57-2.32,6.44-2.32,6.44,0,0-2.23-2.91-2.19-6.48.05-3.57,2.33-6.44,2.33-6.44,0,0,2.22,2.93,2.18,6.49M243.41,177.27s-3.78-3.7-5.03-9.08c-1.24-5.37.22-9.12.22-9.12,0,0,3.86,2.96,5.1,8.35,1.26,5.36-.29,9.85-.29,9.85M235.57,193.11s-3.09-4.32-3.38-9.82c-.29-5.51,1.79-8.94,1.79-8.94,0,0,3.3,3.58,3.58,9.09.3,5.52-1.99,9.68-1.99,9.68M258.04,109.9l-3.95,1.21-1.06-3.94-18.19,5.59-1.31-4.26,18.2-5.59-1.29-3.85,3.94-1.2,3.67,12.03ZM251.17,89.9l-20.89,9.74-1.87-4.05,20.89-9.73,1.87,4.04ZM138.54,230.51c-50.58-.2-91.44-41.38-91.24-91.97.2-50.59,41.38-91.44,91.97-91.24,50.58.2,91.42,41.38,91.22,91.97-.19,50.58-41.37,91.44-91.95,91.24M206.81,223.53c-2.18,5.18-6.1,8-6.1,8,0,0-.93-5.32,1.23-10.52,2.16-5.17,5.58-7.41,5.58-7.41,0,0,1.45,4.76-.71,9.94M193.06,232.36c-3.26,4.58-7.74,6.42-7.74,6.42,0,0,.3-5.4,3.57-9.96,3.27-4.56,7.12-5.96,7.12-5.96,0,0,.34,4.95-2.95,9.5M93.31,238.79s-4.48-1.84-7.75-6.42c-3.28-4.55-2.94-9.5-2.94-9.5,0,0,3.85,1.4,7.12,5.96,3.28,4.56,3.57,9.96,3.57,9.96M77.92,231.52s-3.92-2.82-6.1-8c-2.16-5.18-.71-9.94-.71-9.94,0,0,3.43,2.25,5.59,7.41,2.16,5.2,1.22,10.52,1.22,10.52M233.47,72.05c3.1-1.99,6.99-1.59,9.6,2.44.8,1.26,1.24,2.69,1.26,3.48l-3.61,1.47c0-.75-.23-1.79-.93-2.88-1.03-1.6-2.5-1.75-3.53-1.08-1.14.73-1.38,1.7-1.29,4.6.09,3.54-1.24,5.73-3.28,7.04-3.52,2.26-7.52,1.16-9.95-2.62-.99-1.54-1.57-3.32-1.6-4.18l3.59-1.54c.06,1.04.6,2.56,1.3,3.64,1.14,1.78,2.61,2.06,3.87,1.24,1.4-.91,1.53-2.21,1.54-4.51-.09-3.67,1.29-5.98,3.04-7.1M228.43,55.28c1.66,1.79,2.8,3.69,2.83,5.72.04,1.86-.81,3.22-2.26,4.56-1.8,1.67-4.23,2.3-6.62,1.33l-.05.04c.62,1.57.08,3.14-1.42,5.13-1.57,2.06-3.34,4.75-3.67,5.62l-3.06-3.73c.29-.63,1.63-2.58,3.25-4.55,1.81-2.26,1.92-3.33.9-4.43l-.44-.47-6.7,6.23-3.19-3.14,16.98-15.76c1.01.98,2.3,2.2,3.45,3.45M216.68,44.17l-2.41,3.17-4.4-3.31-3.18,4.21,4.18,3.16-2.23,2.96-4.19-3.16-3.73,4.94,4.73,3.57-2.39,3.2-8.28-6.25,13.94-18.5,7.96,6ZM187.76,26.48l4.48,2.02-5.71,17.36.06.03,10.63-14.82,4.23,2.44-15.17,18-4.41-2.26,5.88-22.76ZM175.97,22.08l4.23,1.43-7.45,21.91-4.22-1.44,7.44-21.9ZM152.57,17.1l3.98.5,3.32,16.55h.06s2.19-15.62,2.19-15.62l3.87.81-3.89,22.84-3.97-.83-3.12-16.53h-.06s-2.36,15.55-2.36,15.55l-3.91-.46,3.91-22.83ZM132.52,16.49l.5,14.96c.12,3.37,1.18,4.35,2.33,4.32,1.29-.04,2.18-1,2.06-4.47l-.53-14.94,4.48.03.48,13.98c.2,5.88-1.91,9.15-6.32,9.3-4.8.17-6.78-3.07-6.98-8.81l-.48-14.03,4.46-.34ZM103.97,21.28c1.66-.52,2.99-.6,3.78-.49l.42,3.9c-.71-.1-1.57-.03-2.65.31-2.88.93-4.55,3.64-2.72,9.35,1.68,5.25,4.33,6.47,6.31,5.84.39-.13.66-.25.81-.36l-1.7-5.28-1.94.62-1.12-3.47,5.87-1.89,3.74,11.68c-.81.69-2.69,1.72-4.28,2.23-2.5.8-4.61.69-6.54-.3-2.45-1.21-4.51-4.13-5.65-7.91-2.45-7.97,1.03-12.73,5.66-14.22M77.14,33.03l7.51,6.2c1.45,1.22,3.85,3.23,5.39,4.67l.06-.02c-1.29-2.05-3.49-5.39-5.53-9.08l-2.49-4.51,3.5-1.78,11.27,20.3-3.65,1.78-7.4-6c-1.6-1.33-3.92-3.35-5.37-4.92l-.06.04c1.21,1.98,3.07,4.99,5.32,9.04l2.56,4.62-3.36,2.06-11.23-20.28,3.49-2.11ZM62.12,43.41l18.6,14.9-3.52,2.68-4.24-3.48-3.15,2.66,2.69,4.78-3.2,3-11.26-21.1,4.07-3.45ZM44.04,61.32l5.33,2.41c1.39.64,2.96,1.41,4.48,2.25l.04-.05c-1.08-1.29-2.12-2.66-3.1-4.03l-3.3-4.6,3.11-3.36,7.31,12.89,6.88,5.85-2.9,3.39-6.74-5.74-14.06-5.33,2.94-3.69ZM31.31,80.18l16.82,2.66.04-.06-14.01-7.48,2.09-3.34,20.14,11.5-2.23,3.46-16.29-2.56-.19-.09,13.69,7.52-1.77,3.52-20.17-11.55,1.88-3.58ZM23.8,96.83l23.59,3.19-1.56,4.07-5.28-.75-1.32,3.91,4.64,2.64-1.22,4.24-20.53-12.38,1.68-4.91ZM46.45,183.29c-.3,5.5-3.38,9.82-3.38,9.82,0,0-2.29-4.15-2.01-9.68.3-5.5,3.6-9.09,3.6-9.09,0,0,2.07,3.43,1.79,8.94M17.2,124.9l9.28,1.21.61-4.62-9.35-1.21.82-4.42,22.97,3.01-.82,4.42-9.52-1.26-.61,4.62,9.51,1.26-.35,4.42-22.98-3.01.43-4.42ZM40.26,168.18c-1.25,5.38-5.04,9.08-5.04,9.08,0,0-1.54-4.49-.29-9.85,1.24-5.38,5.11-8.35,5.11-8.35,0,0,1.46,3.75.22,9.12M33.44,158.37c.03,3.57-2.2,6.48-2.2,6.48,0,0-2.28-2.86-2.33-6.44-.04-3.56,2.19-6.49,2.19-6.49,0,0,2.29,2.88,2.34,6.44M18.21,160.9s5.84,1.03,10.14,5.9c4.3,4.87,5.19,11.12,5.19,11.12,0,0-6.09-1.64-10.39-6.51-4.31-4.87-4.94-10.51-4.94-10.51M23.46,180.08s5.94,0,11.03,4.04c5.08,4.06,7.04,10.06,7.04,10.06,0,0-6.29-.57-11.38-4.63-5.08-4.05-6.69-9.48-6.69-9.48M53.63,213.53c-.5,3.45-2.74,7.29-4.77,6.99-2.05-.29-3.12-4.61-2.64-8.06.26-1.66.84-3.1,1.62-4.13-1.2.46-2.76.62-4.41.39-3.46-.49-7.31-2.75-7.01-4.79.3-2.03,4.62-3.1,8.07-2.6,1.66.24,3.11.83,4.12,1.6-.45-1.2-.62-2.76-.38-4.41.5-3.46,2.74-7.31,4.78-7.01,2.04.3,3.12,4.62,2.62,8.07-.24,1.66-.83,3.1-1.62,4.12,1.21-.46,2.76-.62,4.42-.37,3.45.48,7.3,2.73,7.02,4.77-.3,2.04-4.62,3.12-8.09,2.61-1.65-.23-3.1-.82-4.12-1.61.46,1.21.62,2.77.38,4.43M64.84,233.61c-5.99-1.38-9.57-5.33-9.57-5.33,0,0,5.05-2.43,11.02-1.07,5.98,1.38,10.1,5.68,10.1,5.68,0,0-5.59,2.08-11.55.72M81.63,243.84c-5.85.02-10.03-2.89-10.03-2.89,0,0,4.16-3.34,10-3.35,5.85-.03,10.6,3.08,10.6,3.08,0,0-4.74,3.14-10.58,3.16M113.45,245.97c-1.46.72-2.95,1.05-4.23.99,1.04.72,2.04,1.88,2.75,3.34,1.52,3.07,1.84,7.41.03,8.29-1.81.91-5.07-2-6.58-5.05-.73-1.48-1.04-2.98-.99-4.23-.72,1.03-1.88,2.03-3.36,2.75-3.06,1.51-7.4,1.82-8.3.01-.89-1.8,2-5.06,5.07-6.58,1.47-.73,2.96-1.03,4.23-.98-1.04-.73-2.02-1.88-2.76-3.35-1.5-3.06-1.82-7.41-.01-8.3,1.81-.9,5.06,2,6.58,5.07.72,1.46,1.04,2.96.98,4.21.72-1.02,1.87-2.03,3.35-2.75,3.07-1.51,7.41-1.83,8.31-.02.89,1.82-2.01,5.07-5.08,6.58M138.91,256.43c-2.57,0-4.65-2.08-4.65-4.65s2.08-4.63,4.65-4.63,4.64,2.08,4.64,4.63-2.08,4.65-4.64,4.65M185.84,252.08c-.89,1.81-5.25,1.49-8.29-.01-1.47-.72-2.64-1.72-3.36-2.75.06,1.26-.27,2.75-1,4.23-1.5,3.05-4.76,5.96-6.56,5.05-1.82-.88-1.49-5.22.02-8.29.72-1.46,1.71-2.62,2.74-3.34-1.27.06-2.75-.27-4.23-.99-3.07-1.5-5.97-4.76-5.07-6.58.88-1.81,5.23-1.49,8.3.02,1.47.72,2.63,1.73,3.35,2.75-.07-1.26.26-2.75.98-4.21,1.51-3.07,4.76-5.97,6.57-5.07,1.81.89,1.49,5.24-.02,8.3-.73,1.47-1.71,2.62-2.75,3.35,1.26-.05,2.76.25,4.22.98,3.07,1.52,5.97,4.77,5.07,6.58M197.01,243.84c-5.83-.01-10.57-3.16-10.57-3.16,0,0,4.75-3.11,10.6-3.08,5.85,0,10.01,3.35,10.01,3.35,0,0-4.19,2.91-10.04,2.89M213.8,233.61c-5.97,1.36-11.55-.72-11.55-.72,0,0,4.12-4.31,10.1-5.68,5.96-1.36,11.02,1.07,11.02,1.07,0,0-3.58,3.96-9.57,5.33M235.19,208.71c-1.64.24-3.2.08-4.4-.39.78,1.04,1.38,2.48,1.62,4.13.5,3.45-.58,7.77-2.61,8.06-2.05.3-4.29-3.54-4.78-6.99-.24-1.66-.08-3.21.38-4.43-1.03.78-2.48,1.38-4.13,1.61-3.46.51-7.78-.57-8.07-2.61-.29-2.04,3.55-4.28,7.02-4.77,1.65-.25,3.21-.09,4.41.37-.79-1.02-1.38-2.47-1.62-4.12-.5-3.45.57-7.78,2.62-8.07,2.04-.29,4.27,3.55,4.78,7.01.24,1.65.06,3.21-.38,4.41,1.02-.78,2.46-1.37,4.12-1.6,3.45-.5,7.78.57,8.07,2.6.3,2.04-3.55,4.29-7.02,4.79M248.47,189.55c-5.08,4.05-11.37,4.63-11.37,4.63,0,0,1.96-6,7.05-10.06,5.1-4.04,11.03-4.04,11.03-4.04,0,0-1.6,5.43-6.7,9.48M255.49,171.41c-4.31,4.87-10.41,6.51-10.41,6.51,0,0,.89-6.24,5.19-11.12,4.32-4.87,10.16-5.9,10.16-5.9,0,0-.64,5.64-4.94,10.51M104.02,242.42c-1.82.9-2.58,3.12-1.69,4.95.92,1.83,3.14,2.57,4.97,1.66,1.83-.89,2.58-3.12,1.68-4.93-.9-1.84-3.11-2.59-4.96-1.69M54.67,206.55c.29-2.06-1.14-3.97-3.19-4.28-2.06-.29-3.99,1.14-4.27,3.21-.31,2.06,1.12,3.98,3.19,4.28,2.06.29,3.98-1.14,4.27-3.21M27.18,100.83l-.04.09c1.38.72,3.52,1.81,4.71,2.46l4.24,2.33,1.04-3.09-4.79-.83c-1.39-.22-3.65-.66-5.17-.96M174.61,242.42c-1.84-.9-4.05-.15-4.96,1.69-.9,1.82-.14,4.05,1.69,4.93,1.82.91,4.04.17,4.95-1.66.9-1.84.14-4.05-1.69-4.95M66.73,51.95c-1.08-.92-2.79-2.45-3.93-3.5l-.08.07c.8,1.32,2.08,3.36,2.76,4.53l2.43,4.19,2.49-2.11-3.67-3.18ZM227.16,202.27c-2.05.31-3.49,2.22-3.19,4.28.3,2.07,2.2,3.5,4.27,3.21,2.07-.3,3.5-2.22,3.2-4.28-.29-2.07-2.21-3.5-4.27-3.21M225.64,62.55c1.42-1.32,1.91-2.84.59-4.36-.26-.28-.58-.58-.81-.69l-5.03,4.67.54.57c1.32,1.42,3.22,1.18,4.7-.19"/>
+                                <path class="hyu-logo" d="M120.56,191.26l.37.21c0,.12.02.24.05.41.02.16.08.31.16.42.21.3.49.56.84.77.36.22.73.4,1.14.53.4.14.82.25,1.22.3.41.06.8.09,1.13.09,3.23,0,4.96-1.83,5.18-5.46-.88.49-1.76.9-2.62,1.25-.88.35-1.79.52-2.75.52-.75,0-1.52-.11-2.31-.31-.79-.21-1.5-.53-2.13-.97-.64-.44-1.16-1.01-1.56-1.7-.4-.69-.61-1.52-.61-2.5,0-1.17.23-2.18.71-3.01.45-.83,1.07-1.52,1.82-2.06.75-.54,1.59-.93,2.51-1.19.93-.26,1.84-.38,2.76-.38,1.14,0,2.19.21,3.14.64.94.42,1.77,1.03,2.45,1.8.68.77,1.22,1.69,1.58,2.75.38,1.06.57,2.23.57,3.5,0,1.51-.22,2.86-.64,4.06-.42,1.21-1.03,2.25-1.81,3.12-.8.87-1.72,1.52-2.82,1.98-1.09.44-2.32.67-3.66.67-.93,0-1.74-.08-2.38-.22-.66-.16-1.21-.33-1.64-.56-.44-.21-.79-.4-1.06-.58-.27-.17-.5-.26-.66-.26-.22,0-.43.08-.58.21l-.25-.25,1.87-3.8ZM124.72,181.34c-.48.1-.9.27-1.28.52-.37.23-.67.56-.89.96-.22.4-.33.9-.33,1.5s.11,1.1.33,1.5c.22.4.52.72.89.96.38.23.8.41,1.28.51.48.1.97.15,1.47.15s.97-.05,1.46-.15c.48-.11.9-.28,1.28-.51.38-.25.68-.56.9-.96.21-.41.31-.9.31-1.5s-.1-1.1-.31-1.5c-.22-.4-.52-.73-.9-.96-.37-.24-.8-.42-1.28-.52-.49-.1-.96-.16-1.46-.16s-.99.06-1.47.16"/>
+                                <path class="hyu-logo" d="M154.35,191.26l.37.21c0,.12.02.24.06.41.02.16.08.31.16.42.22.3.49.56.85.77.35.22.73.4,1.13.53.4.14.82.25,1.23.3.41.06.79.09,1.12.09,3.24,0,4.96-1.83,5.18-5.46-.87.49-1.75.9-2.62,1.25-.87.35-1.8.52-2.75.52-.75,0-1.52-.11-2.31-.31-.79-.21-1.51-.53-2.14-.97-.63-.44-1.15-1.01-1.56-1.7-.4-.69-.6-1.52-.6-2.5,0-1.17.24-2.18.71-3.01.46-.83,1.07-1.52,1.82-2.06.75-.54,1.59-.93,2.51-1.19.92-.26,1.85-.38,2.75-.38,1.14,0,2.19.21,3.14.64.95.42,1.78,1.03,2.45,1.8.68.77,1.21,1.69,1.59,2.75.37,1.06.56,2.23.56,3.5,0,1.51-.2,2.86-.64,4.06-.42,1.21-1.03,2.25-1.81,3.12-.79.87-1.72,1.52-2.82,1.98-1.09.44-2.31.67-3.66.67-.93,0-1.73-.08-2.38-.22-.66-.16-1.21-.33-1.64-.56-.44-.21-.79-.4-1.05-.58-.28-.17-.49-.26-.66-.26-.22,0-.42.08-.59.21l-.24-.25,1.87-3.8ZM158.51,181.34c-.48.1-.91.27-1.29.52-.36.23-.67.56-.89.96-.21.4-.33.9-.33,1.5s.12,1.1.33,1.5c.22.4.53.72.89.96.38.23.8.41,1.29.51.48.1.96.15,1.47.15s.97-.05,1.46-.15c.48-.11.91-.28,1.29-.51.37-.25.66-.56.89-.96.21-.41.32-.9.32-1.5s-.11-1.1-.32-1.5c-.23-.4-.52-.73-.89-.96-.38-.24-.81-.42-1.29-.52-.48-.1-.96-.16-1.46-.16s-.99.06-1.47.16"/>
+                                <path class="hyu-logo" d="M135.51,180.91l.37-.31c.16.11.34.16.52.16.12,0,.29-.13.58-.4.28-.27.69-.55,1.23-.88.54-.34,1.22-.62,2.07-.88.84-.27,1.87-.41,3.07-.41.81,0,1.62.08,2.44.26.82.19,1.56.48,2.22.9.67.4,1.23.91,1.65,1.55.43.63.63,1.4.63,2.29,0,.84-.21,1.6-.65,2.3-.44.71-1.03,1.15-1.78,1.34v.07c.88.22,1.61.68,2.18,1.37.57.68.86,1.54.86,2.58,0,1.17-.27,2.15-.79,2.91-.53.77-1.2,1.37-1.97,1.82-.79.46-1.66.75-2.59.89-.93.16-1.82.23-2.65.23-.94,0-1.81-.1-2.62-.3-.82-.19-1.53-.43-2.15-.68-.62-.26-1.14-.5-1.54-.73-.41-.21-.7-.32-.86-.32-.1,0-.19.02-.27.08-.07.04-.14.09-.23.12l-.28-.09,1.81-4.97.34.19c-.02.06-.04.13-.04.25v.24c0,.53.23,1.01.69,1.42.46.43.99.78,1.63,1.06.64.29,1.31.51,1.99.67.71.14,1.29.22,1.76.22.37,0,.82-.04,1.33-.13.5-.08.99-.23,1.42-.44.44-.21.82-.49,1.13-.84.31-.37.47-.84.47-1.42s-.15-1.01-.44-1.33c-.3-.35-.66-.6-1.1-.79-.43-.18-.89-.3-1.38-.36-.48-.06-.9-.09-1.25-.09-.51,0-.93.05-1.3.16-.36.1-.61.36-.73.78h-.37v-4.71h.37c.04.46.27.77.66.91.41.16.86.23,1.36.23.33,0,.72-.03,1.15-.1.43-.07.84-.19,1.22-.37.38-.19.7-.45.97-.76.27-.32.41-.73.41-1.21s-.12-.83-.36-1.12c-.23-.29-.54-.51-.92-.67-.39-.16-.8-.28-1.28-.33-.46-.05-.93-.09-1.41-.09-.56,0-1.13.07-1.71.22-.58.12-1.11.31-1.59.55-.47.22-.87.49-1.18.76-.32.28-.47.56-.47.83,0,.11.02.21.03.33.02.14.05.26.09.37l-.27.21-2.5-3.54Z"/>
+                                <path class="hyu-logo" d="M111.44,196.21c.22,0,.39-.06.55-.2.15-.12.24-.38.24-.78v-11.57c-.16,0-.32,0-.51.04-.2.01-.39.05-.58.11-.19.06-.36.14-.51.25-.16.1-.26.25-.32.43h-.37v-4.36h.37c0,.2.09.35.28.42.2.09.36.13.53.13.35,0,.65-.13.89-.37.25-.23.36-.53.36-.88,0-.32-.06-.53-.2-.61-.14-.1-.31-.17-.55-.22v-.41h5.03v.41c-.24.05-.45.14-.62.24-.16.12-.24.29-.24.52v15.87c0,.4.09.66.24.78.17.14.36.2.57.2v.41h-5.14v-.41Z"/>
+                            </g>
+                        </svg>
+                    </div>
+
+                    <!-- Enhanced Feature List Card -->
+                    <div class="feature-card p-4">
+                        <div class="card-body">
+                            <h5 class="fw-bold mb-4 d-flex align-items-center">
+                                <i class="bi bi-stars text-warning me-3 fs-4"></i>
+                                Key Features
+                            </h5>
+                            <div class="d-flex align-items-start mb-4">
+                                <div class="me-3 mt-1">
+                                    <svg width="28" height="28" viewBox="0 0 28 28">
+                                        <circle cx="14" cy="14" r="12" fill="var(--check-fill)" opacity="0.15"/>
+                                        <circle cx="14" cy="14" r="8" fill="none" stroke="var(--check-fill)" stroke-width="1.5" opacity="0.5"/>
+                                        <path class="check-icon" d="M10 14 L12.5 16.5 L18 11" stroke="var(--check-fill)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <strong class="d-block mb-1">Cloud-based SQL Environment</strong>
+                                    <small class="text-muted">Auto-scaling platform powered by containers and spot instances</small>
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-start mb-4">
+                                <div class="me-3 mt-1">
+                                    <svg width="28" height="28" viewBox="0 0 28 28">
+                                        <circle cx="14" cy="14" r="12" fill="var(--check-fill)" opacity="0.15"/>
+                                        <circle cx="14" cy="14" r="8" fill="none" stroke="var(--check-fill)" stroke-width="1.5" opacity="0.5"/>
+                                        <path class="check-icon" d="M10 14 L12.5 16.5 L18 11" stroke="var(--check-fill)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <strong class="d-block mb-1">Automatic Grading System</strong>
+                                    <small class="text-muted">A platform developed by DDPS Lab based on CTFd</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+</div>
+
+<script>
+// Interactive background effects
+document.addEventListener('DOMContentLoaded', function() {
+    const gradientWrapper = document.querySelector('.gradient-wrapper');
+    const floatingShapes = document.querySelectorAll('.floating-shape');
+    
+    // Mouse movement effect
+    gradientWrapper.addEventListener('mousemove', function(e) {
+        const { clientX, clientY } = e;
+        const { innerWidth, innerHeight } = window;
+        
+        // Calculate mouse position as percentage
+        const x = (clientX / innerWidth) * 100;
+        const y = (clientY / innerHeight) * 100;
+        
+        // Move floating shapes based on mouse position
+        floatingShapes.forEach((shape, index) => {
+            const speed = (index + 1) * 0.5;
+            const moveX = (x - 50) * speed * 0.1;
+            const moveY = (y - 50) * speed * 0.1;
+            
+            shape.style.transform = `translate(${moveX}px, ${moveY}px)`;
+        });
+    });
+    
+    // Click effect on floating shapes
+    floatingShapes.forEach(shape => {
+        shape.addEventListener('click', function() {
+            this.style.transform = 'scale(1.5) rotate(180deg)';
+            setTimeout(() => {
+                this.style.transform = '';
+            }, 500);
+        });
+    });
+    
+    // Parallax effect for particles
+    window.addEventListener('scroll', function() {
+        const scrolled = window.pageYOffset;
+        const particles = document.querySelectorAll('.particle');
+        
+        particles.forEach((particle, index) => {
+            const speed = (index + 1) * 0.5;
+            particle.style.transform = `translateY(${scrolled * speed}px)`;
+        });
+    });
+});
+</script>

@@ -242,6 +242,7 @@ class VisibilitySettingsForm(BaseForm):
             (RegistrationVisibilityTypes.PUBLIC, "Public"),
             (RegistrationVisibilityTypes.PRIVATE, "Private"),
             (RegistrationVisibilityTypes.MLC, "MajorLeagueCyber Only"),
+            (RegistrationVisibilityTypes.GOOGLE_OAUTH_ONLY, "Google OAuth Only"),
         ],
         default=RegistrationVisibilityTypes.PUBLIC,
     )

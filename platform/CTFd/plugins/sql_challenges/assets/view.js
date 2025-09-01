@@ -251,6 +251,83 @@ CTFd._internal.challenge.postRender = function() {
         modalDialog.classList.add('modal-xl');
     }
     
+    // Handle deadline display
+    var deadlineInput = document.getElementById('challenge-deadline');
+    if (deadlineInput && deadlineInput.value) {
+        // The deadline value is already in KST format from the backend
+        // Just append the timezone info for correct parsing
+        var deadlineStr = deadlineInput.value;
+        // Add seconds if not present and ensure it's treated as KST
+        if (!deadlineStr.includes(':00', 16)) {
+            deadlineStr += ':00';
+        }
+        // Create date object (the value from backend is in KST)
+        var deadline = new Date(deadlineStr);
+        
+        var deadlineText = document.getElementById('deadline-text');
+        var deadlineCountdown = document.getElementById('deadline-countdown');
+        
+        if (deadlineText) {
+            // Format deadline date in KST
+            deadlineText.textContent = deadline.toLocaleString('ko-KR', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'Asia/Seoul'
+            }) + ' (KST)';
+        }
+        
+        // Update countdown
+        function updateCountdown() {
+            var now = new Date();
+            var diff = deadline - now;
+            
+            if (diff <= 0) {
+                if (deadlineCountdown) {
+                    deadlineCountdown.innerHTML = '<span class="text-danger">제출 기한이 지났습니다</span>';
+                }
+                var deadlineAlert = document.getElementById('deadline-alert');
+                if (deadlineAlert) {
+                    deadlineAlert.classList.remove('alert-info');
+                    deadlineAlert.classList.add('alert-danger');
+                }
+                // Disable submit button
+                var submitBtn = document.getElementById('challenge-submit');
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<i class="fas fa-times-circle"></i> 제출 기한 종료';
+                }
+            } else {
+                var days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                var hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                var minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                var seconds = Math.floor((diff % (1000 * 60)) / 1000);
+                
+                var countdownText = '남은 시간: ';
+                if (days > 0) countdownText += days + '일 ';
+                countdownText += hours + '시간 ' + minutes + '분 ' + seconds + '초';
+                
+                if (deadlineCountdown) {
+                    deadlineCountdown.textContent = countdownText;
+                }
+                
+                // Warning color when less than 1 hour
+                if (diff < 60 * 60 * 1000) {
+                    var deadlineAlert = document.getElementById('deadline-alert');
+                    if (deadlineAlert) {
+                        deadlineAlert.classList.remove('alert-info');
+                        deadlineAlert.classList.add('alert-warning');
+                    }
+                }
+            }
+        }
+        
+        updateCountdown();
+        setInterval(updateCountdown, 1000);
+    }
+    
     // Try to initialize editor with retries
     var retryCount = 0;
     var maxRetries = 10;

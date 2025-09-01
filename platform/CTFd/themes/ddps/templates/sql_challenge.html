@@ -2,7 +2,7 @@
 
 {% block content %}
 <div class="sql-challenge-wrapper">
-    <div class="sql-challenge-container">
+    <div class="sql-challenge-container vh-100">
         <div id="resize-container" class="d-flex h-100">
         <!-- Left Panel: Challenge Description -->
         <div id="left-panel" class="challenge-panel">
@@ -40,7 +40,7 @@
 SELECT column1, column2
 FROM table_name
 WHERE condition;"
-                            style="font-family: 'Courier New', monospace; font-size: 14px; display: none;"
+                            style="font-family: 'Courier New', monospace; font-size: 16px; display: none;"
                         ></textarea>
                         <div id="sql-editor-container" style="border: 1px solid var(--bs-border-color); border-radius: 0.25rem; height: 100%;"></div>
                         <small class="form-text text-muted mt-1">Press Ctrl+Enter to submit</small>
@@ -225,7 +225,7 @@ body {
 #sql-editor-container .CodeMirror {
     height: 100%;
     max-height: 100%;
-    font-size: 14px;
+    font-size: 16px;
 }
 
 #sql-editor-container .CodeMirror-scroll {

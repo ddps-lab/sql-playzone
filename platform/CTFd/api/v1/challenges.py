@@ -1,6 +1,7 @@
 import math
 from datetime import datetime, timedelta
 from typing import List  # noqa: I001
+import pytz
 
 from flask import abort, render_template, request, url_for
 from flask_restx import Namespace, Resource
@@ -222,6 +223,28 @@ class ChallengeList(Resource):
                 # Challenge type does not exist. Fall through to next challenge.
                 continue
 
+            # Get deadline if it's a SQL challenge
+            deadline = None
+            deadline_status = None
+            if challenge.type == "sql":
+                from CTFd.plugins.sql_challenges import SQLChallenge
+                sql_challenge = SQLChallenge.query.filter_by(id=challenge.id).first()
+                if sql_challenge and sql_challenge.deadline:
+                    # Convert UTC to KST for display
+                    KST = pytz.timezone('Asia/Seoul')
+                    utc_dt = pytz.UTC.localize(sql_challenge.deadline)
+                    kst_dt = utc_dt.astimezone(KST)
+                    deadline = kst_dt.strftime('%Y-%m-%d %H:%M')
+                    
+                    # Determine deadline status
+                    now_kst = datetime.now(KST)
+                    if now_kst > kst_dt:
+                        deadline_status = 'expired'  # 지난 경우 - 빨간색
+                    elif now_kst.date() == kst_dt.date():
+                        deadline_status = 'today'    # 당일 - 노란색
+                    else:
+                        deadline_status = 'active'   # 아직 안 지난 경우 - 초록색
+            
             # Challenge passes all checks, add it to response
             response.append(
                 {
@@ -235,6 +258,8 @@ class ChallengeList(Resource):
                     "tags": tag_schema.dump(challenge.tags).data,
                     "template": challenge_type.templates["view"],
                     "script": challenge_type.scripts["view"],
+                    "deadline": deadline,
+                    "deadline_status": deadline_status,
                 }
             )
 
