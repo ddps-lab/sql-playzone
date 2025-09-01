@@ -13,7 +13,7 @@ variable "region" {
 variable "aws_profile" {
   description = "AWS CLI profile name to use"
   type        = string
-  default     = "default"
+  default     = "ddpslab"
 }
 
 variable "vpc_cidr" {
