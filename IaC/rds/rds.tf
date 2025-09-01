@@ -8,41 +8,20 @@ resource "aws_db_subnet_group" "rds_subnet_group" {
   }
 }
 
-# Security Group for RDS
-resource "aws_security_group" "rds_sg" {
-  name        = "${var.rds_name}-sg"
-  description = "Security group for RDS instance"
-  vpc_id      = var.vpc_id
-
-  tags = {
-    Name = "${var.rds_name}-sg"
-  }
-}
-
-# Security Group Rule - Allow from same security group
-resource "aws_security_group_rule" "rds_sg_ingress" {
-  type                     = "ingress"
-  from_port                = 3306
-  to_port                  = 3306
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.rds_sg.id
-  security_group_id        = aws_security_group.rds_sg.id
-}
-
 # RDS Instance
 resource "aws_db_instance" "rds" {
   identifier     = var.rds_name
   engine         = "mariadb"
   engine_version = var.engine_version
 
-  instance_class        = var.instance_class
+  instance_class        = var.database_instance_class
   allocated_storage     = 30
   max_allocated_storage = 1000
   storage_type          = "gp3"
   storage_encrypted     = true
 
   db_subnet_group_name   = aws_db_subnet_group.rds_subnet_group.name
-  vpc_security_group_ids = [aws_security_group.rds_sg.id]
+  vpc_security_group_ids = [var.rds_security_group_id]
 
   username = var.db_username
   password = var.db_password

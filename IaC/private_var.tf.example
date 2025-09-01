@@ -11,3 +11,15 @@ variable "db_password" {
     default     = ""
     sensitive   = true
 }
+
+variable "hosted_zone_id" {
+    description = "Route53 hosted zone ID"
+    type        = string
+    default     = ""
+}
+
+variable "ssh_key_name" {
+    description = "EC2 Key Pair name for SSH access"
+    type        = string
+    default     = ""
+}
