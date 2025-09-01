@@ -23,7 +23,7 @@ systemctl enable docker
 
 # Clone the repository
 cd /home/ubuntu
-git clone https://github.com/ddps-lab/sql-playzone.git -b swjeong
+git clone https://github.com/ddps-lab/sql-playzone.git
 
 cd sql-playzone/platform/CTFd
 cp config.example.ini config.ini
