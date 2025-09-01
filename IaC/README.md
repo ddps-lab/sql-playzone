@@ -13,7 +13,7 @@
 
 ## 사전 준비
 
-1. AWS CLI 설정
+1. AWS CLI 설정 및 프로필 구성
 2. Terraform 설치
 3. `private_var.tf` 파일 생성:
 ```bash
@@ -38,6 +38,20 @@ variable "hosted_zone_id" {
     type        = string
     default     = "your_route53_hosted_zone_id"
 }
+```
+
+## AWS 프로필 설정
+
+특정 AWS 프로필을 사용하려면:
+```bash
+# var.tf에서 기본값 변경
+variable "aws_profile" {
+  default = "your-profile-name"
+}
+
+# 또는 terraform 실행 시 지정
+terraform plan -var="aws_profile=your-profile-name"
+terraform apply -var="aws_profile=your-profile-name"
 ```
 
 ## 모듈별 관리
