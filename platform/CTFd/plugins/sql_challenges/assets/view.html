@@ -1,7 +1,14 @@
 {% block input %}
 <input id="challenge-id" class="challenge-id" type="hidden" value="{{ challenge.id }}">
+<input id="challenge-deadline" type="hidden" value="{{ challenge.deadline }}">
 </div>
 <div class="col-12">
+    {% if challenge.deadline %}
+    <div class="alert alert-info mb-3" id="deadline-alert">
+        <i class="fas fa-clock"></i> <strong>제출 기한:</strong> <span id="deadline-text"></span>
+        <div id="deadline-countdown" class="small mt-1"></div>
+    </div>
+    {% endif %}
     <label for="challenge-input" class="form-label">
         <strong>SQL Query:</strong>
     </label>
@@ -17,7 +24,7 @@ WHERE condition;"
         x-model="submission"
         style="font-family: 'Courier New', monospace; font-size: 14px; display: none;"
     ></textarea>
-    <div id="sql-editor-container" style="border: 1px solid #ced4da; border-radius: 0.25rem;"></div>
+    <div id="sql-editor-container" class="border" style="border-radius: 0.25rem;"></div>
     <small class="form-text text-muted">
         Press Ctrl+Enter to submit
     </small>

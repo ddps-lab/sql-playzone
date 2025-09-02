@@ -5,11 +5,16 @@ import time
 import subprocess
 import atexit
 import socket
+from datetime import datetime, timezone
+import pytz
 from flask import Blueprint, request, jsonify
 from CTFd.models import Challenges, db
 from CTFd.plugins import register_plugin_assets_directory
 from CTFd.plugins.challenges import CHALLENGE_CLASSES, BaseChallenge, ChallengeResponse
 from CTFd.utils.decorators import admins_only
+
+# Set KST timezone
+KST = pytz.timezone('Asia/Seoul')
 
 
 class SQLChallenge(Challenges):
@@ -19,6 +24,7 @@ class SQLChallenge(Challenges):
     )
     init_query = db.Column(db.Text, default="")
     solution_query = db.Column(db.Text, default="")
+    deadline = db.Column(db.DateTime, nullable=True)
 
     def __init__(self, *args, **kwargs):
         super(SQLChallenge, self).__init__(**kwargs)
@@ -57,6 +63,7 @@ class SQLChallengeType(BaseChallenge):
         # Extract SQL-specific fields
         init_query = data.get("init_query", "")
         solution_query = data.get("solution_query", "")
+        deadline_str = data.get("deadline", "")
         
         # Remove fields that don't belong to the model
         data.pop("flag", None)
@@ -66,6 +73,22 @@ class SQLChallengeType(BaseChallenge):
         challenge = cls.challenge_model(**data)
         challenge.init_query = init_query
         challenge.solution_query = solution_query
+        
+        # Parse and set deadline if provided (assume input is in KST)
+        if deadline_str:
+            try:
+                # Parse the datetime string (assuming it's in KST from the form)
+                naive_dt = datetime.fromisoformat(deadline_str.replace('T', ' '))
+                # Localize to KST
+                kst_dt = KST.localize(naive_dt)
+                # Convert to UTC for storage
+                utc_dt = kst_dt.astimezone(pytz.UTC)
+                # Store as naive UTC (CTFd convention)
+                challenge.deadline = utc_dt.replace(tzinfo=None)
+            except:
+                challenge.deadline = None
+        else:
+            challenge.deadline = None
         
         db.session.add(challenge)
         db.session.commit()
@@ -92,9 +115,18 @@ class SQLChallengeType(BaseChallenge):
         data = super().read(challenge)
         
         # Add SQL-specific fields
+        deadline_kst = None
+        if challenge.deadline:
+            # Convert UTC to KST for display
+            utc_dt = pytz.UTC.localize(challenge.deadline)
+            kst_dt = utc_dt.astimezone(KST)
+            # Return as ISO format string in KST
+            deadline_kst = kst_dt.strftime('%Y-%m-%dT%H:%M')
+        
         data.update({
             "init_query": challenge.init_query,
             "solution_query": challenge.solution_query,
+            "deadline": deadline_kst,
         })
         
         return data
@@ -111,10 +143,26 @@ class SQLChallengeType(BaseChallenge):
             challenge.init_query = data["init_query"]
         if "solution_query" in data:
             challenge.solution_query = data["solution_query"]
+        if "deadline" in data:
+            deadline_str = data["deadline"]
+            if deadline_str:
+                try:
+                    # Parse the datetime string (assuming it's in KST from the form)
+                    naive_dt = datetime.fromisoformat(deadline_str.replace('T', ' '))
+                    # Localize to KST
+                    kst_dt = KST.localize(naive_dt)
+                    # Convert to UTC for storage
+                    utc_dt = kst_dt.astimezone(pytz.UTC)
+                    # Store as naive UTC (CTFd convention)
+                    challenge.deadline = utc_dt.replace(tzinfo=None)
+                except:
+                    challenge.deadline = None
+            else:
+                challenge.deadline = None
         
         # Update base fields
         for attr, value in data.items():
-            if attr not in ["init_query", "solution_query"]:
+            if attr not in ["init_query", "solution_query", "deadline"]:
                 setattr(challenge, attr, value)
         
         db.session.commit()
@@ -127,11 +175,23 @@ class SQLChallengeType(BaseChallenge):
         """
         data = request.form or request.get_json()
         submission = data.get("submission", "").strip()
+        is_preview = data.get("preview", False)  # Check if this is just a preview/test
+        
+        # Debug logging
+        import logging
+        logging.info(f"SQL Challenge attempt - Preview: {is_preview}, Submission length: {len(submission)}")
         
         if not submission:
             return ChallengeResponse(
                 status="incorrect",
                 message="Please provide a SQL query"
+            )
+        
+        # Check deadline only for actual submissions, not previews
+        if not is_preview and challenge.deadline and datetime.utcnow() > challenge.deadline:
+            return ChallengeResponse(
+                status="incorrect",
+                message="Submission deadline has passed"
             )
         
         # Execute SQL queries using Go MySQL server
@@ -141,44 +201,79 @@ class SQLChallengeType(BaseChallenge):
             
             # Use Go MySQL server
             go_server_url = os.environ.get('SQL_JUDGE_SERVER_URL', 'http://localhost:8080')
-            response = requests.post(
-                f"{go_server_url}/judge",
-                json={
-                    'init_query': challenge.init_query,
-                    'solution_query': challenge.solution_query,
-                    'user_query': submission
-                },
-                timeout=10
-            )
             
-            if response.status_code == 200:
-                result = response.json()
+            if is_preview:
+                # For preview, only execute the user query without comparing
+                response = requests.post(
+                    f"{go_server_url}/judge",
+                    json={
+                        'init_query': challenge.init_query,
+                        'solution_query': submission,  # Use user query as solution to get its result
+                        'user_query': submission
+                    },
+                    timeout=10
+                )
                 
-                if not result.get('success'):
+                if response.status_code == 200:
+                    result = response.json()
+                    
+                    if not result.get('success'):
+                        return ChallengeResponse(
+                            status="incorrect",
+                            message=f"[PREVIEW]\nError: {result.get('error', 'Unknown error')}"
+                        )
+                    
+                    # Just show the query result without grading
+                    user_result_str = json.dumps(result['user_result'])
                     return ChallengeResponse(
                         status="incorrect",
-                        message=f"Error: {result.get('error', 'Unknown error')}"
-                    )
-                
-                # Format results for display
-                user_result_str = json.dumps(result['user_result'])
-                expected_result_str = json.dumps(result['expected_result'])
-                
-                if result['match']:
-                    return ChallengeResponse(
-                        status="correct",
-                        message=f"✅ Correct! Your query produced the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]"
+                        message=f"[PREVIEW]\nQuery executed successfully:\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]"
                     )
                 else:
                     return ChallengeResponse(
                         status="incorrect",
-                        message=f"❌ Incorrect. Your query did not produce the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]\n\n[EXPECTED_RESULT]\n{expected_result_str}\n[/EXPECTED_RESULT]"
+                        message=f"[PREVIEW]\nSQL judge server error: HTTP {response.status_code}"
                     )
             else:
-                return ChallengeResponse(
-                    status="incorrect",
-                    message=f"SQL judge server error: HTTP {response.status_code}"
+                # Normal submission - compare with solution
+                response = requests.post(
+                    f"{go_server_url}/judge",
+                    json={
+                        'init_query': challenge.init_query,
+                        'solution_query': challenge.solution_query,
+                        'user_query': submission
+                    },
+                    timeout=10
                 )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    
+                    if not result.get('success'):
+                        return ChallengeResponse(
+                            status="incorrect",
+                            message=f"Error: {result.get('error', 'Unknown error')}"
+                        )
+                    
+                    # Format results for display
+                    user_result_str = json.dumps(result['user_result'])
+                    expected_result_str = json.dumps(result['expected_result'])
+                    
+                    if result['match']:
+                        return ChallengeResponse(
+                            status="correct",
+                            message=f"✅ Correct! Your query produced the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]"
+                        )
+                    else:
+                        return ChallengeResponse(
+                            status="incorrect",
+                            message=f"❌ Incorrect. Your query did not produce the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]\n\n[EXPECTED_RESULT]\n{expected_result_str}\n[/EXPECTED_RESULT]"
+                        )
+                else:
+                    return ChallengeResponse(
+                        status="incorrect",
+                        message=f"SQL judge server error: HTTP {response.status_code}"
+                    )
                     
         except Exception as e:
             return ChallengeResponse(
@@ -489,13 +584,21 @@ def load(app):
     # Upgrade database to include SQL challenge tables
     upgrade()
     
-    # Ensure the sql_challenge table exists
+    # Ensure the sql_challenge table exists with all required columns
     with app.app_context():
         # Create table if it doesn't exist
         inspector = db.inspect(db.engine)
         if 'sql_challenge' not in inspector.get_table_names():
             db.create_all()
             print("Created sql_challenge table")
+        else:
+            # Check if deadline column exists, if not add it
+            columns = [col['name'] for col in inspector.get_columns('sql_challenge')]
+            if 'deadline' not in columns:
+                with db.engine.connect() as conn:
+                    conn.execute(db.text("ALTER TABLE sql_challenge ADD COLUMN deadline DATETIME NULL"))
+                    conn.commit()
+                print("Added deadline column to sql_challenge table")
     
     # Start the Go SQL judge server
     if not os.environ.get('SQL_JUDGE_SERVER_URL'):

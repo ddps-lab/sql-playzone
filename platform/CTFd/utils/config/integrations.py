@@ -12,3 +12,8 @@ def mlc():
 def mlc_registration():
     v = get_config("registration_visibility")
     return v == "mlc"
+
+
+def google_oauth_only_registration():
+    v = get_config("registration_visibility")
+    return v == "google_oauth_only"

@@ -6,7 +6,7 @@ Create Date: 2025-08-26
 
 """
 from CTFd.models import db
-from sqlalchemy import Column, Integer, Text, ForeignKey
+from sqlalchemy import Column, Integer, Text, ForeignKey, DateTime
 
 revision = "create_sql_challenge"
 down_revision = None
@@ -25,7 +25,8 @@ def upgrade(op=None):
             'sql_challenge',
             Column('id', Integer, ForeignKey('challenges.id', ondelete='CASCADE'), primary_key=True),
             Column('init_query', Text, nullable=True),
-            Column('solution_query', Text, nullable=True)
+            Column('solution_query', Text, nullable=True),
+            Column('deadline', DateTime, nullable=True)
         )
 
 

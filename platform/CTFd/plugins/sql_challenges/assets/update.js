@@ -1,10 +1,16 @@
 CTFd.plugin.run((_CTFd) => {
     const $ = _CTFd.lib.$;
     
+    console.log('Update.js loaded, initializing event handlers');
+    
     // Test SQL queries button handler
     $('#test-sql-btn').click(function() {
+        console.log('Test SQL button clicked');
         const initQuery = $('.challenge-init-query').val();
         const solutionQuery = $('.challenge-solution-query').val();
+        
+        console.log('Init query:', initQuery);
+        console.log('Solution query:', solutionQuery);
         
         if (!solutionQuery) {
             alert('Please enter a solution query to test');
@@ -32,7 +38,7 @@ CTFd.plugin.run((_CTFd) => {
         testQuery(initQuery, customQuery);
     });
     
-    function testQuery(initQuery, testQuery) {
+    function testQuery(initQuery, queryToTest) {
         // Show loading state
         $('#test-results').show();
         $('#test-output').html('<div class="spinner-border spinner-border-sm" role="status"><span class="sr-only">Testing...</span></div> Testing queries...');
@@ -45,7 +51,7 @@ CTFd.plugin.run((_CTFd) => {
             },
             body: JSON.stringify({
                 init_query: initQuery,
-                test_query: testQuery
+                test_query: queryToTest
             })
         })
         .then(response => response.json())

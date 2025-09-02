@@ -44,9 +44,7 @@
           <thead>
           <tr>
             <th>{% trans %}User{% endtrans %}</th>
-            <th>{% trans %}Website{% endtrans %}</th>
             <th class="d-none d-md-table-cell">{% trans %}Affiliation{% endtrans %}</th>
-            <th class="d-none d-md-table-cell">{% trans %}Country{% endtrans %}</th>
           </tr>
           </thead>
           <tbody>
@@ -65,22 +63,6 @@
                   <span class="badge bg-secondary ms-2">{{ user.bracket.name }}</span>
                 {% endif %}
 
-                {% if user.oauth_id %}
-                  <a href="https://majorleaguecyber.org/u/{{ user.name }}">
-                    <span class="badge bg-primary ms-2">{% trans %}Official{% endtrans %}</span>
-                  </a>
-                {% endif %}
-              </td>
-
-              <td class="text-center" style="width: 10px;">
-                {% if user.website and (user.website.startswith('http://') or user.website.startswith('https://')) %}
-                  <a href="{{ user.website }}" target="_blank" rel="noopener">
-                    <i
-                        class="fas fa-external-link-alt" data-toggle="tooltip" data-placement="top"
-                        title="{{ user.website }}"
-                    ></i>
-                  </a>
-                {% endif %}
               </td>
 
               <td class="d-none d-md-table-cell d-lg-table-cell">
@@ -95,14 +77,6 @@
 								</span>
                   {% endif %}
                 {% endif %}
-              </td>
-              <td class="d-none d-md-table-cell d-lg-table-cell">
-								<span>
-									{% if user.country %}
-                    <i class="flag-{{ user.country.lower() }}"></i>
-                    {{ lookup_country_code(user.country) }}
-                  {% endif %}
-								</span>
               </td>
             </tr>
           {% endfor %}

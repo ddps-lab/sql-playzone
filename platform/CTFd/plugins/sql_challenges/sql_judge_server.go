@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +19,9 @@ type QueryRequest struct {
 	InitQuery     string `json:"init_query"`
 	SolutionQuery string `json:"solution_query"`
 	UserQuery     string `json:"user_query"`
+	ClientIP      string `json:"client_ip,omitempty"`
+	UserID        string `json:"user_id,omitempty"`
+	ChallengeID   string `json:"challenge_id,omitempty"`
 }
 
 type QueryResponse struct {
@@ -32,6 +36,149 @@ type QueryResult struct {
 	Columns  []string   `json:"columns"`
 	Rows     [][]string `json:"rows"`
 	RowCount int        `json:"row_count"`
+}
+
+// Security: List of dangerous SQL functions and keywords to block
+var dangerousFunctions = []string{
+	// File operations
+	"LOAD_FILE",
+	"INTO OUTFILE",
+	"INTO DUMPFILE",
+	"LOAD DATA",
+	"LOAD XML",
+	"FILE",
+	"HANDLER",
+	
+	// System operations
+	"SYSTEM",
+	"SHELL",
+	"EXEC",
+	"EXECUTE",
+	"XP_CMDSHELL",
+	"SP_OA",
+	
+	// Time-based attacks
+	"BENCHMARK",
+	"SLEEP",
+	"WAITFOR",
+	"DELAY",
+	"PG_SLEEP",
+	"RANDOMBLOB",
+	
+	// Lock operations
+	"GET_LOCK",
+	"RELEASE_LOCK",
+	"MASTER_POS_WAIT",
+	"IS_FREE_LOCK",
+	"IS_USED_LOCK",
+	
+	// XML operations (can be used for XXE)
+	"EXTRACTVALUE",
+	"UPDATEXML",
+	"XMLTYPE",
+	
+	// Extension loading
+	"LOAD_EXTENSION",
+	"CREATE EXTENSION",
+	
+	// Database specific dangerous functions
+	"GENERATE_SERIES",
+	"UTL_",
+	"DBMS_",
+	"SYS.",
+	"SYS_",
+	
+	// Access to sensitive system tables
+	"INFORMATION_SCHEMA.PROCESSLIST",
+	"PERFORMANCE_SCHEMA",
+	"MYSQL.USER",
+	"PG_SHADOW",
+	"PG_AUTHID",
+	
+	// Network operations
+	"UTL_HTTP",
+	"UTL_TCP",
+	"OPENROWSET",
+	"OPENDATASOURCE",
+	"OPENQUERY",
+	
+	// Other dangerous operations
+	"GRANT",
+	"REVOKE",
+	"CREATE USER",
+	"DROP USER",
+	"ALTER USER",
+	"SET ROLE",
+	"SET SESSION AUTHORIZATION",
+}
+
+// logSecurityEvent logs security-related events with context
+func logSecurityEvent(eventType string, details string, req *QueryRequest) {
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	clientInfo := ""
+	if req != nil {
+		clientInfo = fmt.Sprintf(" [IP: %s, User: %s, Challenge: %s]", 
+			req.ClientIP, req.UserID, req.ChallengeID)
+	}
+	log.Printf("[%s] SECURITY %s: %s%s", timestamp, eventType, details, clientInfo)
+}
+
+// Security: Validate SQL query for dangerous operations
+func validateSQLQuery(query string, req *QueryRequest) error {
+	upperQuery := strings.ToUpper(query)
+	
+	// Check for dangerous functions
+	for _, dangerous := range dangerousFunctions {
+		if strings.Contains(upperQuery, strings.ToUpper(dangerous)) {
+			logSecurityEvent("BLOCKED", fmt.Sprintf("Dangerous function: %s", dangerous), req)
+			return fmt.Errorf("security violation: dangerous function '%s' is not allowed", dangerous)
+		}
+	}
+	
+	// Check for file system operations using regex
+	fileOpsPattern := regexp.MustCompile(`(?i)(LOAD_FILE|INTO\s+(OUTFILE|DUMPFILE)|LOAD\s+DATA)`)
+	if fileOpsPattern.MatchString(query) {
+		logSecurityEvent("BLOCKED", "File system operation attempt", req)
+		return fmt.Errorf("security violation: file system operations are not allowed")
+	}
+	
+	// Check for system command execution patterns
+	systemPattern := regexp.MustCompile(`(?i)(sys_exec|sys_eval|system|shell|exec|execute|xp_cmdshell)`)
+	if systemPattern.MatchString(query) {
+		logSecurityEvent("BLOCKED", "System command execution attempt", req)
+		return fmt.Errorf("security violation: system command execution is not allowed")
+	}
+	
+	// Check for SQL injection patterns in comments
+	commentPattern := regexp.MustCompile(`(?i)(\/\*.*\*\/|--.*$|#.*$)`)
+	if commentPattern.MatchString(query) {
+		// Allow simple comments but check for nested dangerous content
+		comments := commentPattern.FindAllString(query, -1)
+		for _, comment := range comments {
+			for _, dangerous := range dangerousFunctions {
+				if strings.Contains(strings.ToUpper(comment), strings.ToUpper(dangerous)) {
+					logSecurityEvent("BLOCKED", fmt.Sprintf("Dangerous function in comment: %s", dangerous), req)
+					return fmt.Errorf("security violation: dangerous content in comments")
+				}
+			}
+		}
+	}
+	
+	// Check for stacked queries (multiple statements)
+	// This is a simple check - more sophisticated parsing might be needed
+	if strings.Count(query, ";") > 1 {
+		logSecurityEvent("WARNING", "Multiple statements detected (possible stacked query injection)", req)
+		// Allow it but log for monitoring
+	}
+	
+	// Check for union-based injection with information_schema
+	unionPattern := regexp.MustCompile(`(?i)UNION.*SELECT.*(INFORMATION_SCHEMA|MYSQL\.|PERFORMANCE_SCHEMA)`)
+	if unionPattern.MatchString(query) {
+		logSecurityEvent("BLOCKED", "UNION with system tables attempt", req)
+		return fmt.Errorf("security violation: accessing system tables via UNION is not allowed")
+	}
+	
+	return nil
 }
 
 // cleanupSQLStatement processes SQL statements to ensure compatibility
@@ -61,7 +208,12 @@ func cleanupSQLStatement(stmt string) string {
 	return stmt
 }
 
-func executeQuery(initQueries []string, query string) (*QueryResult, error) {
+func executeQuery(initQueries []string, query string, req *QueryRequest) (*QueryResult, error) {
+	// Security: Validate the user query before execution
+	if err := validateSQLQuery(query, req); err != nil {
+		return nil, err
+	}
+	
 	dbName := "ctfd_sql_challenge"
 	db := memory.NewDatabase(dbName)
 	db.EnablePrimaryKeyIndexes()  // Enable primary key indexes
@@ -90,6 +242,16 @@ func executeQuery(initQueries []string, query string) (*QueryResult, error) {
 	for _, initQuery := range initQueries {
 		if strings.TrimSpace(initQuery) == "" {
 			continue
+		}
+
+		// Security: Validate init queries as well (with more lenient rules for CREATE/INSERT)
+		// We still want to prevent file operations in init queries
+		if err := validateSQLQuery(initQuery, req); err != nil {
+			// For init queries, we might want to be slightly more permissive
+			// but still block file operations
+			if strings.Contains(err.Error(), "file") || strings.Contains(err.Error(), "system") {
+				return nil, fmt.Errorf("security violation in init query: %v", err)
+			}
 		}
 
 		// Split by semicolon for multiple statements
@@ -179,11 +341,14 @@ func handleJudge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log incoming request
+	logSecurityEvent("REQUEST", fmt.Sprintf("Query submission for challenge"), &req)
+	
 	// Prepare init queries
 	initQueries := []string{req.InitQuery}
 
 	// Execute expected result
-	expectedResult, err := executeQuery(initQueries, req.SolutionQuery)
+	expectedResult, err := executeQuery(initQueries, req.SolutionQuery, &req)
 	if err != nil {
 		resp := QueryResponse{
 			Success: false,
@@ -195,7 +360,7 @@ func handleJudge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute user query
-	userResult, err := executeQuery(initQueries, req.UserQuery)
+	userResult, err := executeQuery(initQueries, req.UserQuery, &req)
 	if err != nil {
 		resp := QueryResponse{
 			Success: false,

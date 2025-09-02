@@ -187,7 +187,7 @@ def setup():
             )
 
             # Create an empty index page
-            page = Pages(title=ctf_name, route="index", content="", draft=False)
+            page = Pages(title=ctf_name, route="index", content="", draft=False, format="html")
 
             # Upload banner
             default_ctf_banner_location = url_for("views.themes", path="img/logo.png")
@@ -198,22 +198,7 @@ def setup():
                 set_config("ctf_banner", f.location)
 
             # Splice in our banner
-            index = f"""<div class="row">
-    <div class="col-md-6 offset-md-3">
-        <img class="w-100 mx-auto d-block" style="max-width: 500px;padding: 50px;padding-top: 14vh;" src="{default_ctf_banner_location}" />
-        <h3 class="text-center">
-            <p>A cool SQL CTF platform from <a href="https://ctfd.io">ctfd.io</a></p>
-            <p>Follow us on social media:</p>
-            <a href="https://twitter.com/ctfdio"><i class="fab fa-twitter fa-2x" aria-hidden="true"></i></a>&nbsp;
-            <a href="https://facebook.com/ctfdio"><i class="fab fa-facebook fa-2x" aria-hidden="true"></i></a>&nbsp;
-            <a href="https://github.com/ctfd"><i class="fab fa-github fa-2x" aria-hidden="true"></i></a>
-        </h3>
-        <br>
-        <h4 class="text-center">
-            <a href="admin">Click here</a> to login and setup your CTF
-        </h4>
-    </div>
-</div>"""
+            index = render_template("main.html")
             page.content = index
 
             # Visibility
@@ -583,11 +568,21 @@ def sql_challenge_page(challenge_id):
     
     from CTFd.plugins.sql_challenges import SQLChallenge
     from CTFd.utils.config.pages import build_markdown
+    import pytz
     
     sql_challenge = SQLChallenge.query.filter_by(id=challenge_id).first_or_404()
     
     # Render markdown description
     description_html = build_markdown(challenge.description or "")
+    
+    # Convert deadline to KST if it exists
+    deadline_str = None
+    if sql_challenge.deadline:
+        KST = pytz.timezone('Asia/Seoul')
+        utc_dt = pytz.UTC.localize(sql_challenge.deadline)
+        kst_dt = utc_dt.astimezone(KST)
+        # Return as ISO format string for JavaScript
+        deadline_str = kst_dt.isoformat()
     
     return render_template(
         "sql_challenge.html",
@@ -598,6 +593,7 @@ def sql_challenge_page(challenge_id):
             "value": challenge.value,
             "category": challenge.category,
             "init_query": sql_challenge.init_query,
+            "deadline": deadline_str,
             "type": "sql"
         }
     )

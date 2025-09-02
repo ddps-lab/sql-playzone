@@ -389,7 +389,7 @@ class Users(db.Model):
     __table_args__ = (db.UniqueConstraint("id", "oauth_id"), {})
     # Core attributes
     id = db.Column(db.Integer, primary_key=True)
-    oauth_id = db.Column(db.Integer, unique=True)
+    oauth_id = db.Column(db.String(128), unique=True)
     # User names are not constrained to be unique to allow for official/unofficial teams.
     name = db.Column(db.String(128))
     password = db.Column(db.String(128))
@@ -615,7 +615,7 @@ class Teams(db.Model):
     __table_args__ = (db.UniqueConstraint("id", "oauth_id"), {})
     # Core attributes
     id = db.Column(db.Integer, primary_key=True)
-    oauth_id = db.Column(db.Integer, unique=True)
+    oauth_id = db.Column(db.String(128), unique=True)
     # Team names are not constrained to be unique to allow for official/unofficial teams.
     name = db.Column(db.String(128))
     email = db.Column(db.String(128), unique=True)

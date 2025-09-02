@@ -1,6 +1,7 @@
 import math
 from datetime import datetime, timedelta
 from typing import List  # noqa: I001
+import pytz
 
 from flask import abort, render_template, request, url_for
 from flask_restx import Namespace, Resource
@@ -222,6 +223,28 @@ class ChallengeList(Resource):
                 # Challenge type does not exist. Fall through to next challenge.
                 continue
 
+            # Get deadline if it's a SQL challenge
+            deadline = None
+            deadline_status = None
+            if challenge.type == "sql":
+                from CTFd.plugins.sql_challenges import SQLChallenge
+                sql_challenge = SQLChallenge.query.filter_by(id=challenge.id).first()
+                if sql_challenge and sql_challenge.deadline:
+                    # Convert UTC to KST for display
+                    KST = pytz.timezone('Asia/Seoul')
+                    utc_dt = pytz.UTC.localize(sql_challenge.deadline)
+                    kst_dt = utc_dt.astimezone(KST)
+                    deadline = kst_dt.strftime('%Y-%m-%d %H:%M')
+                    
+                    # Determine deadline status
+                    now_kst = datetime.now(KST)
+                    if now_kst > kst_dt:
+                        deadline_status = 'expired'  # 지난 경우 - 빨간색
+                    elif now_kst.date() == kst_dt.date():
+                        deadline_status = 'today'    # 당일 - 노란색
+                    else:
+                        deadline_status = 'active'   # 아직 안 지난 경우 - 초록색
+            
             # Challenge passes all checks, add it to response
             response.append(
                 {
@@ -235,6 +258,8 @@ class ChallengeList(Resource):
                     "tags": tag_schema.dump(challenge.tags).data,
                     "template": challenge_type.templates["view"],
                     "script": challenge_type.scripts["view"],
+                    "deadline": deadline,
+                    "deadline_status": deadline_status,
                 }
             )
 
@@ -585,11 +610,15 @@ class ChallengeAttempt(Resource):
             request_data = request.get_json()
 
         challenge_id = request_data.get("challenge_id")
-
-        if current_user.is_admin():
-            preview = request.args.get("preview", False)
-            if preview:
-                challenge = Challenges.query.filter_by(id=challenge_id).first_or_404()
+        
+        # Check for preview flag in request data (for both admin and regular users)
+        preview = request_data.get("preview", False)
+        
+        # Allow preview for SQL challenges
+        if preview:
+            challenge = Challenges.query.filter_by(id=challenge_id).first_or_404()
+            # Only allow preview for SQL challenges
+            if challenge.type == "sql":
                 chal_class = get_chal_class(challenge.type)
                 response = chal_class.attempt(challenge, request)
                 # TODO: CTFd 4.0 We should remove the tuple strategy for Challenge plugins in favor of ChallengeResponse

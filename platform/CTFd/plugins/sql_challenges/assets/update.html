@@ -16,7 +16,7 @@
         <input type="text" class="form-control challenge-category" name="category" value="{{ challenge.category }}" placeholder="Enter challenge category">
     </div>
     <div class="form-group">
-        <label for="value">Value<br>
+        <label for="value">Points<br>
             <small class="form-text text-muted">
                 The amount of points awarded for solving this challenge
             </small>
@@ -53,32 +53,28 @@
     
     <!-- Test Section -->
     <div class="form-group">
-        <label>Test Your Queries<br>
-            <small class="form-text text-muted">
-                Test your initialization and solution queries.
-            </small>
+        <label
+          >Test Your Queries<br />
+          <small class="form-text text-muted">
+            Test your initialization and solution queries before saving.
+          </small>
         </label>
-        <button type="button" class="btn btn-primary" id="test-sql-btn">Test SQL Queries</button>
-        <button type="button" class="btn btn-info" id="test-custom-btn">Test Custom Query</button>
-        
-        <div id="custom-query-section" class="mt-3" style="display: none;">
-            <textarea class="form-control" id="custom-query" rows="3" placeholder="Enter a custom query to test"></textarea>
-            <button type="button" class="btn btn-sm btn-success mt-2" id="run-custom-query">Run Custom Query</button>
+        <button type="button" class="btn btn-primary" id="test-sql-btn">
+          Test SQL Queries
+        </button>
+        <div id="test-results" class="mt-3" style="display: none">
+          <h5>Test Results:</h5>
+          <div id="test-output" class="border p-3 bg-body-secondary"></div>
         </div>
-        
-        <div id="test-results" class="mt-3" style="display: none;">
-            <h5>Test Results:</h5>
-            <div id="test-output" class="border p-3 bg-light"></div>
-        </div>
-    </div>
+      </div>
     
     <div class="form-group">
-        <label for="connection_info">Connection Info<br>
+        <label for="deadline">Deadline (KST)<br>
             <small class="form-text text-muted">
-                Optional connection information for the challenge
+                The submission deadline for this challenge in Korean Standard Time (optional)
             </small>
         </label>
-        <input type="text" class="form-control challenge-connection-info" name="connection_info" value="{{ challenge.connection_info }}" placeholder="Enter connection info">
+        <input type="datetime-local" class="form-control challenge-deadline" name="deadline" value="{{ challenge.deadline }}" placeholder="Select deadline">
     </div>
     
     <div class="form-group">
@@ -102,5 +98,5 @@
         <input type="number" class="form-control challenge-max-attempts" name="max_attempts" placeholder="0" value="{{ challenge.max_attempts }}">
     </div>
     
-    <button type="submit" class="btn btn-primary btn-outline-primary">Update</button>
+    <button type="submit" class="btn btn-primary">Update</button>
 </form>
