@@ -57,12 +57,17 @@ class SQLChallengeType(BaseChallenge):
         """
         Process the challenge creation request for SQL challenges.
         """
+        from CTFd.models import Flags
         data = request.form or request.get_json()
         
         # Extract SQL-specific fields
         init_query = data.get("init_query", "")
         solution_query = data.get("solution_query", "")
         deadline_str = data.get("deadline", "")
+        
+        # Remove fields that don't belong to the model
+        data.pop("flag", None)
+        data.pop("flag_type", None)
         
         # Create challenge with base fields
         challenge = cls.challenge_model(**data)
@@ -86,6 +91,17 @@ class SQLChallengeType(BaseChallenge):
             challenge.deadline = None
         
         db.session.add(challenge)
+        db.session.commit()
+        
+        # Add a placeholder flag for SQL challenges
+        # SQL challenges don't use traditional flags, but CTFd might expect at least one
+        flag = Flags(
+            challenge_id=challenge.id,
+            type="static",
+            content="[SQL_CHALLENGE_PLACEHOLDER]",
+            data=""
+        )
+        db.session.add(flag)
         db.session.commit()
         
         return challenge
