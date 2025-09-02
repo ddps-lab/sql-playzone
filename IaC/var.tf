@@ -1,7 +1,7 @@
 variable "prefix" {
   description = "The prefix to use for all resources"
   type        = string
-  default     = "sql-playground"
+  default     = "playzone"
 }
 
 variable "region" {
@@ -64,7 +64,7 @@ variable "ondemand_server_instance_class" {
 variable "domain_name" {
   description = "Domain name for the application"
   type        = string
-  default     = "sql-playground.ddps.cloud"
+  default     = "playzone.ddps.cloud"
 }
 
 variable "on_demand_base_capacity" {

@@ -116,6 +116,13 @@ resource "aws_route_table" "private_route_tables" {
   }
 }
 
+# Private Route Table Associations
+resource "aws_route_table_association" "private_subnet_route_associations" {
+  count = length(var.private_subnet_cidrs)
+  subnet_id = aws_subnet.private_subnets[count.index].id
+  route_table_id = aws_route_table.private_route_tables[count.index].id
+}
+
 # Security Group for ALB
 resource "aws_security_group" "alb_sg" {
   name        = "${var.vpc_name}-alb-sg"
