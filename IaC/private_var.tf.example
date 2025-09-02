@@ -1,0 +1,49 @@
+variable "db_username" {
+    description = "Master username for RDS instance"
+    type        = string
+    default     = ""
+    sensitive   = true
+}
+
+variable "db_password" {
+    description = "Master password for RDS instance"
+    type        = string
+    default     = ""
+    sensitive   = true
+}
+
+variable "hosted_zone_id" {
+    description = "Route53 hosted zone ID"
+    type        = string
+    default     = ""
+}
+
+variable "ssh_key_name" {
+    description = "EC2 Key Pair name for SSH access"
+    type        = string
+    default     = ""
+}
+
+variable "aws_profile" {
+  description = "AWS CLI profile name to use"
+  type        = string
+  default     = "default"
+}
+
+variable "ctfd_secret_key" {
+  description = "CTFd secret key"
+  type        = string
+  default     = ""
+}
+
+variable "google_client_id" {
+  description = "Google Client ID"
+  type        = string
+  default     = ""
+}
+
+variable "google_client_secret" {
+  description = "Google Client Secret"
+  type        = string
+  default     = ""
+}

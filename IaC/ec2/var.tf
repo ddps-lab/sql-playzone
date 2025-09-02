@@ -1,0 +1,15 @@
+variable "prefix" { type = string }
+variable "vpc_id" { type = string }
+variable "public_subnet_ids" { type = list(string) }
+variable "alb_security_group_id" { type = string }
+variable "ec2_security_group_id" { type = string }
+variable "hosted_zone_id" { type = string }
+variable "domain_name" { type = string }
+variable "on_demand_base_capacity" { type = number }
+variable "on_demand_percentage_above_base" { type = number }
+variable "asg_min_size" { type = number }
+variable "asg_max_size" { type = number }
+variable "asg_desired_capacity" { type = number }
+variable "key_name" { type = string }
+variable "ondemand_instance_type" { type = string }
+variable "ctfd_ami_arm_id" { type = string }

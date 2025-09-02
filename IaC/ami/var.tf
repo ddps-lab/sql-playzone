@@ -1,0 +1,11 @@
+variable "prefix" { type = string }
+variable "region" { type = string }
+variable "aws_profile" { type = string }
+variable "public_subnet_ids" { type = list(string) }
+variable "ec2_security_group_id" { type = string }
+variable "rds_endpoint" { type = string }
+variable "db_username" { type = string }
+variable "db_password" { type = string }
+variable "ctfd_secret_key" { type = string }
+variable "google_client_id" { type = string }
+variable "google_client_secret" { type = string }
