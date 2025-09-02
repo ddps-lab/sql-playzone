@@ -149,7 +149,7 @@ resource "aws_autoscaling_group" "asg" {
   desired_capacity = var.asg_desired_capacity
 
   health_check_type         = "ELB"
-  health_check_grace_period = 120
+  health_check_grace_period = 300
 
   mixed_instances_policy {
     launch_template {
