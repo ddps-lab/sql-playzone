@@ -79,7 +79,7 @@ resource "aws_launch_template" "amd64" {
     CTFD_SECRET_KEY = var.ctfd_secret_key
     UPLOAD_FOLDER="/var/uploads"
     REDIS_URL="redis://cache:6379"
-    WORKERS=2
+    WORKERS=1
     LOG_FOLDER="/var/log/CTFd"
     ACCESS_LOG="/var/log/CTFd-access"
     ERROR_LOG="/var/log/CTFd-error"
@@ -149,7 +149,7 @@ resource "aws_autoscaling_group" "asg" {
   desired_capacity = var.asg_desired_capacity
 
   health_check_type         = "ELB"
-  health_check_grace_period = 300
+  health_check_grace_period = 120
 
   mixed_instances_policy {
     launch_template {
@@ -165,20 +165,10 @@ resource "aws_autoscaling_group" "asg" {
 
       # Additional overrides - will be used for spot instances
       override {
-        instance_type = "t3.micro"
-      }
-      override {
         instance_type = "t3.medium"
       }
       override {
         instance_type = "t3.large"
-      }
-      override {
-        instance_type = "t4g.micro"
-        launch_template_specification {
-          launch_template_id = aws_launch_template.arm64.id
-          version            = "$Latest"
-        }
       }
       override {
         instance_type = "t4g.small"
@@ -205,7 +195,7 @@ resource "aws_autoscaling_group" "asg" {
 
     instances_distribution {
       on_demand_base_capacity                  = var.on_demand_base_capacity
-      on_demand_percentage_above_base_capacity = 0  # Scaling 시 on-demand 비율 (0이면 전부 spot)
+      on_demand_percentage_above_base_capacity = var.on_demand_percentage_above_base  # Scaling 시 on-demand 비율 (0이면 전부 spot)
       spot_allocation_strategy                 = "price-capacity-optimized"
     }
   }
