@@ -130,10 +130,6 @@ variable "database_instance_class" {
 
 ## 문제 해결
 
-### Spot 인스턴스가 시작되지 않을 때
-- AWS 콘솔에서 Spot 가격 및 가용성 확인
-- `spot_instance_pools = 2`로 다양한 인스턴스 풀 사용
-
 ### RDS 연결 실패
 - Security Group 규칙 확인
 - EC2 인스턴스의 Security Group이 RDS에 허용되어 있는지 확인
