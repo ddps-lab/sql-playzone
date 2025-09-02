@@ -57,7 +57,7 @@ variable "database_instance_class" {
 
 variable "ondemand_server_instance_class" {
   type    = string
-  default = "t3.small"
+  default = "t4g.small"
 }
 
 # EC2 관련 변수들

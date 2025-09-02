@@ -1,6 +1,4 @@
 # Application Load Balancer
-
-# Application Load Balancer
 resource "aws_lb" "alb" {
   name               = "${var.prefix}-alb"
   internal           = false
@@ -52,53 +50,10 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-# Launch Template for x86 instances
-resource "aws_launch_template" "amd64" {
-  name_prefix   = "${var.prefix}-lt"
-  image_id      = data.aws_ami.ubuntu_amd.id
-  instance_type = var.ondemand_instance_type
-  key_name      = var.key_name != "" ? var.key_name : null
-
-  vpc_security_group_ids = [var.ec2_security_group_id]
-
-  block_device_mappings {
-    device_name = "/dev/sda1"
-    
-    ebs {
-      volume_size           = 30
-      volume_type           = "gp3"
-      delete_on_termination = true
-      encrypted             = true
-    }
-  }
-
-  user_data = base64encode(templatefile("${path.module}/userdata.sh", {
-    DB_USERNAME  = var.db_username
-    DB_PASSWORD  = var.db_password
-    RDS_ENDPOINT = var.rds_endpoint
-    CTFD_SECRET_KEY = var.ctfd_secret_key
-    UPLOAD_FOLDER="/var/uploads"
-    REDIS_URL="redis://cache:6379"
-    WORKERS=1
-    LOG_FOLDER="/var/log/CTFd"
-    ACCESS_LOG="/var/log/CTFd-access"
-    ERROR_LOG="/var/log/CTFd-error"
-    REVERSE_PROXY=true
-    SQL_JUDGE_SERVER_URL="http://sql-judge:8080"
-  }))
-
-  tag_specifications {
-    resource_type = "instance"
-    tags = {
-      Name = "${var.prefix}-instance"
-    }
-  }
-}
-
 # Launch Template for ARM instances
-resource "aws_launch_template" "arm64" {
+resource "aws_launch_template" "arm_launch_template" {
   name_prefix   = "${var.prefix}-lt-arm"
-  image_id      = data.aws_ami.ubuntu_arm.id
+  image_id      = var.ctfd_ami_arm_id
   instance_type = "t4g.micro"
   key_name      = var.key_name != "" ? var.key_name : null
 
@@ -115,20 +70,7 @@ resource "aws_launch_template" "arm64" {
     }
   }
 
-  user_data = base64encode(templatefile("${path.module}/userdata.sh", {
-    DB_USERNAME  = var.db_username
-    DB_PASSWORD  = var.db_password
-    RDS_ENDPOINT = var.rds_endpoint
-    CTFD_SECRET_KEY = var.ctfd_secret_key
-    UPLOAD_FOLDER="/var/uploads"
-    REDIS_URL="redis://cache:6379"
-    WORKERS=1
-    LOG_FOLDER="/var/log/CTFd"
-    ACCESS_LOG="/var/log/CTFd-access"
-    ERROR_LOG="/var/log/CTFd-error"
-    REVERSE_PROXY=true
-    SQL_JUDGE_SERVER_URL="http://sql-judge:8080"
-  }))
+  user_data = base64encode(templatefile("${path.module}/userdata.sh", {}))
 
   tag_specifications {
     resource_type = "instance"
@@ -149,12 +91,12 @@ resource "aws_autoscaling_group" "asg" {
   desired_capacity = var.asg_desired_capacity
 
   health_check_type         = "ELB"
-  health_check_grace_period = 300
+  health_check_grace_period = 120
 
   mixed_instances_policy {
     launch_template {
       launch_template_specification {
-        launch_template_id = aws_launch_template.amd64.id
+        launch_template_id = aws_launch_template.arm_launch_template.id
         version            = "$Latest"
       }
 
@@ -165,29 +107,16 @@ resource "aws_autoscaling_group" "asg" {
 
       # Additional overrides - will be used for spot instances
       override {
-        instance_type = "t3.medium"
-      }
-      override {
-        instance_type = "t3.large"
-      }
-      override {
-        instance_type = "t4g.small"
-        launch_template_specification {
-          launch_template_id = aws_launch_template.arm64.id
-          version            = "$Latest"
-        }
-      }
-      override {
         instance_type = "t4g.medium"
         launch_template_specification {
-          launch_template_id = aws_launch_template.arm64.id
+          launch_template_id = aws_launch_template.arm_launch_template.id
           version            = "$Latest"
         }
       }
       override {
         instance_type = "t4g.large"
         launch_template_specification {
-          launch_template_id = aws_launch_template.arm64.id
+          launch_template_id = aws_launch_template.arm_launch_template.id
           version            = "$Latest"
         }
       }

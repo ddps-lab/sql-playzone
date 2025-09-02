@@ -35,3 +35,15 @@ variable "ctfd_secret_key" {
   type        = string
   default     = ""
 }
+
+variable "google_client_id" {
+  description = "Google Client ID"
+  type        = string
+  default     = ""
+}
+
+variable "google_client_secret" {
+  description = "Google Client Secret"
+  type        = string
+  default     = ""
+}
