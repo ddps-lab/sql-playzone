@@ -610,11 +610,15 @@ class ChallengeAttempt(Resource):
             request_data = request.get_json()
 
         challenge_id = request_data.get("challenge_id")
-
-        if current_user.is_admin():
-            preview = request.args.get("preview", False)
-            if preview:
-                challenge = Challenges.query.filter_by(id=challenge_id).first_or_404()
+        
+        # Check for preview flag in request data (for both admin and regular users)
+        preview = request_data.get("preview", False)
+        
+        # Allow preview for SQL challenges
+        if preview:
+            challenge = Challenges.query.filter_by(id=challenge_id).first_or_404()
+            # Only allow preview for SQL challenges
+            if challenge.type == "sql":
                 chal_class = get_chal_class(challenge.type)
                 response = chal_class.attempt(challenge, request)
                 # TODO: CTFd 4.0 We should remove the tuple strategy for Challenge plugins in favor of ChallengeResponse

@@ -68,15 +68,38 @@ WHERE condition;"
     <!-- Fixed Submit Button Bar -->
     <div class="submit-button-bar">
     <div class="container-fluid">
-        <div class="d-flex justify-content-end">
-            <button
-                id="challenge-submit"
-                class="btn btn-primary" 
-                type="button"
-                onclick="submitSQLChallenge()"
-            >
-                <i class="fas fa-play"></i> Execute Query
-            </button>
+        <div class="d-flex justify-content-between align-items-center">
+            <!-- Deadline Display -->
+            <div class="deadline-display">
+                {% if challenge.deadline %}
+                <span class="text-muted">
+                    <i class="fas fa-clock"></i> Deadline: 
+                    <span id="deadline-time" data-deadline="{{ challenge.deadline }}">{{ challenge.deadline }}</span>
+                </span>
+                {% endif %}
+            </div>
+            
+            <!-- Buttons -->
+            <div class="d-flex gap-2">
+                <button
+                    id="challenge-execute"
+                    class="btn btn-secondary" 
+                    type="button"
+                    onclick="executeSQLQuery()"
+                    title="Run query without submitting"
+                >
+                    <i class="fas fa-play me-1"></i> Execute
+                </button>
+                <button
+                    id="challenge-submit"
+                    class="btn btn-primary" 
+                    type="button"
+                    onclick="submitSQLChallenge()"
+                    title="Submit query for grading"
+                >
+                    <i class="fas fa-check me-1"></i> Execute & Submit
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -287,6 +310,29 @@ body {
     padding: 8px 20px;
 }
 
+/* Deadline Display */
+.deadline-display {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.deadline-display .text-muted {
+    color: var(--bs-secondary-color) !important;
+}
+
+.deadline-display.deadline-warning {
+    color: var(--bs-warning) !important;
+}
+
+.deadline-display.deadline-danger {
+    color: var(--bs-danger) !important;
+}
+
+.deadline-display.deadline-warning .text-muted,
+.deadline-display.deadline-danger .text-muted {
+    color: inherit !important;
+}
+
 /* Dark mode support for button bar */
 [data-bs-theme="dark"] .submit-button-bar {
     box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.2);
@@ -413,6 +459,18 @@ body {
     margin-bottom: 1rem;
 }
 
+/* Row count footer styling */
+.row-count-footer {
+    background-color: var(--bs-gray-100);
+    border-top: 1px solid var(--bs-border-color);
+}
+
+/* Dark mode support for row count footer */
+[data-bs-theme="dark"] .row-count-footer {
+    background-color: var(--bs-gray-900);
+    border-top: 1px solid var(--bs-gray-700);
+}
+
 @media (max-width: 768px) {
     .sql-challenge-container {
         height: auto;
@@ -520,17 +578,31 @@ function initSQLEditor() {
         lineWrapping: true,
         autofocus: true,
         scrollbarStyle: 'native',
+        viewportMargin: Infinity,
+        readOnly: false,  // Ensure editor is not read-only
+        inputStyle: 'contenteditable',  // Use contenteditable for better compatibility
         extraKeys: {
             "Ctrl-Enter": function() {
                 document.getElementById('challenge-submit').click();
-            }
+            },
+            "Tab": "indentMore"
         }
     });
     
-    // Force CodeMirror to fit container
+    // Force CodeMirror to fit container and focus
     setTimeout(() => {
         sqlEditor.refresh();
+        sqlEditor.focus();
+        // Set cursor to end of content
+        sqlEditor.setCursor(sqlEditor.lineCount(), 0);
     }, 100);
+    
+    // Add click event to focus editor
+    container.addEventListener('click', function(e) {
+        if (e.target === container || e.target.classList.contains('CodeMirror-scroll')) {
+            sqlEditor.focus();
+        }
+    });
     
     // Sync with textarea
     sqlEditor.on('change', function() {
@@ -538,6 +610,82 @@ function initSQLEditor() {
     });
     
     return true;
+}
+
+// Execute SQL Query (without submission)
+async function executeSQLQuery() {
+    const challengeId = document.getElementById('challenge-id').value;
+    const submission = sqlEditor ? sqlEditor.getValue() : document.getElementById('challenge-input').value;
+    
+    if (!submission.trim()) {
+        alert('Please enter a SQL query');
+        return;
+    }
+    
+    try {
+        console.log('Executing query with preview flag...');
+        const requestBody = {
+            challenge_id: parseInt(challengeId),
+            submission: submission,
+            preview: true  // Flag to indicate this is just a preview/test
+        };
+        console.log('Request body:', requestBody);
+        
+        const response = await fetch('/api/v1/challenges/attempt', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'CSRF-Token': init.csrfNonce
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        console.log('Response status:', response.status);
+        if (!response.ok) {
+            console.error('Response not OK:', response.statusText);
+        }
+        
+        // First get the response as text to debug
+        const responseText = await response.text();
+        console.log('Raw response text:', responseText);
+        
+        // Try to parse as JSON
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch (e) {
+            console.error('Failed to parse response as JSON:', e);
+            console.error('Response was:', responseText);
+            alert('Server returned invalid JSON response');
+            return;
+        }
+        console.log('Parsed result:', result);
+        
+        // Check if result has the expected structure
+        if (!result || typeof result !== 'object') {
+            console.error('Invalid result structure:', result);
+            alert('Invalid response from server');
+            return;
+        }
+        
+        // CTFd API returns {success: bool, data: {...}} structure
+        // We need to wrap our result if it doesn't have this structure
+        if (!result.hasOwnProperty('data')) {
+            console.log('Wrapping result in CTFd format');
+            const wrappedResult = {
+                success: true,
+                data: result
+            };
+            displayResult(wrappedResult, true);
+        } else {
+            displayResult(result, true);
+        }
+        
+    } catch (error) {
+        console.error('Error executing query:', error);
+        console.error('Error details:', error.message, error.stack);
+        alert('Error executing query. Please check console for details.');
+    }
 }
 
 // Submit SQL Challenge
@@ -564,7 +712,26 @@ async function submitSQLChallenge() {
         });
         
         const result = await response.json();
-        displayResult(result);
+        console.log('Submit result:', result);
+        
+        // Check if result has the expected structure
+        if (!result || typeof result !== 'object') {
+            console.error('Invalid result structure:', result);
+            alert('Invalid response from server');
+            return;
+        }
+        
+        // CTFd API returns {success: bool, data: {...}} structure
+        if (!result.hasOwnProperty('data')) {
+            console.log('Wrapping result in CTFd format');
+            const wrappedResult = {
+                success: true,
+                data: result
+            };
+            displayResult(wrappedResult, false);
+        } else {
+            displayResult(result, false);
+        }
         
     } catch (error) {
         console.error('Error submitting challenge:', error);
@@ -573,22 +740,29 @@ async function submitSQLChallenge() {
 }
 
 // Display Result
-function displayResult(result) {
+function displayResult(result, isPreview = false) {
     const container = document.getElementById('query-result-container');
     
     // Clear and prepare container
     container.innerHTML = '';
     
+    // Parse message first to check if it's a preview
+    let message = result.data.message || '';
+    const isActuallyPreview = message.startsWith('[PREVIEW]');
+    
     // Create status message
     const statusDiv = document.createElement('div');
     const isAlreadySolved = result.data.status === 'already_solved';
     statusDiv.className = result.data.status === 'correct' || isAlreadySolved ? 'alert alert-success' : 
-                          result.data.status === 'incorrect' ? 'alert alert-danger' : 
+                          (result.data.status === 'incorrect' && !isActuallyPreview) ? 'alert alert-danger' : 
+                          isActuallyPreview ? 'alert alert-info' :
                           'alert alert-warning';
     statusDiv.innerHTML = '<span id="status-text"></span>';
     
-    // Parse message for results
-    let message = result.data.message || '';
+    // Continue processing message
+    if (isActuallyPreview) {
+        message = message.replace('[PREVIEW]\n', '');
+    }
     
     // Remove "but you already solved this" from message for parsing
     if (isAlreadySolved) {
@@ -597,6 +771,7 @@ function displayResult(result) {
     
     console.log('Raw message:', message);  // Debug log
     console.log('Status:', result.data.status);  // Debug log
+    console.log('Is preview:', isActuallyPreview);  // Debug log
     
     const lines = message.split('\n');
     let statusTextContent = '';
@@ -675,8 +850,8 @@ function displayResult(result) {
         console.log('No user result to render');  // Debug log
     }
     
-    // Show success modal if correct
-    if (result.data.status === 'correct') {
+    // Show success modal if correct (only for actual submissions, not previews)
+    if (result.data.status === 'correct' && !isPreview) {
         console.log('Challenge solved! Showing success modal...'); // Debug log
         
         // Update earned points if available
@@ -744,7 +919,7 @@ function renderTable(data) {
     html += '</tbody>';
     
     html += '</table>';
-    html += `<div class="p-2 bg-light text-muted small">${data.row_count} row(s) returned</div>`;
+    html += `<div class="row-count-footer p-2 text-muted small">${data.row_count} row(s) returned</div>`;
     
     return html;
 }
@@ -798,7 +973,13 @@ function initPanelResize() {
             
             // Trigger CodeMirror refresh after resize
             if (sqlEditor) {
-                setTimeout(() => sqlEditor.refresh(), 10);
+                setTimeout(() => {
+                    sqlEditor.refresh();
+                    // Keep focus if it was focused before
+                    if (document.activeElement && document.activeElement.classList.contains('CodeMirror')) {
+                        sqlEditor.focus();
+                    }
+                }, 10);
             }
         }
     });
@@ -863,7 +1044,13 @@ function initVerticalResize() {
             
             // Trigger CodeMirror refresh after resize
             if (sqlEditor) {
-                setTimeout(() => sqlEditor.refresh(), 10);
+                setTimeout(() => {
+                    sqlEditor.refresh();
+                    // Keep focus if it was focused before
+                    if (document.activeElement && document.activeElement.classList.contains('CodeMirror')) {
+                        sqlEditor.focus();
+                    }
+                }, 10);
             }
         }
     });
@@ -890,11 +1077,62 @@ function initVerticalResize() {
     }
 }
 
+// Update Deadline Display
+function updateDeadlineDisplay() {
+    const deadlineElement = document.getElementById('deadline-time');
+    if (!deadlineElement) return;
+    
+    const deadlineStr = deadlineElement.getAttribute('data-deadline');
+    if (!deadlineStr) return;
+    
+    const deadline = new Date(deadlineStr);
+    const now = new Date();
+    const diff = deadline - now;
+    
+    if (diff <= 0) {
+        deadlineElement.textContent = 'Expired';
+        deadlineElement.closest('.deadline-display').classList.add('deadline-danger');
+        return;
+    }
+    
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    let timeStr = '';
+    if (days > 0) {
+        timeStr = `${days}d ${hours}h ${minutes}m`;
+    } else if (hours > 0) {
+        timeStr = `${hours}h ${minutes}m ${seconds}s`;
+    } else if (minutes > 0) {
+        timeStr = `${minutes}m ${seconds}s`;
+    } else {
+        timeStr = `${seconds}s`;
+    }
+    
+    deadlineElement.textContent = timeStr + ' remaining';
+    
+    // Add warning colors based on time remaining
+    const deadlineDisplay = deadlineElement.closest('.deadline-display');
+    deadlineDisplay.classList.remove('deadline-warning', 'deadline-danger');
+    
+    if (days === 0 && hours < 1) {
+        deadlineDisplay.classList.add('deadline-danger');
+    } else if (days === 0 && hours < 6) {
+        deadlineDisplay.classList.add('deadline-warning');
+    }
+}
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     initSQLEditor();
     initPanelResize();
     initVerticalResize();
+    
+    // Update deadline display
+    updateDeadlineDisplay();
+    setInterval(updateDeadlineDisplay, 1000);
     
     // Add modal close functionality
     const modalCloseButtons = document.querySelectorAll('[data-bs-dismiss="modal"]');

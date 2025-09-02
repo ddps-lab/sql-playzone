@@ -568,11 +568,21 @@ def sql_challenge_page(challenge_id):
     
     from CTFd.plugins.sql_challenges import SQLChallenge
     from CTFd.utils.config.pages import build_markdown
+    import pytz
     
     sql_challenge = SQLChallenge.query.filter_by(id=challenge_id).first_or_404()
     
     # Render markdown description
     description_html = build_markdown(challenge.description or "")
+    
+    # Convert deadline to KST if it exists
+    deadline_str = None
+    if sql_challenge.deadline:
+        KST = pytz.timezone('Asia/Seoul')
+        utc_dt = pytz.UTC.localize(sql_challenge.deadline)
+        kst_dt = utc_dt.astimezone(KST)
+        # Return as ISO format string for JavaScript
+        deadline_str = kst_dt.isoformat()
     
     return render_template(
         "sql_challenge.html",
@@ -583,6 +593,7 @@ def sql_challenge_page(challenge_id):
             "value": challenge.value,
             "category": challenge.category,
             "init_query": sql_challenge.init_query,
+            "deadline": deadline_str,
             "type": "sql"
         }
     )

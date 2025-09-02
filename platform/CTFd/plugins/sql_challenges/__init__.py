@@ -5,7 +5,7 @@ import time
 import subprocess
 import atexit
 import socket
-from datetime import datetime
+from datetime import datetime, timezone
 import pytz
 from flask import Blueprint, request, jsonify
 from CTFd.models import Challenges, db
@@ -157,20 +157,25 @@ class SQLChallengeType(BaseChallenge):
         """
         Check whether a given SQL query produces the correct result.
         """
-        # Check if deadline has passed (deadline is stored in UTC)
-        if challenge.deadline and datetime.utcnow() > challenge.deadline:
-            return ChallengeResponse(
-                status="incorrect",
-                message="Submission deadline has passed"
-            )
-        
         data = request.form or request.get_json()
         submission = data.get("submission", "").strip()
+        is_preview = data.get("preview", False)  # Check if this is just a preview/test
+        
+        # Debug logging
+        import logging
+        logging.info(f"SQL Challenge attempt - Preview: {is_preview}, Submission length: {len(submission)}")
         
         if not submission:
             return ChallengeResponse(
                 status="incorrect",
                 message="Please provide a SQL query"
+            )
+        
+        # Check deadline only for actual submissions, not previews
+        if not is_preview and challenge.deadline and datetime.utcnow() > challenge.deadline:
+            return ChallengeResponse(
+                status="incorrect",
+                message="Submission deadline has passed"
             )
         
         # Execute SQL queries using Go MySQL server
@@ -180,44 +185,79 @@ class SQLChallengeType(BaseChallenge):
             
             # Use Go MySQL server
             go_server_url = os.environ.get('SQL_JUDGE_SERVER_URL', 'http://localhost:8080')
-            response = requests.post(
-                f"{go_server_url}/judge",
-                json={
-                    'init_query': challenge.init_query,
-                    'solution_query': challenge.solution_query,
-                    'user_query': submission
-                },
-                timeout=10
-            )
             
-            if response.status_code == 200:
-                result = response.json()
+            if is_preview:
+                # For preview, only execute the user query without comparing
+                response = requests.post(
+                    f"{go_server_url}/judge",
+                    json={
+                        'init_query': challenge.init_query,
+                        'solution_query': submission,  # Use user query as solution to get its result
+                        'user_query': submission
+                    },
+                    timeout=10
+                )
                 
-                if not result.get('success'):
+                if response.status_code == 200:
+                    result = response.json()
+                    
+                    if not result.get('success'):
+                        return ChallengeResponse(
+                            status="incorrect",
+                            message=f"[PREVIEW]\nError: {result.get('error', 'Unknown error')}"
+                        )
+                    
+                    # Just show the query result without grading
+                    user_result_str = json.dumps(result['user_result'])
                     return ChallengeResponse(
                         status="incorrect",
-                        message=f"Error: {result.get('error', 'Unknown error')}"
-                    )
-                
-                # Format results for display
-                user_result_str = json.dumps(result['user_result'])
-                expected_result_str = json.dumps(result['expected_result'])
-                
-                if result['match']:
-                    return ChallengeResponse(
-                        status="correct",
-                        message=f"✅ Correct! Your query produced the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]"
+                        message=f"[PREVIEW]\nQuery executed successfully:\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]"
                     )
                 else:
                     return ChallengeResponse(
                         status="incorrect",
-                        message=f"❌ Incorrect. Your query did not produce the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]\n\n[EXPECTED_RESULT]\n{expected_result_str}\n[/EXPECTED_RESULT]"
+                        message=f"[PREVIEW]\nSQL judge server error: HTTP {response.status_code}"
                     )
             else:
-                return ChallengeResponse(
-                    status="incorrect",
-                    message=f"SQL judge server error: HTTP {response.status_code}"
+                # Normal submission - compare with solution
+                response = requests.post(
+                    f"{go_server_url}/judge",
+                    json={
+                        'init_query': challenge.init_query,
+                        'solution_query': challenge.solution_query,
+                        'user_query': submission
+                    },
+                    timeout=10
                 )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    
+                    if not result.get('success'):
+                        return ChallengeResponse(
+                            status="incorrect",
+                            message=f"Error: {result.get('error', 'Unknown error')}"
+                        )
+                    
+                    # Format results for display
+                    user_result_str = json.dumps(result['user_result'])
+                    expected_result_str = json.dumps(result['expected_result'])
+                    
+                    if result['match']:
+                        return ChallengeResponse(
+                            status="correct",
+                            message=f"✅ Correct! Your query produced the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]"
+                        )
+                    else:
+                        return ChallengeResponse(
+                            status="incorrect",
+                            message=f"❌ Incorrect. Your query did not produce the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]\n\n[EXPECTED_RESULT]\n{expected_result_str}\n[/EXPECTED_RESULT]"
+                        )
+                else:
+                    return ChallengeResponse(
+                        status="incorrect",
+                        message=f"SQL judge server error: HTTP {response.status_code}"
+                    )
                     
         except Exception as e:
             return ChallengeResponse(

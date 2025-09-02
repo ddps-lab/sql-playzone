@@ -60,10 +60,19 @@ def challenges_detail(challenge_id):
         challenge_class.templates["update"].lstrip("/"), challenge=challenge
     )
 
+    # Parse URL parameters safely
+    script_parts = challenge_class.scripts["update"].split("?")
+    script_route = script_parts[0].lstrip("/")
+    
+    # Only parse parameters if they exist
+    script_params = {}
+    if len(script_parts) > 1:
+        script_params = dict(param.split("=", 1) for param in script_parts[1].split("&") if "=" in param)
+    
     update_script = url_for(
         "views.static_html",
-        route=challenge_class.scripts["update"].split("?")[0].lstrip("/"),
-        **dict(param.split("=", 1) for param in challenge_class.scripts["update"].split("?")[1].split("&"))
+        route=script_route,
+        **script_params
     )
 
     return render_template(
