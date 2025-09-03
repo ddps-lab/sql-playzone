@@ -24,8 +24,8 @@ def upgrade(op=None):
         op.create_table(
             'sql_challenge',
             Column('id', Integer, ForeignKey('challenges.id', ondelete='CASCADE'), primary_key=True),
-            Column('init_query', Text, nullable=True),
-            Column('solution_query', Text, nullable=True),
+            Column('init_query', Text, nullable=True),  # LONGTEXT equivalent in MySQL
+            Column('solution_query', Text, nullable=True),  # LONGTEXT equivalent in MySQL
             Column('deadline', DateTime, nullable=True)
         )
 

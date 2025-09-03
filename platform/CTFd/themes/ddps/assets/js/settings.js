@@ -43,10 +43,14 @@ Alpine.data("SettingsForm", () => ({
       this.success = true;
       this.error = false;
 
+      // Show success message briefly, then redirect to main page
       setTimeout(() => {
         this.success = null;
         this.error = null;
-      }, 3000);
+        
+        window.location.href = "/";
+        console.log("Redirecting to main page");
+      }, 1000);
     } else {
       this.success = false;
       this.error = true;
