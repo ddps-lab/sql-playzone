@@ -1,3 +1,4 @@
 **private_var.tf
 **.terraform**
 **.tfstate**
+.DS_Store
