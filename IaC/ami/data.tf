@@ -29,3 +29,18 @@ data "aws_ami" "ubuntu_arm" {
     values = ["hvm"]
   }
 }
+
+# Check if CTFd AMI already exists - returns empty list if not found
+data "aws_ami_ids" "existing_ctfd_ami_arm" {
+  owners = ["self"]
+
+  filter {
+    name   = "name"
+    values = ["${var.prefix}-ctfd-arm"]
+  }
+
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
+}

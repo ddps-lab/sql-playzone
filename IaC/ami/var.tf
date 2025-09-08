@@ -9,3 +9,4 @@ variable "db_password" { type = string }
 variable "ctfd_secret_key" { type = string }
 variable "google_client_id" { type = string }
 variable "google_client_secret" { type = string }
+variable "aws_account_id" { type = string }

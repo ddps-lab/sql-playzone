@@ -47,3 +47,9 @@ variable "google_client_secret" {
   type        = string
   default     = ""
 }
+
+variable "aws_account_id" {
+  description = "Your AWS account id"
+  type        = string
+  default     = ""
+}

@@ -12,4 +12,5 @@ variable "asg_max_size" { type = number }
 variable "asg_desired_capacity" { type = number }
 variable "key_name" { type = string }
 variable "ondemand_instance_type" { type = string }
-variable "ctfd_ami_arm_id" { type = string }
+variable "region" { type = string }
+variable "aws_account_id" { type = string }
