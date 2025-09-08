@@ -14,7 +14,7 @@ module "vpc" {
   data_subnet_cidrs    = var.data_subnet_cidrs
 }
 
-# RDS Module
+# RDS Module (Aurora Serverless v2)
 module "rds" {
   source = "./rds"
 
@@ -24,8 +24,10 @@ module "rds" {
   rds_security_group_id   = module.vpc.rds_security_group_id
   db_username             = var.db_username
   db_password             = var.db_password
-  engine_version          = var.engine_version
-  database_instance_class = var.database_instance_class
+  aurora_engine_version   = var.aurora_engine_version
+  aurora_min_capacity     = var.aurora_min_capacity
+  aurora_max_capacity     = var.aurora_max_capacity
+  aurora_instance_count   = var.aurora_instance_count
 
   depends_on = [module.vpc]
 }
@@ -45,6 +47,7 @@ module "ami" {
   ctfd_secret_key       = var.ctfd_secret_key
   google_client_id      = var.google_client_id
   google_client_secret  = var.google_client_secret
+  aws_account_id        = var.aws_account_id
 
   depends_on = [module.vpc, module.rds]
 }
@@ -67,8 +70,10 @@ module "ec2" {
   asg_desired_capacity             = var.asg_desired_capacity
   key_name                         = var.ssh_key_name
   ondemand_instance_type           = var.ondemand_server_instance_class
-  ctfd_ami_arm_id                  = module.ami.ctfd_ami_arm_id
+  region                           = var.region
+  aws_account_id                   = var.aws_account_id
 
-  depends_on = [module.vpc, module.rds, module.ami]
+  # depends_on = [module.vpc, module.rds] # We do not append ami module but you have to create ami before apply this module
+  depends_on = [module.vpc, module.rds, module.ami] # When you want to use only `terraform apply` without designating targets, use this.
 }
 

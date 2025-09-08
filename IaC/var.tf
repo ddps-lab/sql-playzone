@@ -42,18 +42,43 @@ variable "data_subnet_cidrs" {
   default = ["192.168.30.0/24", "192.168.31.0/24"]
 }
 
-# RDS 관련 변수들
-variable "engine_version" {
-  description = "MariaDB engine version"
+# Aurora Serverless v2 관련 변수들
+variable "aurora_engine_version" {
+  description = "Aurora MySQL engine version"
   type        = string
-  default     = "10.11.14"
+  default     = "8.0.mysql_aurora.3.08.2"  # Aurora MySQL 8.0 compatible
 }
 
-variable "database_instance_class" {
-  description = "Instance class for RDS"
-  type        = string
-  default     = "db.t3.medium"
+variable "aurora_min_capacity" {
+  description = "Minimum capacity for Aurora Serverless v2 (in ACUs)"
+  type        = number
+  default     = 0.5  # 최소 0.5 ACU
 }
+
+variable "aurora_max_capacity" {
+  description = "Maximum capacity for Aurora Serverless v2 (in ACUs)"
+  type        = number
+  default     = 32  # 최대 32 ACU
+}
+
+variable "aurora_instance_count" {
+  description = "Number of Aurora instances"
+  type        = number
+  default     = 1  # 기본 1개 인스턴스 (writer)
+}
+
+# # 기존 RDS 변수들 (마이그레이션 후 제거 예정)
+# variable "engine_version" {
+#   description = "MariaDB engine version"
+#   type        = string
+#   default     = "10.11.14"
+# }
+
+# variable "database_instance_class" {
+#   description = "Instance class for RDS"
+#   type        = string
+#   default     = "db.t3.medium"
+# }
 
 variable "ondemand_server_instance_class" {
   type    = string
