@@ -36,6 +36,73 @@ resource "aws_acm_certificate_validation" "cert_validation" {
   validation_record_fqdns = [for record in aws_route53_record.cert_validation_record : record.fqdn]
 }
 
+# IAM Role for EC2 instances to access ECR
+resource "aws_iam_role" "ec2_ecr_read_role" {
+  name = "${var.prefix}-ec2-ecr-read-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${var.prefix}-ec2-ecr-role"
+  }
+}
+
+# IAM Policy for ECR read-only access
+resource "aws_iam_policy" "ecr_read_policy" {
+  name        = "${var.prefix}-ecr-read-policy"
+  description = "Policy for ECR read-only access"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:DescribeRepositories",
+          "ecr:ListImages",
+          "ecr:DescribeImages"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${var.prefix}-ecr-read-policy"
+  }
+}
+
+# Attach ECR policy to the role
+resource "aws_iam_role_policy_attachment" "ecr_policy_attach" {
+  role       = aws_iam_role.ec2_ecr_read_role.name
+  policy_arn = aws_iam_policy.ecr_read_policy.arn
+}
+
+# Instance Profile for EC2
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "${var.prefix}-ec2-profile"
+  role = aws_iam_role.ec2_ecr_read_role.name
+
+  tags = {
+    Name = "${var.prefix}-ec2-profile"
+  }
+}
+
 # Application Load Balancer
 resource "aws_lb" "alb" {
   name               = "${var.prefix}-alb"
@@ -112,11 +179,15 @@ resource "aws_lb_listener" "https" {
 # Launch Template for ARM instances
 resource "aws_launch_template" "arm_launch_template" {
   name_prefix   = "${var.prefix}-lt-arm"
-  image_id      = var.ctfd_ami_arm_id
+  image_id      = data.aws_ami.ctfd_ami_arm.id
   instance_type = "t4g.micro"
   key_name      = var.key_name != "" ? var.key_name : null
 
   vpc_security_group_ids = [var.ec2_security_group_id]
+  
+  iam_instance_profile {
+    name = aws_iam_instance_profile.ec2_profile.name
+  }
 
   block_device_mappings {
     device_name = "/dev/sda1"
@@ -129,7 +200,10 @@ resource "aws_launch_template" "arm_launch_template" {
     }
   }
 
-  user_data = base64encode(templatefile("${path.module}/userdata.sh", {}))
+  user_data = base64encode(templatefile("${path.module}/userdata.sh", {
+    REGION         = var.region
+    AWS_ACCOUNT_ID = var.aws_account_id
+  }))
 
   tag_specifications {
     resource_type = "instance"
@@ -214,11 +288,21 @@ resource "aws_autoscaling_policy" "request_count_tracking" {
   autoscaling_group_name = aws_autoscaling_group.asg.name
   policy_type            = "TargetTrackingScaling"
 
+  # Ensure ALB listeners are created before the scaling policy
+  depends_on = [
+    aws_lb_listener.http,
+    aws_lb_listener.https
+  ]
+
   target_tracking_configuration {
     predefined_metric_specification {
       predefined_metric_type = "ALBRequestCountPerTarget"
       resource_label         = "${aws_lb.alb.arn_suffix}/${aws_lb_target_group.tg.arn_suffix}"
     }
+    # 1분당 300 요청임
+    # 그런데 지금 여러 type 이 있는데 (small, medium, large)
+    # 인스턴스당으로 1분당 300요청이면, large 가 동작해서 충분함에도 불구하고 scaling 이 될 수도 있다.
+    # 어떤게 좋을지 알아봐야 할듯함.
     target_value = 300.0  # 인스턴스당 300 요청 유지
   }
 }
