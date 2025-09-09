@@ -56,7 +56,11 @@
 
                       <div class="challenge-inner my-3">
                         <p x-text="c.name"></p>
-                        <span class="badge bg-info" x-text="c.value + ' Points'"></span>
+                        <span 
+                          class="badge" 
+                          :class="c.solved_by_me ? 'bg-success' : 'bg-secondary'"
+                          x-text="c.solved_by_me ? 'Solved' : 'Unsolved'"
+                        ></span>
                         <template x-if="c.deadline">
                           <div class="mt-2">
                             <small 
