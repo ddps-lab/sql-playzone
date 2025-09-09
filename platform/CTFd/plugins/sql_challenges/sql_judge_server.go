@@ -21,6 +21,7 @@ type QueryRequest struct {
 	UserQuery     string `json:"user_query"`
 	ClientIP      string `json:"client_ip,omitempty"`
 	UserID        string `json:"user_id,omitempty"`
+	UserName      string `json:"user_name,omitempty"`
 	ChallengeID   string `json:"challenge_id,omitempty"`
 }
 
@@ -182,6 +183,22 @@ func validateSQLQuery(query string, req *QueryRequest) error {
 }
 
 // cleanupSQLStatement processes SQL statements to ensure compatibility
+// Table 생성할 때 Foreign Key 로 constraint 를 생성시 기존의 MySQL 에서는 자동으로 Name 을 생성해 준다.
+// 하지만 go-mysql-server 에서는 자동으로 Foreign Key Name 을 생성해 주지 않기 떄문에 수동으로 Name 을 생성해 주어야 한다.
+// 예시:
+// -- 이름 없는 FK (MySQL 에서는 허용되지만 go-mysql-server 에서는 오류 발생)
+// CREATE TABLE orders (
+//     id INT PRIMARY KEY,
+//     user_id INT,
+//     FOREIGN KEY (user_id) REFERENCES users(id)  -- 이름이 없음!
+// );
+
+// -- 이름 있는 FK (아래와 같이 명시적 지정 해주어야 함)
+// CREATE TABLE orders (
+//     id INT PRIMARY KEY,
+//     user_id INT,
+//     CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id)
+// );
 func cleanupSQLStatement(stmt string) string {
 	// Generate unique names for unnamed FOREIGN KEY constraints
 	// This prevents "duplicate foreign key constraint name" errors
@@ -266,15 +283,30 @@ func executeQuery(initQueries []string, query string, req *QueryRequest) (*Query
 			originalStmt := stmt
 			stmt = cleanupSQLStatement(stmt)
 			
-			// Log the statement for debugging
-			if strings.Contains(strings.ToUpper(stmt), "CREATE") || strings.Contains(strings.ToUpper(stmt), "INSERT") {
-				log.Printf("Executing: %s", stmt)
-			}
+			logMaxLength := 200
+			// 일반적인 상황에서는 이제 로깅은 나중에 디버깅용으로 남겨둠.
+			// 너무 많은 로그가 발생하여 진짜 로그를 판별하기 어렵게 됨
+			// // Log the statement for debugging
+			// if strings.Contains(strings.ToUpper(stmt), "CREATE") || strings.Contains(strings.ToUpper(stmt), "INSERT") {
+			// 	if len(stmt) > logMaxLength {
+			// 		log.Printf("Executing (truncated): %s...", stmt[:logMaxLength])
+			// 	} else {
+			// 		log.Printf("Executing: %s", stmt)
+			// 	}
+			// }
 
 			_, iter, err := engine.Query(ctx, stmt)
 			if err != nil {
-				log.Printf("Failed to execute: %s", stmt)
-				log.Printf("Original was: %s", originalStmt)
+				if len(stmt) > logMaxLength {
+					log.Printf("Failed to execute (truncated): %s...", stmt[:logMaxLength])
+				} else {
+					log.Printf("Failed to execute: %s", stmt)
+				}
+				if len(originalStmt) > logMaxLength {
+					log.Printf("Failed to execute (truncated): %s...", originalStmt[:logMaxLength])
+				} else {
+					log.Printf("Failed to execute: %s", originalStmt)
+				}
 				return nil, fmt.Errorf("init query error: %v", err)
 			}
 
@@ -346,6 +378,15 @@ func handleJudge(w http.ResponseWriter, r *http.Request) {
 	
 	// Prepare init queries
 	initQueries := []string{req.InitQuery}
+
+	// Log User Info
+	if req.UserID != "" || req.UserName != "" || req.ClientIP != "" || req.ChallengeID != "" {
+		log.Printf("Start Query Execution [UserID: %s, UserName: %s, IP: %s, ChallengeID: %s]",
+			req.UserID, req.UserName, req.ClientIP, req.ChallengeID)
+	} else {
+		log.Printf("Start Query Execution [Anonymous User, IP: %s, ChallengeID: %s]",
+			req.ClientIP, req.ChallengeID)
+	}
 
 	// Execute expected result
 	expectedResult, err := executeQuery(initQueries, req.SolutionQuery, &req)

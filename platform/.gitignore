@@ -86,3 +86,6 @@ flask_profiler.sql
 
 # config
 CTFd/config.ini
+
+# environment variables
+.env
