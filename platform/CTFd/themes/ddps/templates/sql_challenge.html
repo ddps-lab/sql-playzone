@@ -616,6 +616,9 @@ function initSQLEditor() {
 async function executeSQLQuery() {
     const challengeId = document.getElementById('challenge-id').value;
     const submission = sqlEditor ? sqlEditor.getValue() : document.getElementById('challenge-input').value;
+    // Get user information from CTFd object
+    const userId = CTFd.user.id;
+    const userName = CTFd.user.name;
     
     if (!submission.trim()) {
         alert('Please enter a SQL query');
@@ -623,11 +626,12 @@ async function executeSQLQuery() {
     }
     
     try {
-        console.log('Executing query with preview flag...');
         const requestBody = {
             challenge_id: parseInt(challengeId),
             submission: submission,
-            preview: true  // Flag to indicate this is just a preview/test
+            preview: true,  // Flag to indicate this is just a preview/test
+            user_id: userId,
+            user_name: userName
         };
         console.log('Request body:', requestBody);
         
@@ -692,7 +696,10 @@ async function executeSQLQuery() {
 async function submitSQLChallenge() {
     const challengeId = document.getElementById('challenge-id').value;
     const submission = sqlEditor ? sqlEditor.getValue() : document.getElementById('challenge-input').value;
-    
+    // Get user information from CTFd object
+    const userId = CTFd.user.id;
+    const userName = CTFd.user.name;
+
     if (!submission.trim()) {
         alert('Please enter a SQL query');
         return;
@@ -707,7 +714,9 @@ async function submitSQLChallenge() {
             },
             body: JSON.stringify({
                 challenge_id: parseInt(challengeId),
-                submission: submission
+                submission: submission,
+                user_id: userId,
+                user_name: userName
             })
         });
         

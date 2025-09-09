@@ -12,6 +12,7 @@ from CTFd.models import Challenges, db
 from CTFd.plugins import register_plugin_assets_directory
 from CTFd.plugins.challenges import CHALLENGE_CLASSES, BaseChallenge, ChallengeResponse
 from CTFd.utils.decorators import admins_only
+from CTFd.utils.user import get_ip
 
 # Set KST timezone
 KST = pytz.timezone('Asia/Seoul')
@@ -177,9 +178,14 @@ class SQLChallengeType(BaseChallenge):
         submission = data.get("submission", "").strip()
         is_preview = data.get("preview", False)  # Check if this is just a preview/test
         
+        # Get user information from request
+        user_id = str(data.get("user_id", ""))
+        user_name = data.get("user_name", "")
+        client_ip = get_ip()
+        
         # Debug logging
         import logging
-        logging.info(f"SQL Challenge attempt - Preview: {is_preview}, Submission length: {len(submission)}")
+        logging.info(f"SQL Challenge attempt - Preview: {is_preview}, User ID: {user_id}, User Name: {user_name}, IP: {client_ip}")
         
         if not submission:
             return ChallengeResponse(
@@ -209,7 +215,11 @@ class SQLChallengeType(BaseChallenge):
                     json={
                         'init_query': challenge.init_query,
                         'solution_query': submission,  # Use user query as solution to get its result
-                        'user_query': submission
+                        'user_query': submission,
+                        'user_id': user_id,
+                        'user_name': user_name,
+                        'client_ip': client_ip,
+                        'challenge_id': str(challenge.id)
                     },
                     timeout=10
                 )
@@ -241,7 +251,11 @@ class SQLChallengeType(BaseChallenge):
                     json={
                         'init_query': challenge.init_query,
                         'solution_query': challenge.solution_query,
-                        'user_query': submission
+                        'user_query': submission,
+                        'user_id': user_id,
+                        'user_name': user_name,
+                        'client_ip': client_ip,
+                        'challenge_id': str(challenge.id)
                     },
                     timeout=10
                 )
