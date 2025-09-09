@@ -9,7 +9,9 @@
             <div class="challenge-info p-4">
                 <h2 class="challenge-name">{{ challenge.name }}</h2>
                 <span class="badge bg-info mb-3">{{ challenge.category }}</span>
-                <span class="badge bg-success mb-3">{{ challenge.value }} points</span>
+                <span class="badge {% if challenge.solved_by_me %}bg-success{% else %}bg-secondary{% endif %} mb-3">
+                    {% if challenge.solved_by_me %}Solved{% else %}Unsolved{% endif %}
+                </span>
                 
                 <div class="challenge-description mt-4">
                     <div class="markdown-content">
@@ -81,6 +83,15 @@ WHERE condition;"
             
             <!-- Buttons -->
             <div class="d-flex gap-2">
+                <button
+                    id="challenge-reset"
+                    class="btn btn-outline-secondary" 
+                    type="button"
+                    onclick="resetSQLEditor()"
+                    title="Clear editor and reset to default"
+                >
+                    <i class="fas fa-undo me-1"></i> Reset
+                </button>
                 <button
                     id="challenge-execute"
                     class="btn btn-secondary" 
@@ -523,7 +534,7 @@ function initSQLEditor() {
     const container = document.getElementById('sql-editor-container');
     
     if (!textarea || !container) {
-        console.log('SQL Editor: Elements not found');
+        // SQL Editor elements not found
         return false;
     }
     
@@ -538,7 +549,7 @@ function initSQLEditor() {
     
     // Check if CodeMirror is available
     if (typeof CodeMirror === 'undefined') {
-        console.log('SQL Editor: Loading CodeMirror from CDN...');
+        // Loading CodeMirror from CDN
         
         // Load CSS
         if (!document.querySelector('link[href*="codemirror"]')) {
@@ -568,9 +579,24 @@ function initSQLEditor() {
         return false;
     }
     
-    // Create CodeMirror instance
+    // Wait for CTFd object to be ready
+    if (typeof CTFd === 'undefined' || !CTFd.user) {
+        setTimeout(() => initSQLEditor(), 100);
+        return false;
+    }
+    
+    // Get unique storage key with user ID and challenge ID
+    const challengeId = document.getElementById('challenge-id').value;
+    const userId = CTFd.user.id || 'anonymous';
+    const storageKey = `sql-challenge-user${userId}-ch${challengeId}-code`;
+    
+    // Load saved code from localStorage
+    const savedCode = localStorage.getItem(storageKey);
+    const initialValue = savedCode || textarea.value || '';
+    
+    // Create CodeMirror instance WITHOUT initial value
     sqlEditor = CodeMirror(container, {
-        value: textarea.value || '',
+        value: '',  // Start with empty
         mode: 'text/x-sql',
         theme: 'monokai',
         lineNumbers: true,
@@ -589,13 +615,19 @@ function initSQLEditor() {
         }
     });
     
-    // Force CodeMirror to fit container and focus
+    // Force CodeMirror to fit container and load saved code after it's ready
     setTimeout(() => {
         sqlEditor.refresh();
+        
+        // NOW load the saved code after editor is ready
+        if (initialValue) {
+            sqlEditor.setValue(initialValue);
+        }
+        
         sqlEditor.focus();
         // Set cursor to end of content
         sqlEditor.setCursor(sqlEditor.lineCount(), 0);
-    }, 100);
+    }, 200);
     
     // Add click event to focus editor
     container.addEventListener('click', function(e) {
@@ -604,12 +636,130 @@ function initSQLEditor() {
         }
     });
     
-    // Sync with textarea
-    sqlEditor.on('change', function() {
-        textarea.value = sqlEditor.getValue();
+    // Save function
+    const saveToStorage = function() {
+        const content = sqlEditor.getValue();
+        textarea.value = content;
+        
+        if (content.trim()) {
+            try {
+                localStorage.setItem(storageKey, content);
+            } catch (e) {
+                console.error('Failed to save:', e);
+            }
+        } else {
+            localStorage.removeItem(storageKey);
+        }
+    };
+    
+    // Track initial load to prevent duplicate save
+    let skipNextSave = true;
+    
+    // Listen to ALL input events
+    sqlEditor.on('beforeChange', function() {
+        if (skipNextSave) {
+            skipNextSave = false;
+            return;
+        }
+        // Schedule save immediately after change
+        setTimeout(saveToStorage, 0);
     });
     
+    // Also save on these events for redundancy
+    sqlEditor.on('inputRead', saveToStorage);
+    sqlEditor.on('keyHandled', saveToStorage);
+    sqlEditor.on('blur', saveToStorage);
+    
+    // Save every 1 second as backup
+    setInterval(() => {
+        if (sqlEditor && document.querySelector('.CodeMirror-focused')) {
+            saveToStorage();
+        }
+    }, 1000);
+    
+    // Show notification if code was restored
+    if (savedCode) {
+        showAutoSaveNotification('Previous code restored from auto-save');
+    }
+    
     return true;
+}
+
+// Show auto-save notification
+function showAutoSaveNotification(message) {
+    const notification = document.createElement('div');
+    notification.className = 'alert alert-info fade show position-fixed';
+    notification.style.cssText = 'top: 70px; right: 20px; z-index: 1050; max-width: 350px; padding: 0.75rem 2.5rem 0.75rem 1rem; position: relative;';
+    
+    // Create message content
+    const messageContent = document.createElement('div');
+    messageContent.style.cssText = 'display: flex; align-items: center;';
+    messageContent.innerHTML = `<i class="fas fa-save me-2"></i><span>${message}</span>`;
+    
+    // Create close button
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'btn-close btn-sm';
+    closeButton.style.cssText = 'position: absolute; top: 50%; right: 0.5rem; transform: translateY(-50%); padding: 0.25rem; font-size: 0.875rem;';
+    closeButton.onclick = function() { notification.remove(); };
+    
+    notification.appendChild(messageContent);
+    notification.appendChild(closeButton);
+    document.body.appendChild(notification);
+    
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 3000);
+}
+
+// Clear saved code when challenge is solved
+function clearSavedCode() {
+    const challengeId = document.getElementById('challenge-id').value;
+    const userId = (CTFd && CTFd.user) ? CTFd.user.id : 'anonymous';
+    const storageKey = `sql-challenge-user${userId}-ch${challengeId}-code`;
+    localStorage.removeItem(storageKey);
+}
+
+// Reset SQL Editor
+function resetSQLEditor() {
+    // Confirm before resetting
+    if (!confirm('Are you sure you want to reset the editor? This will clear all your current code.')) {
+        return;
+    }
+    
+    // Clear the editor
+    if (sqlEditor) {
+        sqlEditor.setValue('');
+        sqlEditor.focus();
+    } else {
+        const textarea = document.getElementById('challenge-input');
+        if (textarea) {
+            textarea.value = '';
+        }
+    }
+    
+    // Clear localStorage
+    const challengeId = document.getElementById('challenge-id').value;
+    const userId = (CTFd && CTFd.user) ? CTFd.user.id : 'anonymous';
+    const storageKey = `sql-challenge-user${userId}-ch${challengeId}-code`;
+    localStorage.removeItem(storageKey);
+    
+    // Clear results
+    const container = document.getElementById('query-result-container');
+    if (container) {
+        container.innerHTML = `
+            <div class="text-muted text-center py-5">
+                <i class="fas fa-database fa-3x mb-3"></i>
+                <p>Execute a query to see results</p>
+            </div>
+        `;
+    }
+    
+    // Show notification
+    showAutoSaveNotification('Editor has been reset');
 }
 
 // Execute SQL Query (without submission)
@@ -617,8 +767,8 @@ async function executeSQLQuery() {
     const challengeId = document.getElementById('challenge-id').value;
     const submission = sqlEditor ? sqlEditor.getValue() : document.getElementById('challenge-input').value;
     // Get user information from CTFd object
-    const userId = CTFd.user.id;
-    const userName = CTFd.user.name;
+    const userId = (CTFd && CTFd.user) ? CTFd.user.id : null;
+    const userName = (CTFd && CTFd.user) ? CTFd.user.name : 'anonymous';
     
     if (!submission.trim()) {
         alert('Please enter a SQL query');
@@ -633,7 +783,7 @@ async function executeSQLQuery() {
             user_id: userId,
             user_name: userName
         };
-        console.log('Request body:', requestBody);
+        // Request body prepared
         
         const response = await fetch('/api/v1/challenges/attempt', {
             method: 'POST',
@@ -644,14 +794,14 @@ async function executeSQLQuery() {
             body: JSON.stringify(requestBody)
         });
         
-        console.log('Response status:', response.status);
+        // Response received
         if (!response.ok) {
             console.error('Response not OK:', response.statusText);
         }
         
         // First get the response as text to debug
         const responseText = await response.text();
-        console.log('Raw response text:', responseText);
+        // Response text received
         
         // Try to parse as JSON
         let result;
@@ -663,7 +813,7 @@ async function executeSQLQuery() {
             alert('Server returned invalid JSON response');
             return;
         }
-        console.log('Parsed result:', result);
+        // Result parsed
         
         // Check if result has the expected structure
         if (!result || typeof result !== 'object') {
@@ -675,7 +825,7 @@ async function executeSQLQuery() {
         // CTFd API returns {success: bool, data: {...}} structure
         // We need to wrap our result if it doesn't have this structure
         if (!result.hasOwnProperty('data')) {
-            console.log('Wrapping result in CTFd format');
+            // Wrapping result in CTFd format
             const wrappedResult = {
                 success: true,
                 data: result
@@ -697,8 +847,8 @@ async function submitSQLChallenge() {
     const challengeId = document.getElementById('challenge-id').value;
     const submission = sqlEditor ? sqlEditor.getValue() : document.getElementById('challenge-input').value;
     // Get user information from CTFd object
-    const userId = CTFd.user.id;
-    const userName = CTFd.user.name;
+    const userId = (CTFd && CTFd.user) ? CTFd.user.id : null;
+    const userName = (CTFd && CTFd.user) ? CTFd.user.name : 'anonymous';
 
     if (!submission.trim()) {
         alert('Please enter a SQL query');
@@ -721,7 +871,7 @@ async function submitSQLChallenge() {
         });
         
         const result = await response.json();
-        console.log('Submit result:', result);
+        // Submit result received
         
         // Check if result has the expected structure
         if (!result || typeof result !== 'object') {
@@ -732,7 +882,7 @@ async function submitSQLChallenge() {
         
         // CTFd API returns {success: bool, data: {...}} structure
         if (!result.hasOwnProperty('data')) {
-            console.log('Wrapping result in CTFd format');
+            // Wrapping result in CTFd format
             const wrappedResult = {
                 success: true,
                 data: result
@@ -778,9 +928,7 @@ function displayResult(result, isPreview = false) {
         message = message.replace(' but you already solved this', '');
     }
     
-    console.log('Raw message:', message);  // Debug log
-    console.log('Status:', result.data.status);  // Debug log
-    console.log('Is preview:', isActuallyPreview);  // Debug log
+    // Processing message and status
     
     const lines = message.split('\n');
     let statusTextContent = '';
@@ -798,9 +946,9 @@ function displayResult(result, isPreview = false) {
             isUserResult = false;
             try {
                 const jsonStr = tempContent.join('');
-                console.log('Parsing user result JSON:', jsonStr);  // Debug log
+                // Parsing user result JSON
                 userResult = JSON.parse(jsonStr);
-                console.log('Parsed user result:', userResult);  // Debug log
+                // Parsed user result
             } catch(e) {
                 console.error('Failed to parse user result:', e, 'JSON string:', tempContent.join(''));
             }
@@ -811,9 +959,9 @@ function displayResult(result, isPreview = false) {
             isExpectedResult = false;
             try {
                 const jsonStr = tempContent.join('');
-                console.log('Parsing expected result JSON:', jsonStr);  // Debug log
+                // Parsing expected result JSON
                 expectedResult = JSON.parse(jsonStr);
-                console.log('Parsed expected result:', expectedResult);  // Debug log
+                // Parsed expected result
             } catch(e) {
                 console.error('Failed to parse expected result:', e, 'JSON string:', tempContent.join(''));
             }
@@ -833,11 +981,11 @@ function displayResult(result, isPreview = false) {
     
     // Render user result
     if (userResult) {
-        console.log('Rendering user result table with data:', userResult);  // Debug log
+        // Rendering user result table
         const userCard = document.createElement('div');
         userCard.className = 'card mb-2';
         const tableHtml = renderTable(userResult);
-        console.log('Generated table HTML:', tableHtml);  // Debug log
+        // Generated table HTML
         
         // Create card structure manually to avoid template literal issues
         const cardHeader = document.createElement('div');
@@ -856,12 +1004,15 @@ function displayResult(result, isPreview = false) {
         userCard.appendChild(cardBody);
         container.appendChild(userCard);
     } else {
-        console.log('No user result to render');  // Debug log
+        // No user result to render
     }
     
     // Show success modal if correct (only for actual submissions, not previews)
     if (result.data.status === 'correct' && !isPreview) {
-        console.log('Challenge solved! Showing success modal...'); // Debug log
+        // Challenge solved! Showing success modal
+        
+        // Clear saved code since challenge is solved
+        clearSavedCode();
         
         // Update earned points if available
         if (result.data.points) {
@@ -872,7 +1023,7 @@ function displayResult(result, isPreview = false) {
         setTimeout(() => {
             try {
                 const modalElement = document.getElementById('successModal');
-                console.log('Modal element found:', modalElement); // Debug log
+                // Modal element found
                 
                 if (modalElement) {
                     // Manually show modal
@@ -880,7 +1031,7 @@ function displayResult(result, isPreview = false) {
                     modalElement.style.display = 'block';
                     modalElement.setAttribute('aria-hidden', 'false');
                     document.body.classList.add('modal-open');
-                    console.log('Modal shown manually'); // Debug log
+                    // Modal shown manually
                 } else {
                     console.error('Modal element not found!'); // Debug log
                 }
@@ -895,15 +1046,15 @@ function displayResult(result, isPreview = false) {
 
 // Render Table
 function renderTable(data) {
-    console.log('renderTable called with:', data);  // Debug log
+    // Rendering table
     
     if (!data || !data.columns || !data.rows) {
-        console.log('Invalid data structure for table');  // Debug log
+        // Invalid data structure for table
         return '<p class="p-3 text-muted">No data to display</p>';
     }
     
     if (data.rows.length === 0) {
-        console.log('Empty rows array');  // Debug log
+        // Empty rows array
         return '<p class="p-3 text-muted">Empty result set</p>';
     }
     
@@ -1133,9 +1284,60 @@ function updateDeadlineDisplay() {
     }
 }
 
+// Debug localStorage
+function debugLocalStorage() {
+    console.log('=== LocalStorage Debug ===');
+    console.log('All localStorage keys:', Object.keys(localStorage));
+    console.log('SQL related keys:');
+    for (let key in localStorage) {
+        if (key.includes('sql-challenge')) {
+            console.log(`  ${key}: ${localStorage[key].substring(0, 50)}...`);
+        }
+    }
+    console.log('========================');
+}
+
+// Manual save/load functions for testing
+window.testSaveCode = function(code) {
+    const challengeId = document.getElementById('challenge-id').value;
+    const userId = (CTFd && CTFd.user) ? CTFd.user.id : 'test';
+    const storageKey = `sql-challenge-user${userId}-ch${challengeId}-code`;
+    localStorage.setItem(storageKey, code || 'SELECT * FROM test;');
+    console.log(`Saved to ${storageKey}`);
+    debugLocalStorage();
+};
+
+window.testLoadCode = function() {
+    const challengeId = document.getElementById('challenge-id').value;
+    const userId = (CTFd && CTFd.user) ? CTFd.user.id : 'test';
+    const storageKey = `sql-challenge-user${userId}-ch${challengeId}-code`;
+    const code = localStorage.getItem(storageKey);
+    console.log(`Loading from ${storageKey}:`, code);
+    if (code && sqlEditor) {
+        sqlEditor.setValue(code);
+        console.log('Code loaded into editor');
+    }
+    return code;
+};
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
+    // Try multiple initialization strategies
     initSQLEditor();
+    
+    // Also try after a delay in case CTFd loads later
+    setTimeout(() => {
+        if (!sqlEditor) {
+            initSQLEditor();
+        }
+    }, 500);
+    
+    setTimeout(() => {
+        if (!sqlEditor) {
+            initSQLEditor();
+        }
+    }, 1000);
+    
     initPanelResize();
     initVerticalResize();
     
@@ -1156,6 +1358,13 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+});
+
+// Also try on window load
+window.addEventListener('load', function() {
+    if (!sqlEditor) {
+        initSQLEditor();
+    }
 });
 </script>
 {% endblock %}

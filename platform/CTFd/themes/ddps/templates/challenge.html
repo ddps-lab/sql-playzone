@@ -52,9 +52,11 @@
             <h2 class="challenge-name text-center pt-3">
               {{ challenge.name }}
             </h2>
-            <h3 class="challenge-value text-center">
-              {{ challenge.value }}
-            </h3>
+            <div class="text-center">
+              <span class="badge {% if challenge.solved_by_me %}bg-success{% else %}bg-secondary{% endif %} fs-6">
+                {% if challenge.solved_by_me %}Solved{% else %}Unsolved{% endif %}
+              </span>
+            </div>
 
 
             {% if tags %}
