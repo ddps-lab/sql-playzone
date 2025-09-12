@@ -1,5 +1,6 @@
 import requests
 import secrets
+import unicodedata
 from flask import Blueprint, abort
 from flask import current_app as app
 from flask import redirect, render_template, request, session, url_for
@@ -743,7 +744,17 @@ def google_callback():
                 user_data = userinfo_response.json()
                 
                 user_email = user_data.get("email")
-                user_name = user_data.get("name", user_email.split("@")[0]).strip()
+                raw_user_name = user_data.get("name", user_email.split("@")[0])
+                
+                # Remove invisible unicode characters
+                invisible_chars = [
+                    '\u00ad',  # Soft hyphen
+                ]
+                user_name = raw_user_name
+                for char in invisible_chars:
+                    user_name = user_name.replace(char, '')
+                user_name = user_name.strip()
+                
                 google_id = user_data.get("id")
                 
                 # Check if user exists
