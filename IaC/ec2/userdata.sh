@@ -1,6 +1,6 @@
 #!/bin/bash
 cd /home/ubuntu/sql-playzone/platform
-git pull
+git pull origin main
 
 # Login to ECR
 aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com

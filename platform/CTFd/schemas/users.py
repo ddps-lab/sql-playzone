@@ -63,6 +63,14 @@ class UserSchema(ma.ModelSchema):
         name = data.get("name")
         if name is None:
             return
+        
+        # Remove invisible unicode characters
+        invisible_chars = [
+            '\u00ad',  # Soft hyphen
+        ]
+        for char in invisible_chars:
+            name = name.replace(char, '')
+        
         name = name.strip()
 
         existing_user = Users.query.filter_by(name=name).first()

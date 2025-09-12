@@ -9,6 +9,8 @@ services:
       - .env
     volumes:
       - .data/CTFd/logs:/var/log/CTFd
+      - .data/CTFd/logs/access:/var/log/CTFd-access
+      - .data/CTFd/logs/error:/var/log/CTFd-error
       - .data/CTFd/uploads:/var/uploads
       - .:/opt/CTFd:ro
     # depends_on:
