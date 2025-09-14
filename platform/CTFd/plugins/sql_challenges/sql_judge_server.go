@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -461,7 +464,43 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
+func setupLogging() {
+	// Get log folder from environment variable, default to /var/log/CTFd
+	logFolder := os.Getenv("LOG_FOLDER")
+	if logFolder == "" {
+		logFolder = "/var/log/CTFd"
+	}
+
+	// Create log directory if it doesn't exist
+	if err := os.MkdirAll(logFolder, 0755); err != nil {
+		log.Printf("Warning: Could not create log directory %s: %v", logFolder, err)
+		log.Printf("Logging to stdout only")
+		return
+	}
+
+	// Create or open log file
+	logPath := filepath.Join(logFolder, "sql-judge.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Printf("Warning: Could not open log file %s: %v", logPath, err)
+		log.Printf("Logging to stdout only")
+		return
+	}
+
+	// Set log output to both file and stdout using io.MultiWriter
+	multiWriter := io.MultiWriter(os.Stdout, logFile)
+	log.SetOutput(multiWriter)
+	
+	// Set log format with timestamp
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+	
+	log.Printf("SQL Judge Server logging initialized. Log file: %s", logPath)
+}
+
 func main() {
+	// Setup logging first
+	setupLogging()
+	
 	http.HandleFunc("/judge", handleJudge)
 	http.HandleFunc("/health", handleHealth)
 

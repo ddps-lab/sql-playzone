@@ -27,10 +27,12 @@ SYSTEM_ARCH=$(dpkg --print-architecture)
 wget -q https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/$${SYSTEM_ARCH}/latest/amazon-cloudwatch-agent.deb
 dpkg -i -E ./amazon-cloudwatch-agent.deb
 rm amazon-cloudwatch-agent.deb
+# Enable CloudWatch Agent to start on boot
+systemctl enable amazon-cloudwatch-agent
 
 # Clone the repository
 cd /home/ubuntu
-git clone https://github.com/ddps-lab/sql-playzone.git -b swjeong
+git clone https://github.com/ddps-lab/sql-playzone.git
 
 cd sql-playzone/platform/CTFd
 cp config.example.ini config.ini

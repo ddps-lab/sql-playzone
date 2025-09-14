@@ -56,6 +56,10 @@ services:
     restart: always
     networks:
       - internal
+    env_file:
+      - .env
+    volumes:
+      - .data/CTFd/logs:/var/log/CTFd
 
 networks:
     default:
