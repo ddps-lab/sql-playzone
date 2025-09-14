@@ -58,10 +58,10 @@ resource "aws_iam_role" "ec2_ecr_read_role" {
   }
 }
 
-# IAM Policy for ECR read-only access
+# IAM Policy for ECR read-only access and CloudWatch Logs
 resource "aws_iam_policy" "ecr_read_policy" {
   name        = "${var.prefix}-ecr-read-policy"
-  description = "Policy for ECR read-only access"
+  description = "Policy for ECR read-only access and CloudWatch Logs"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -76,6 +76,16 @@ resource "aws_iam_policy" "ecr_read_policy" {
           "ecr:DescribeRepositories",
           "ecr:ListImages",
           "ecr:DescribeImages"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogStreams"
         ]
         Resource = "*"
       }
