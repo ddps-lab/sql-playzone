@@ -28,62 +28,9 @@ wget -q https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/$${SYSTEM_ARCH}/l
 dpkg -i -E ./amazon-cloudwatch-agent.deb
 rm amazon-cloudwatch-agent.deb
 
-# Configure CloudWatch Agent
-cat << 'CWCONFIG' | tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
-{
-  "agent": {
-    "metrics_collection_interval": 60,
-    "run_as_user": "root",
-    "buffer_time": 2000,
-    "max_buffer_time": 5000
-  },
-  "logs": {
-    "logs_collected": {
-      "files": {
-        "collect_list": [
-          {
-            "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/*.log",
-            "log_group_name": "/aws/ec2/sql-playzone/production",
-            "log_stream_name": "ctfd-combined",
-            "timezone": "Local",
-            "timestamp_format": "[%d/%m/%Y %H:%M:%S]",
-            "multi_line_start_pattern": "^\\[\\d{2}/\\d{2}/\\d{4}"
-          },
-          {
-            "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/access.log",
-            "log_group_name": "/aws/ec2/sql-playzone/production",
-            "log_stream_name": "ctfd-access",
-            "timezone": "Local"
-          },
-          {
-            "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/error.log",
-            "log_group_name": "/aws/ec2/sql-playzone/production",
-            "log_stream_name": "ctfd-error",
-            "timezone": "Local"
-          }
-        ]
-      }
-    },
-    "force_flush_interval": 5
-  }
-}
-CWCONFIG
-
-# Start CloudWatch Agent
-/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
-    -a fetch-config \
-    -m ec2 \
-    -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
-
-# Enable CloudWatch Agent to start on boot
-systemctl enable amazon-cloudwatch-agent
-
-
-
-
 # Clone the repository
 cd /home/ubuntu
-git clone https://github.com/ddps-lab/sql-playzone.git
+git clone https://github.com/ddps-lab/sql-playzone.git -b swjeong
 
 cd sql-playzone/platform/CTFd
 cp config.example.ini config.ini
