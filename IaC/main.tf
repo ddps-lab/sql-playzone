@@ -73,7 +73,7 @@ module "ec2" {
   region                           = var.region
   aws_account_id                   = var.aws_account_id
 
-  # depends_on = [module.vpc, module.rds] # We do not append ami module but you have to create ami before apply this module
-  depends_on = [module.vpc, module.rds, module.ami] # When you want to use only `terraform apply` without designating targets, use this.
+  depends_on = [module.vpc, module.rds] # We do not append ami module but you have to create ami before apply this module
+  # depends_on = [module.vpc, module.rds, module.ami] # When you want to use only `terraform apply` without designating targets, use this.
 }
 
