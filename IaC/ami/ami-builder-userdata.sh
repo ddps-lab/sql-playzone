@@ -21,6 +21,15 @@ sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plug
 systemctl start docker
 systemctl enable docker
 
+# Install AWS CLI and cloudwatch-agent
+sudo snap install aws-cli --classic # cloud watch agent included
+SYSTEM_ARCH=$(dpkg --print-architecture)
+wget -q https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/$${SYSTEM_ARCH}/latest/amazon-cloudwatch-agent.deb
+dpkg -i -E ./amazon-cloudwatch-agent.deb
+rm amazon-cloudwatch-agent.deb
+# Enable CloudWatch Agent to start on boot
+systemctl enable amazon-cloudwatch-agent
+
 # Clone the repository
 cd /home/ubuntu
 git clone https://github.com/ddps-lab/sql-playzone.git
@@ -47,8 +56,6 @@ EOF
 
 # Run docker-compose
 docker compose build
-
-sudo snap install aws-cli --classic
 aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
 
 docker tag platform-sql-judge:latest ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/platform-sql-judge:latest

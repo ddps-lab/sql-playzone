@@ -9,8 +9,6 @@ services:
       - .env
     volumes:
       - .data/CTFd/logs:/var/log/CTFd
-      - .data/CTFd/logs/access.log:/var/log/CTFd-access.log
-      - .data/CTFd/logs/error.log:/var/log/CTFd-error.log
       - .data/CTFd/uploads:/var/uploads
       - .:/opt/CTFd:ro
     # depends_on:
@@ -58,6 +56,10 @@ services:
     restart: always
     networks:
       - internal
+    env_file:
+      - .env
+    volumes:
+      - .data/CTFd/logs:/var/log/CTFd
 
 networks:
     default:

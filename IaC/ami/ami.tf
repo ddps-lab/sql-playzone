@@ -120,8 +120,8 @@ resource "aws_instance" "ami_builder_arm" {
     REDIS_URL="redis://cache:6379"
     WORKERS=1
     LOG_FOLDER="/var/log/CTFd"
-    ACCESS_LOG="/var/log/CTFd-access"
-    ERROR_LOG="/var/log/CTFd-error"
+    ACCESS_LOG="/var/log/CTFd/access.log"
+    ERROR_LOG="/var/log/CTFd/error.log"
     REVERSE_PROXY=true
     SQL_JUDGE_SERVER_URL="http://sql-judge:8080"
     GOOGLE_CLIENT_ID = var.google_client_id
