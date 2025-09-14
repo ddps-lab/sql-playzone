@@ -47,7 +47,7 @@ cat << 'CWCONFIG' | tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-a
             "log_group_name": "/aws/ec2/sql-playzone",
             "log_stream_name": "sql-judge",
             "timezone": "Local"
-          },
+          }
         ]
       }
     },
