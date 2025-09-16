@@ -168,13 +168,6 @@ func validateSQLQuery(query string, req *QueryRequest) error {
 		}
 	}
 	
-	// Check for stacked queries (multiple statements)
-	// This is a simple check - more sophisticated parsing might be needed
-	if strings.Count(query, ";") > 1 {
-		logSecurityEvent("WARNING", "Multiple statements detected (possible stacked query injection)", req)
-		// Allow it but log for monitoring
-	}
-	
 	// Check for union-based injection with information_schema
 	unionPattern := regexp.MustCompile(`(?i)UNION.*SELECT.*(INFORMATION_SCHEMA|MYSQL\.|PERFORMANCE_SCHEMA)`)
 	if unionPattern.MatchString(query) {

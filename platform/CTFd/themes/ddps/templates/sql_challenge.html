@@ -855,6 +855,28 @@ async function submitSQLChallenge() {
         return;
     }
     
+    // Check deadline before submitting
+    const deadlineElement = document.getElementById('deadline-time');
+    if (deadlineElement) {
+        const deadlineStr = deadlineElement.getAttribute('data-deadline');
+        if (deadlineStr) {
+            const deadline = new Date(deadlineStr);
+            const now = new Date();
+            if (now > deadline) {
+                // Display deadline error as result instead of alert
+                const deadlineResult = {
+                    success: true,
+                    data: {
+                        status: 'incorrect',
+                        message: 'Submission deadline has passed'
+                    }
+                };
+                displayResult(deadlineResult, false);
+                return;
+            }
+        }
+    }
+    
     try {
         const response = await fetch('/api/v1/challenges/attempt', {
             method: 'POST',
