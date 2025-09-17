@@ -1177,3 +1177,48 @@ class ChallengeRatings(Resource):
                 "date": isoformat(rating.date),
             },
         }
+
+
+@challenges_namespace.route("/behavior", methods=["POST"])
+class BehaviorLog(Resource):
+    @authed_only
+    def post(self):
+        """Log user behavior events for SQL challenges"""
+        import os
+        import json
+        from datetime import datetime, timezone
+        from pathlib import Path
+        import traceback
+
+        try:
+            data = request.get_json()
+        except Exception as e:
+            print(f"Error parsing JSON: {e}")
+            return {"success": False, "errors": f"Invalid JSON: {str(e)}"}, 400
+        events = data.get("events", [])
+
+        if not events:
+            return {"success": False, "errors": "No events provided"}, 400
+
+        # Get log folder from environment variable
+        log_folder = os.environ.get("LOG_FOLDER", "/var/log/CTFd")
+        Path(log_folder).mkdir(parents=True, exist_ok=True)
+
+        # Create log file name with current date
+        log_file = f"sql_challenge_behavior.log"
+        log_path = Path(log_folder) / log_file
+
+        try:
+            # Write each event as a JSON line
+            with open(log_path, "a") as f:
+                for event in events:
+                    f.write(json.dumps(event) + "\n")
+
+            return {"success": True, "message": f"Logged {len(events)} events"}
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Error logging events: {e}"
+            print(error_msg)
+            print(f"Traceback: {traceback.format_exc()}")
+            return {"success": False, "errors": error_msg}, 500

@@ -154,7 +154,13 @@ function initSQLEditor() {
     if (savedCode) {
         showAutoSaveNotification('Previous code restored from auto-save');
     }
-    
+
+    // Setup behavior tracking after editor is ready
+    if (typeof setupBehaviorTracking === 'function' && sqlEditor) {
+        setupBehaviorTracking(sqlEditor);
+        console.log('[SQL Challenge] Behavior tracking initialized');
+    }
+
     return true;
 }
 
@@ -373,6 +379,15 @@ async function submitSQLChallenge() {
             console.error('Invalid result structure:', result);
             alert('Invalid response from server');
             return;
+        }
+
+        if (behaviorLogger) {
+            const submitStatus = result.data.status || 'unknown';
+            behaviorLogger.logEvent('submit', {
+                query_text: submission,
+                query_length: submission.length,
+                submit_status: submitStatus
+            })
         }
         
         // CTFd API returns {success: bool, data: {...}} structure
