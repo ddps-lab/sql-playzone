@@ -31,12 +31,6 @@ cat << 'CWCONFIG' | tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-a
             "timezone": "Local"
           },
           {
-            "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/sql_challenge_behavior.log",
-            "log_group_name": "/aws/ec2/sql-playzone",
-            "log_stream_name": "sql_challenge_behavior",
-            "timezone": "Local"
-          },
-          {
             "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/error.log",
             "log_group_name": "/aws/ec2/sql-playzone",
             "log_stream_name": "error",
@@ -46,6 +40,12 @@ cat << 'CWCONFIG' | tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-a
             "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/sql-judge.log",
             "log_group_name": "/aws/ec2/sql-playzone",
             "log_stream_name": "sql-judge",
+            "timezone": "Local"
+          },
+          {
+            "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/sql_challenge_behavior.log",
+            "log_group_name": "/aws/ec2/sql-playzone-behavior",
+            "log_stream_name": "events",
             "timezone": "Local"
           }
         ]
