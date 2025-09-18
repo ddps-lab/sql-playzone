@@ -77,3 +77,16 @@ module "ec2" {
   # depends_on = [module.vpc, module.rds, module.ami] # When you want to use only `terraform apply` without designating targets, use this.
 }
 
+# Lambda Module
+module "lambda" {
+  source = "./lambda"
+
+  prefix         = var.prefix
+  region         = var.region
+  aws_account_id = var.aws_account_id
+  bucket_name    = var.log_bucket_name
+  log_group_name = var.behavior_log_group_name
+  log_stream_name = var.behavior_log_stream_name
+
+  depends_on = [module.vpc]
+}

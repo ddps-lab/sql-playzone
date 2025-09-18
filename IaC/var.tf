@@ -121,3 +121,21 @@ variable "asg_desired_capacity" {
   type        = number
   default     = 1
 }
+
+variable "log_bucket_name" {
+  description = "S3 Bucket name for storing logs"
+  type        = string
+  default     = "sql-playzone-log"
+}
+
+variable "behavior_log_group_name" {
+  description = "CloudWatch Log Group name for behavior logs"
+  type        = string
+  default     = "/aws/ec2/sql-playzone-behavior"
+}
+
+variable "behavior_log_stream_name" {
+  description = "CloudWatch Log Stream name for behavior logs"
+  type        = string
+  default     = "sql-challenge"
+}
