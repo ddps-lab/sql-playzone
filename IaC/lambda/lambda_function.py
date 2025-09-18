@@ -74,7 +74,9 @@ def lambda_handler(event, context):
 
     # s3 에 업로드
     s3 = session.client('s3', region_name=REGION_NAME)
-    bucket_name = "sql-playzone-log"
+    bucket_name = os.environ.get('S3_BUCKET_NAME', None)
+    if bucket_name is None:
+        raise ValueError("S3_BUCKET_NAME environment variable must be set")
     object_name = "behavior/" + start_time.strftime("%Y/%m/%d") + ".csv.gz"
     s3.upload_file(base_dir + filename, bucket_name, object_name)
 
