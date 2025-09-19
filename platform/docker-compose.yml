@@ -43,13 +43,13 @@ services:
   #   # This command is required to set important mariadb defaults
   #   command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --wait_timeout=28800, --log-warnings=0]
 
-  cache:
-    image: redis:4
-    restart: always
-    volumes:
-    - .data/redis:/data
-    networks:
-        internal:
+  # cache:
+  #   image: redis:4
+  #   restart: always
+  #   volumes:
+  #   - .data/redis:/data
+  #   networks:
+  #       internal:
 
   sql-judge:
     build: ./CTFd/plugins/sql_challenges
