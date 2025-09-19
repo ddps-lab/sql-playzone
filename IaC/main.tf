@@ -32,6 +32,17 @@ module "rds" {
   depends_on = [module.vpc]
 }
 
+# ElastiCache Module
+module "elasticache" {
+  source = "./elasticache"
+
+  prefix                     = var.prefix
+  elasticache_security_group_id = module.vpc.elasticache_security_group_id
+  public_subnet_ids          = module.vpc.public_subnet_ids
+
+  depends_on = [module.vpc]
+}
+
 # AMI Module
 module "ami" {
   source = "./ami"
@@ -48,8 +59,9 @@ module "ami" {
   google_client_id      = var.google_client_id
   google_client_secret  = var.google_client_secret
   aws_account_id        = var.aws_account_id
+  elasticache_serverless_endpoint = module.elasticache.elasticache_serverless_endpoint[0].address
 
-  depends_on = [module.vpc, module.rds]
+  depends_on = [module.vpc, module.rds, module.elasticache]
 }
 
 # EC2 Module

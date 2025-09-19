@@ -25,3 +25,7 @@ output "ec2_security_group_id" {
 output "rds_security_group_id" {
   value = aws_security_group.rds_sg.id
 }
+
+output "elasticache_security_group_id" {
+  value = aws_security_group.elasticache_sg.id
+}
