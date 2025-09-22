@@ -117,7 +117,7 @@ resource "aws_instance" "ami_builder_arm" {
     RDS_ENDPOINT = var.rds_endpoint
     CTFD_SECRET_KEY = var.ctfd_secret_key
     UPLOAD_FOLDER="/var/uploads"
-    REDIS_URL="redis://cache:6379"
+    REDIS_URL="rediss://${var.elasticache_serverless_endpoint}:6379"
     WORKERS=1
     LOG_FOLDER="/var/log/CTFd"
     ACCESS_LOG="/var/log/CTFd/access.log"
