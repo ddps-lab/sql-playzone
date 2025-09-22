@@ -38,7 +38,7 @@ module "elasticache" {
 
   prefix                     = var.prefix
   elasticache_security_group_id = module.vpc.elasticache_security_group_id
-  public_subnet_ids          = module.vpc.public_subnet_ids
+  data_subnet_ids            = module.vpc.data_subnet_ids
 
   depends_on = [module.vpc]
 }
