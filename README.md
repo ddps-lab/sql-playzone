@@ -1,12 +1,19 @@
 # SQL PlayZone - SQL 학습 플랫폼
 
+<img width="800" alt="image" src="https://github.com/user-attachments/assets/f5041714-0968-42c8-ad18-9f4b79c5a4d6" />
+
 SQL PlayZone은 CTFd 프레임워크를 기반으로 구축된 SQL 학습 및 문제 풀이 플랫폼입니다. 사용자가 SQL 쿼리 문제를 풀면서 데이터베이스 조작 능력을 향상시킬 수 있도록 설계되었습니다.
+
+SQL PlayZone is an SQL learning and problem-solving platform built on the CTFd framework. It is designed to help users improve their database manipulation skills by solving SQL query challenges.
 
 ## 프로젝트 개요
 
 이 프로젝트는 CTFd (Capture The Flag 프레임워크)를 커스터마이징하여 SQL 문제 풀이 기능을 추가한 교육용 플랫폼입니다. 
 
 ### 주요 기능
+<img width="440"  height="1005" alt="image" src="https://github.com/user-attachments/assets/ca3cbf2d-422d-49b5-8cc4-07e016d856d6" />
+<img width="440"  height="1005" alt="image" src="https://github.com/user-attachments/assets/42582457-b609-4055-b407-8fcc3bd4a08d" />
+
 
 - **SQL 문제 풀이**: 사용자가 SQL 쿼리를 작성하고 실행하여 문제를 해결
 - **자동 채점 시스템**: Go 기반의 MySQL 서버를 통한 실시간 쿼리 검증
