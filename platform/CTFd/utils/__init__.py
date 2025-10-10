@@ -1,4 +1,5 @@
 import json
+import os
 from enum import Enum
 
 import cmarkgfm
@@ -29,7 +30,9 @@ def get_app_config(key, default=None):
 
 
 @cache.memoize()
-def _get_asset_json(path):
+def _get_asset_json(path, version=None):
+    # version is intentionally unused other than contributing to the cache key
+    # so that changes to the underlying file (e.g., manifest.json) bust cache
     with open(path) as f:
         return json.loads(f.read())
 
@@ -37,8 +40,12 @@ def _get_asset_json(path):
 def get_asset_json(path):
     # Ignore caching if we are in debug mode
     if app.debug:
-        return _get_asset_json.__wrapped__(path)
-    return _get_asset_json(path)
+        return _get_asset_json.__wrapped__(path, None)
+    try:
+        version = os.path.getmtime(path)
+    except OSError:
+        version = None
+    return _get_asset_json(path, version)
 
 
 @cache.memoize()
