@@ -525,6 +525,6 @@ body {
 
 {% block scripts %}
   {{ super() }}
-  <script src="/themes/ddps/static/js/sql_challenge_tracker.js"></script>
-  <script src="/themes/ddps/static/js/sql_challenge.js"></script>
+  {{ Assets.js("assets/js/pages/sql_challenge_tracker.js", theme="ddps") }}
+  {{ Assets.js("assets/js/sql_challenge.js", theme="ddps") }}
 {% endblock %}
