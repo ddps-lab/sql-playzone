@@ -261,13 +261,13 @@ Alpine.data("ChallengeBoard", () => ({
     //     categories.sort(getSort());
     //   } else {
     categories.sort((a, b) => {
-      const numA = parseInt((a.match(/\d+/) || [])[0], 10);
-      const numB = parseInt((b.match(/\d+/) || [])[0], 10);
+      const mA = a.match(/\d+$/); // extract trailing digits only
+      const mB = b.match(/\d+$/);
+      const numA = mA ? parseInt(mA[0], 10) : Number.NEGATIVE_INFINITY;
+      const numB = mB ? parseInt(mB[0], 10) : Number.NEGATIVE_INFINITY;
 
-      if (!isNaN(numA) && !isNaN(numB)) {
-        return numB - numA;
-      }
-      return a.localeCompare(b); // Fallback for other category names
+      if (numA !== numB) return numB - numA; // numeric DESC
+      return a.localeCompare(b); // stable fallback by label
     });
     //   }
     // } catch (error) {
