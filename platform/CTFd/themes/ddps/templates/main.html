@@ -1,8 +1,5 @@
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
 
-<!-- Gradient Background Wrapper -->
-<div class="gradient-wrapper">
-    
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
 <style>
     /* Light mode variables */
     :root {
@@ -63,82 +60,65 @@
         100% { transform: translate(70px, 70px); }
     }
 
-    /* Interactive Background Elements */
-    .bg-animation {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        z-index: 1;
-        opacity: 0.15;
-        pointer-events: none;
-    }
-
     /* Main content container */
     .main-content {
         position: relative;
         z-index: 2;
     }
 
-    .floating-shape {
-        animation: float 20s infinite ease-in-out;
-        cursor: pointer;
-        transition: all 0.3s ease;
-    }
-
-    .floating-shape:hover {
-        transform: scale(1.2) rotate(45deg);
-        opacity: 0.8;
-    }
-
-    .floating-shape:nth-child(2) {
-        animation-delay: -5s;
-        animation-duration: 25s;
-    }
-
-    .floating-shape:nth-child(3) {
-        animation-delay: -10s;
-        animation-duration: 30s;
-    }
-
-    /* Interactive Particles */
-    .particle {
-        position: absolute;
-        width: 4px;
-        height: 4px;
-        background: rgba(255, 255, 255, 0.6);
+    /* Mouse interaction particles */
+    .mouse-particle {
+        position: fixed;
+        width: 8px;
+        height: 8px;
+        background: radial-gradient(circle, rgba(255,255,255,0.8) 0%, transparent 70%);
         border-radius: 50%;
         pointer-events: none;
-        animation: particle-float 8s infinite linear;
+        z-index: 9999;
+        animation: mouse-particle-fade 1s ease-out forwards;
     }
 
-    .particle:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 12s; }
-    .particle:nth-child(2) { left: 20%; animation-delay: 2s; animation-duration: 15s; }
-    .particle:nth-child(3) { left: 30%; animation-delay: 4s; animation-duration: 10s; }
-    .particle:nth-child(4) { left: 40%; animation-delay: 6s; animation-duration: 18s; }
-    .particle:nth-child(5) { left: 50%; animation-delay: 8s; animation-duration: 14s; }
-    .particle:nth-child(6) { left: 60%; animation-delay: 10s; animation-duration: 16s; }
-    .particle:nth-child(7) { left: 70%; animation-delay: 12s; animation-duration: 11s; }
-    .particle:nth-child(8) { left: 80%; animation-delay: 14s; animation-duration: 13s; }
-    .particle:nth-child(9) { left: 90%; animation-delay: 16s; animation-duration: 17s; }
-
-    @keyframes particle-float {
+    @keyframes mouse-particle-fade {
         0% {
-            transform: translateY(100vh) scale(0);
-            opacity: 0;
-        }
-        10% {
+            transform: scale(0) translate(0, 0);
             opacity: 1;
-            transform: translateY(90vh) scale(1);
         }
-        90% {
-            opacity: 1;
-            transform: translateY(10vh) scale(1);
+        30% {
+            transform: scale(1.5) translate(calc(var(--mx) * 0.5), calc(var(--my) * 0.5));
+            opacity: 0.8;
+        }
+        70% {
+            transform: scale(1.2) translate(var(--mx), var(--my));
+            opacity: 0.4;
         }
         100% {
-            transform: translateY(-10vh) scale(0);
+            transform: scale(0.3) translate(calc(var(--mx) * 1.5), calc(var(--my) * 1.5));
             opacity: 0;
+        }
+    }
+
+    /* Interactive Grid */
+    .interactive-grid {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+        opacity: 0.05;
+        background-image: 
+            linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+        background-size: 50px 50px;
+        animation: grid-move 20s infinite linear;
+    }
+
+    @keyframes grid-move {
+        0% {
+            transform: translate(0, 0);
+        }
+        100% {
+            transform: translate(50px, 50px);
         }
     }
 
@@ -148,6 +128,7 @@
         border-radius: 50%;
         background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.1) 70%, transparent 100%);
         animation: orb-pulse 4s infinite ease-in-out;
+        filter: blur(2px);
     }
 
     .glow-orb:nth-child(1) {
@@ -182,110 +163,6 @@
         50% {
             transform: scale(1.2);
             opacity: 0.6;
-        }
-    }
-
-    /* Interactive Grid */
-    .interactive-grid {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        z-index: 1;
-        opacity: 0.05;
-        background-image: 
-            linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
-        background-size: 50px 50px;
-        animation: grid-move 20s infinite linear;
-    }
-
-    @keyframes grid-move {
-        0% {
-            transform: translate(0, 0);
-        }
-        100% {
-            transform: translate(50px, 50px);
-        }
-    }
-
-    @keyframes float {
-        0%, 100% { 
-            transform: translateY(0) translateX(0) rotate(0deg) scale(1); 
-        }
-        25% { 
-            transform: translateY(-30px) translateX(20px) rotate(90deg) scale(1.1); 
-        }
-        50% { 
-            transform: translateY(20px) translateX(-20px) rotate(180deg) scale(0.9); 
-        }
-        75% { 
-            transform: translateY(-20px) translateX(30px) rotate(270deg) scale(1.05); 
-        }
-    }
-
-    /* Database Icon Animation */
-    .database-icon {
-        animation: pulse-rotate 4s infinite ease-in-out;
-        filter: drop-shadow(0 4px 6px var(--shadow-color));
-    }
-
-    @keyframes pulse-rotate {
-        0%, 100% { 
-            transform: scale(1) rotateY(0deg); 
-        }
-        25% { 
-            transform: scale(1.05) rotateY(90deg); 
-        }
-        50% { 
-            transform: scale(1.1) rotateY(180deg); 
-        }
-        75% { 
-            transform: scale(1.05) rotateY(270deg); 
-        }
-    }
-
-    /* Network Animation */
-    .network-line {
-        stroke-dasharray: 100;
-        stroke-dashoffset: 100;
-        animation: dash 3s infinite linear;
-        filter: drop-shadow(0 0 3px var(--network-stroke));
-    }
-
-    @keyframes dash {
-        to { stroke-dashoffset: 0; }
-    }
-
-    /* Pulse Circles */
-    .pulse-circle {
-        animation: pulse-glow 2s infinite;
-    }
-
-    @keyframes pulse-glow {
-        0%, 100% { 
-            r: 8;
-            opacity: 1;
-        }
-        50% { 
-            r: 12;
-            opacity: 0.6;
-        }
-    }
-
-    /* Glow Effect */
-    .glow {
-        animation: glow 3s ease-in-out infinite alternate;
-    }
-
-    @keyframes glow {
-        from { 
-            filter: drop-shadow(0 0 10px rgba(100, 126, 234, 0.5)); 
-        }
-        to { 
-            filter: drop-shadow(0 0 30px rgba(100, 126, 234, 0.8)) 
-                    drop-shadow(0 0 40px rgba(100, 126, 234, 0.4)); 
         }
     }
 
@@ -341,37 +218,6 @@
         box-shadow: 0 5px 15px var(--shadow-color);
     }
 
-    /* Loading Dots Animation */
-    .loading-dots {
-        display: flex;
-        gap: 8px;
-        justify-content: center;
-        align-items: center;
-    }
-
-    .loading-dot {
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
-        animation: bounce 1.4s infinite ease-in-out;
-    }
-
-    .loading-dot:nth-child(1) { animation-delay: -0.32s; }
-    .loading-dot:nth-child(2) { animation-delay: -0.16s; }
-    .loading-dot:nth-child(3) { animation-delay: 0; }
-
-    @keyframes bounce {
-        0%, 80%, 100% { 
-            transform: scale(0.8);
-            opacity: 0.5;
-        }
-        40% { 
-            transform: scale(1.2);
-            opacity: 1;
-        }
-    }
-
     /* Typography Enhancement */
     .display-5 {
         background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
@@ -388,6 +234,21 @@
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
+    }
+
+    /* Glow Effect */
+    .glow {
+        animation: glow 3s ease-in-out infinite alternate;
+    }
+
+    @keyframes glow {
+        from { 
+            filter: drop-shadow(0 0 10px rgba(100, 126, 234, 0.5)); 
+        }
+        to { 
+            filter: drop-shadow(0 0 30px rgba(100, 126, 234, 0.8)) 
+                    drop-shadow(0 0 40px rgba(100, 126, 234, 0.4)); 
+        }
     }
 
     /* Check Icon Animation */
@@ -416,7 +277,10 @@
         }
     }
 </style>
-
+</head>
+<body>
+<!-- Gradient Background Wrapper -->
+<div class="gradient-wrapper">
     <!-- Background Pattern -->
     <div class="bg-pattern"></div>
 
@@ -427,36 +291,6 @@
     <div class="glow-orb"></div>
     <div class="glow-orb"></div>
     <div class="glow-orb"></div>
-
-    <!-- Floating Particles -->
-    <div class="particle"></div>
-    <div class="particle"></div>
-    <div class="particle"></div>
-    <div class="particle"></div>
-    <div class="particle"></div>
-    <div class="particle"></div>
-    <div class="particle"></div>
-    <div class="particle"></div>
-    <div class="particle"></div>
-
-    <!-- Animated Background SVG -->
-    <svg class="bg-animation" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-            <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" style="stop-color:var(--gradient-start);stop-opacity:0.1" />
-                <stop offset="100%" style="stop-color:var(--gradient-end);stop-opacity:0.1" />
-            </linearGradient>
-        </defs>
-        <g class="floating-shape">
-            <rect x="10%" y="20%" width="100" height="100" fill="url(#grad1)" rx="20" />
-        </g>
-        <g class="floating-shape">
-            <circle cx="80%" cy="60%" r="60" fill="url(#grad1)" />
-        </g>
-        <g class="floating-shape">
-            <polygon points="200,100 250,200 150,200" fill="url(#grad1)" />
-        </g>
-    </svg>
 
     <!-- Main Content -->
     <div class="main-content container-fluid min-vh-100 d-flex align-items-center py-5">
@@ -566,53 +400,61 @@
             </div>
         </div>
     </div>
-    
 </div>
 
 <script>
-// Interactive background effects
-document.addEventListener('DOMContentLoaded', function() {
-    const gradientWrapper = document.querySelector('.gradient-wrapper');
-    const floatingShapes = document.querySelectorAll('.floating-shape');
-    
-    // Mouse movement effect
-    gradientWrapper.addEventListener('mousemove', function(e) {
-        const { clientX, clientY } = e;
-        const { innerWidth, innerHeight } = window;
-        
-        // Calculate mouse position as percentage
-        const x = (clientX / innerWidth) * 100;
-        const y = (clientY / innerHeight) * 100;
-        
-        // Move floating shapes based on mouse position
-        floatingShapes.forEach((shape, index) => {
-            const speed = (index + 1) * 0.5;
-            const moveX = (x - 50) * speed * 0.1;
-            const moveY = (y - 50) * speed * 0.1;
+    // Mouse Trail Effect
+    class MouseTrail {
+        constructor() {
+            this.init();
+        }
+
+        init() {
+            let mouseTimer;
+            document.addEventListener('mousemove', (e) => {
+                clearTimeout(mouseTimer);
+                
+                // Check if mouse is over navbar (top 80px of screen)
+                const navbar = document.querySelector('.navbar');
+                const isOverNavbar = navbar && e.clientY <= 80;
+                
+                // Only create particles if not over navbar
+                if (!isOverNavbar && Math.random() > 0.8) {
+                    this.createMouseParticle(e.clientX, e.clientY);
+                }
+                
+                mouseTimer = setTimeout(() => {
+                    // Mouse stopped moving
+                }, 100);
+            });
+        }
+
+        createMouseParticle(x, y) {
+            const particle = document.createElement('div');
+            particle.className = 'mouse-particle';
             
-            shape.style.transform = `translate(${moveX}px, ${moveY}px)`;
-        });
-    });
-    
-    // Click effect on floating shapes
-    floatingShapes.forEach(shape => {
-        shape.addEventListener('click', function() {
-            this.style.transform = 'scale(1.5) rotate(180deg)';
+            // Set random direction
+            const randomX = (Math.random() - 0.5) * 50;
+            const randomY = (Math.random() - 0.5) * 50;
+            particle.style.setProperty('--mx', `${randomX}px`);
+            particle.style.setProperty('--my', `${randomY}px`);
+            
+            particle.style.left = `${x}px`;
+            particle.style.top = `${y}px`;
+            
+            document.body.appendChild(particle);
+            
+            // Remove particle after animation completes
             setTimeout(() => {
-                this.style.transform = '';
-            }, 500);
-        });
+                if (particle.parentNode) {
+                    particle.parentNode.removeChild(particle);
+                }
+            }, 1200);
+        }
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        new MouseTrail();
     });
-    
-    // Parallax effect for particles
-    window.addEventListener('scroll', function() {
-        const scrolled = window.pageYOffset;
-        const particles = document.querySelectorAll('.particle');
-        
-        particles.forEach((particle, index) => {
-            const speed = (index + 1) * 0.5;
-            particle.style.transform = `translateY(${scrolled * speed}px)`;
-        });
-    });
-});
 </script>

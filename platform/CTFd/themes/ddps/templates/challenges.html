@@ -35,7 +35,7 @@
       </div>
 
       <div x-show="loaded">
-        <template x-for="(category, idx) in getCategories().slice().reverse()" :key="idx">
+        <template x-for="(category, idx) in getCategories()" :key="idx">
           <div class="pt-5">
             <div class="category-header mb-3">
               <h3 x-text="category"></h3>
