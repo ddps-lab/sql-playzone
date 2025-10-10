@@ -121,6 +121,16 @@
     "src": "assets/js/color_mode_switcher.js",
     "isEntry": true
   },
+  "assets/js/sql_challenge_tracker.js": {
+    "file": "assets/sql_challenge_tracker.e4d9769a.js",
+    "src": "assets/js/sql_challenge_tracker.js",
+    "isEntry": true
+  },
+  "assets/js/sql_challenge.js": {
+    "file": "assets/sql_challenge.ceb724b9.js",
+    "src": "assets/js/sql_challenge.js",
+    "isEntry": true
+  },
   "_echarts.7a5d4174.js": {
     "file": "assets/echarts.7a5d4174.js"
   },

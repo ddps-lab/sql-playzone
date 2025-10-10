@@ -68,6 +68,8 @@ export default defineConfig({
         users_list: resolve(__dirname, "assets/js/users/list.js"),
         main: resolve(__dirname, "assets/scss/main.scss"),
         color_mode_switcher: resolve(__dirname, "assets/js/color_mode_switcher.js"),
+        sql_challenge_tracker: resolve(__dirname, "assets/js/sql_challenge_tracker.js"),
+        sql_challenge: resolve(__dirname, "assets/js/sql_challenge.js"),
       },
     },
   },
