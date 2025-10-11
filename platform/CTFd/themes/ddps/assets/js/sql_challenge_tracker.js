@@ -133,7 +133,7 @@ function setupBehaviorTracking(sqlEditor) {
     }
 
     // Create new logger
-    behaviorLogger = new BehaviorLogger();
+    window.behaviorLogger = behaviorLogger = new BehaviorLogger();
 
     // Track word completion with delimiters
     let wordBuffer = '';
@@ -260,3 +260,4 @@ function setupBehaviorTracking(sqlEditor) {
 // Export for use in other scripts
 window.BehaviorLogger = BehaviorLogger;
 window.setupBehaviorTracking = setupBehaviorTracking;
+window.behaviorLogger = behaviorLogger;
