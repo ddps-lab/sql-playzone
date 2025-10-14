@@ -748,6 +748,127 @@ function initVerticalResize() {
 }
 
 // Update Deadline Display
+// Function to show submission history
+async function showSubmissionHistory() {
+    const challengeId = document.getElementById('challenge-id').value;
+    const modal = document.getElementById('historyModal');
+    const contentDiv = document.getElementById('submission-history-content');
+
+    if (!modal || !contentDiv) return;
+
+    // Show modal with loading state
+    modal.classList.add('show');
+    modal.style.display = 'block';
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+
+    // Show loading state
+    contentDiv.innerHTML = `
+        <div class="text-center py-5">
+            <i class="fas fa-spinner fa-spin fa-3x text-muted"></i>
+            <p class="text-muted mt-3">Loading submission history...</p>
+        </div>
+    `;
+
+    try {
+        const response = await fetch(`/api/v1/challenges/${challengeId}/sql-submissions`);
+        const data = await response.json();
+
+        if (data.success && data.data) {
+            if (data.data.length === 0) {
+                contentDiv.innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                        <h5>No Submissions Yet</h5>
+                        <p class="text-muted">You haven't submitted any solutions for this challenge yet.</p>
+                    </div>
+                `;
+            } else {
+                // Create accordion HTML
+                let historyHTML = '<div class="accordion" id="submissionAccordion">';
+
+                data.data.forEach((submission, index) => {
+                    // Convert UTC to KST
+                    const date = new Date(submission.date);
+                    const formattedDate = date.toLocaleString('ko-KR', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        timeZone: 'Asia/Seoul',
+                        hour12: false  // Use 24-hour format
+                    });
+
+                    const statusIcon = submission.type === 'correct'
+                        ? '<i class="fas fa-check-circle text-success"></i>'
+                        : '<i class="fas fa-times-circle text-danger"></i>';
+                    const statusClass = submission.type === 'correct' ? 'correct' : 'incorrect';
+                    const statusText = submission.type === 'correct' ? 'Correct' : 'Incorrect';
+                    const submissionNumber = data.data.length - index;
+                    const collapseId = `collapse${submission.id}`;
+                    const headingId = `heading${submission.id}`;
+
+                    // First submission is expanded by default
+                    const isExpanded = index === 0;
+                    const collapseClass = isExpanded ? 'show' : '';
+                    const buttonClass = isExpanded ? '' : 'collapsed';
+                    const ariaExpanded = isExpanded ? 'true' : 'false';
+
+                    historyHTML += `
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="${headingId}">
+                                <button class="accordion-button ${buttonClass} ${statusClass}" type="button"
+                                        data-bs-toggle="collapse" data-bs-target="#${collapseId}"
+                                        aria-expanded="${ariaExpanded}" aria-controls="${collapseId}">
+                                    <div class="d-flex justify-content-between align-items-center w-100 me-2">
+                                        <div>
+                                            <strong>Submission #${submissionNumber}</strong>
+                                            <span class="badge ${submission.type === 'correct' ? 'bg-success' : 'bg-danger'} ms-2">
+                                                ${statusText}
+                                            </span>
+                                        </div>
+                                        <div class="text-muted small">
+                                            ${statusIcon} ${formattedDate}
+                                        </div>
+                                    </div>
+                                </button>
+                            </h2>
+                            <div id="${collapseId}" class="accordion-collapse collapse ${collapseClass}"
+                                 aria-labelledby="${headingId}" data-bs-parent="#submissionAccordion">
+                                <div class="accordion-body p-0">
+                                    <div class="submission-query">
+                                        <code>${escapeHtml(submission.submission || '')}</code>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                historyHTML += '</div>';
+                contentDiv.innerHTML = historyHTML;
+            }
+        } else {
+            contentDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Failed to load submission history. Please try again.
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading submission history:', error);
+        contentDiv.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i>
+                An error occurred while loading submission history.
+            </div>
+        `;
+    }
+}
+
 function updateDeadlineDisplay() {
     const deadlineElement = document.getElementById('deadline-time');
     if (!deadlineElement) return;
@@ -832,6 +953,45 @@ window.testLoadCode = function() {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
+    // Prevent text selection and copying in challenge description panel
+    const challengePanel = document.querySelector('.challenge-panel');
+    if (challengePanel) {
+        // Disable right-click context menu
+        challengePanel.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            return false;
+        });
+
+        // Disable text selection with mouse
+        challengePanel.addEventListener('selectstart', function(e) {
+            e.preventDefault();
+            return false;
+        });
+
+        // Disable copy keyboard shortcuts
+        challengePanel.addEventListener('keydown', function(e) {
+            // Prevent Ctrl+C, Ctrl+A, Ctrl+X
+            if ((e.ctrlKey || e.metaKey) && (e.keyCode === 67 || e.keyCode === 65 || e.keyCode === 88)) {
+                e.preventDefault();
+                return false;
+            }
+        });
+
+        // Disable drag
+        challengePanel.addEventListener('dragstart', function(e) {
+            e.preventDefault();
+            return false;
+        });
+
+        // Disable text highlighting with double-click
+        challengePanel.addEventListener('mousedown', function(e) {
+            if (e.detail > 1) {
+                e.preventDefault();
+                return false;
+            }
+        });
+    }
+
     // Try multiple initialization strategies
     initSQLEditor();
     
@@ -859,10 +1019,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const resetBtn = document.getElementById('challenge-reset');
     const executeBtn = document.getElementById('challenge-execute');
     const submitBtn = document.getElementById('challenge-submit');
+    const historyBtn = document.getElementById('challenge-history');
 
     if (resetBtn) resetBtn.addEventListener('click', resetSQLEditor);
     if (executeBtn) executeBtn.addEventListener('click', executeSQLQuery);
     if (submitBtn) submitBtn.addEventListener('click', submitSQLChallenge);
+    if (historyBtn) historyBtn.addEventListener('click', showSubmissionHistory);
 
     // Add modal close functionality
     const modalCloseButtons = document.querySelectorAll('[data-bs-dismiss="modal"]');

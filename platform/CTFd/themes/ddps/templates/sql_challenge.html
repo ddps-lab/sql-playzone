@@ -84,6 +84,14 @@ WHERE condition;"
             <!-- Buttons -->
             <div class="d-flex gap-2">
                 <button
+                    id="challenge-history"
+                    class="btn btn-outline-info"
+                    type="button"
+                    title="View submission history"
+                >
+                    <i class="fas fa-history me-1"></i> Submission History
+                </button>
+                <button
                     id="challenge-reset"
                     class="btn btn-outline-secondary"
                     type="button"
@@ -128,9 +136,6 @@ WHERE condition;"
                     <h4>Congratulations!</h4>
                     <p class="lead">You have successfully solved the SQL challenge!</p>
                 </div>
-                <div class="alert alert-info">
-                    <strong>Points Earned:</strong> <span id="earned-points">{{ challenge.value }}</span> points
-                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
@@ -144,6 +149,33 @@ WHERE condition;"
     </div>
 </div>
 
+<!-- Submission History Modal -->
+<div class="modal fade" id="historyModal" tabindex="-1" aria-labelledby="historyModalLabel" aria-hidden="true" data-bs-backdrop="false">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title" id="historyModalLabel">
+                    <i class="fas fa-history"></i> Submission History
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="submission-history-content">
+                    <div class="text-center py-5">
+                        <i class="fas fa-spinner fa-spin fa-3x text-muted"></i>
+                        <p class="text-muted mt-3">Loading submission history...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
 /* Prevent body scroll on SQL challenge page */
 body {
@@ -151,13 +183,134 @@ body {
     height: 100vh;
 }
 
-/* High z-index for success modal */
-#successModal {
+/* High z-index for modals */
+#successModal, #historyModal {
     z-index: 9999 !important;
 }
 
-#successModal .modal-dialog {
+#successModal .modal-dialog, #historyModal .modal-dialog {
     z-index: 10000 !important;
+}
+
+/* Limit history modal height */
+#historyModal .modal-dialog {
+    max-height: 70vh;
+    display: flex;
+    align-items: center;
+}
+
+#historyModal .modal-content {
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+}
+
+#historyModal .modal-body {
+    overflow-y: auto;
+    flex: 1;
+    padding: 0;
+}
+
+/* Accordion style for submission history */
+#historyModal .accordion {
+    --bs-accordion-border-color: #dee2e6;
+    --bs-accordion-btn-padding-x: 1.25rem;
+    --bs-accordion-btn-padding-y: 1rem;
+}
+
+#historyModal .accordion-item {
+    border: none;
+    margin-bottom: 0.5rem;
+}
+
+#historyModal .accordion-button {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem !important;
+    font-weight: 500;
+}
+
+#historyModal .accordion-button:not(.collapsed) {
+    background-color: #e9ecef;
+    border-color: #dee2e6;
+    box-shadow: none;
+}
+
+#historyModal .accordion-button:focus {
+    box-shadow: none;
+    border-color: #86b7fe;
+}
+
+#historyModal .accordion-button.correct {
+    border-left: 4px solid #28a745;
+}
+
+#historyModal .accordion-button.incorrect {
+    border-left: 4px solid #dc3545;
+}
+
+#historyModal .accordion-collapse {
+    border: 1px solid #dee2e6;
+    border-top: none;
+    border-radius: 0 0 0.375rem 0.375rem;
+}
+
+#historyModal .submission-query {
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    padding: 1rem;
+    border-radius: 0.25rem;
+    font-family: 'Courier New', monospace;
+    white-space: pre;
+    word-break: normal;
+    max-height: 300px;
+    overflow: auto;
+    text-align: left;
+    line-height: 1.5;
+    border: 1px solid #333;
+    margin: 0;
+}
+
+#historyModal .submission-query code {
+    display: block;
+    color: #d4d4d4;
+    background: transparent;
+    padding: 0;
+    font-size: 14px;
+    text-align: left;
+}
+
+/* Dark theme adjustments */
+[data-bs-theme="dark"] #historyModal .accordion-button {
+    background-color: #2b3035;
+    border-color: #495057;
+    color: #fff;
+}
+
+[data-bs-theme="dark"] #historyModal .accordion-button:not(.collapsed) {
+    background-color: #373b3e;
+    border-color: #495057;
+}
+
+[data-bs-theme="dark"] #historyModal .accordion-collapse {
+    background-color: #212529;
+    border-color: #495057;
+}
+
+/* Dark theme for history modal */
+[data-bs-theme="dark"] #historyModal .submission-query {
+    background-color: #1e1e1e;
+    border-color: #444;
+}
+
+[data-bs-theme="light"] #historyModal .submission-query {
+    background-color: #f8f9fa;
+    color: #212529;
+    border-color: #dee2e6;
+}
+
+[data-bs-theme="light"] #historyModal .submission-query code {
+    color: #212529;
 }
 
 .sql-challenge-wrapper {
@@ -223,6 +376,35 @@ body {
 .challenge-info {
     height: 100%;
     overflow-y: auto;
+    /* Prevent text selection to avoid cheating */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* Disable text selection for challenge description specifically */
+.challenge-panel {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* Prevent context menu on right click */
+.challenge-panel * {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* Disable copy cursor */
+.challenge-panel,
+.challenge-panel * {
+    cursor: default !important;
 }
 
 .sql-editor-section {

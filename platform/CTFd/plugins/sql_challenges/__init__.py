@@ -11,7 +11,7 @@ from flask import Blueprint, request, jsonify
 from CTFd.models import Challenges, db
 from CTFd.plugins import register_plugin_assets_directory
 from CTFd.plugins.challenges import CHALLENGE_CLASSES, BaseChallenge, ChallengeResponse
-from CTFd.utils.decorators import admins_only
+from CTFd.utils.decorators import admins_only, authed_only
 from CTFd.utils.user import get_ip
 
 # Set KST timezone
@@ -634,12 +634,72 @@ def load(app):
         data = request.get_json()
         init_query = data.get('init_query', '')
         test_query = data.get('test_query', '')
-        
+
         if not test_query:
             return jsonify({
                 'success': False,
                 'error': 'No test query provided'
             }), 400
-        
+
         result = SQLChallengeType.test_query(init_query, test_query)
         return jsonify(result)
+
+    # Add API endpoint for getting SQL challenge submission history
+    @app.route('/api/v1/challenges/<int:challenge_id>/sql-submissions', methods=['GET'])
+    @authed_only
+    def get_sql_submissions(challenge_id):
+        """API endpoint for getting submission history for SQL challenges"""
+        from CTFd.utils.user import get_current_user
+        from CTFd.models import Submissions
+
+        # Verify this is a SQL challenge
+        challenge = Challenges.query.filter_by(id=challenge_id).first_or_404()
+        if challenge.type != "sql":
+            return jsonify({
+                'success': False,
+                'error': 'Not a SQL challenge'
+            }), 400
+
+        # Get current user
+        user = get_current_user()
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': 'User not authenticated'
+            }), 401
+
+        # Get submissions for this user and challenge
+        submissions = Submissions.query.filter_by(
+            challenge_id=challenge_id,
+            account_id=user.account_id
+        ).order_by(Submissions.date.desc()).limit(50).all()
+
+        # Format submissions for response
+        submission_list = []
+        for sub in submissions:
+            # Ensure UTC timezone is explicit in the ISO format
+            date_str = None
+            if sub.date:
+                # CTFd stores dates in UTC without timezone info
+                # We need to explicitly mark it as UTC
+                if sub.date.tzinfo is None:
+                    # Add UTC timezone
+                    utc_date = sub.date.replace(tzinfo=pytz.UTC)
+                else:
+                    # Already has timezone, ensure it's UTC
+                    utc_date = sub.date.astimezone(pytz.UTC)
+
+                # Return ISO format with explicit timezone (will have +00:00 suffix)
+                date_str = utc_date.isoformat()
+
+            submission_list.append({
+                'id': sub.id,
+                'date': date_str,
+                'submission': sub.provided,
+                'type': sub.type,  # 'correct' or 'incorrect'
+            })
+
+        return jsonify({
+            'success': True,
+            'data': submission_list
+        })
