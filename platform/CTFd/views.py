@@ -551,17 +551,21 @@ def sql_challenge_page(challenge_id):
     """Render SQL challenge on a dedicated page"""
     if not is_setup():
         return redirect(url_for("views.setup"))
-    
+
     challenge = Challenges.query.filter_by(id=challenge_id).first_or_404()
-    
+
     # Check if this is a SQL challenge
     if challenge.type != "sql":
         abort(404)
-    
+
+    # Check if challenge is hidden and user is not admin
+    if challenge.state == "hidden" and not is_admin():
+        abort(403)
+
     # Check if challenges are visible
     if not challenges_visible():
         abort(403)
-    
+
     # Check if CTF has ended
     if ctf_ended() and not view_after_ctf():
         abort(403)
