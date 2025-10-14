@@ -617,6 +617,11 @@ class ChallengeAttempt(Resource):
         # Allow preview for SQL challenges
         if preview:
             challenge = Challenges.query.filter_by(id=challenge_id).first_or_404()
+
+            # Check if challenge is hidden and user is not admin
+            if challenge.state == "hidden" and not is_admin():
+                abort(403)
+
             # Only allow preview for SQL challenges
             if challenge.type == "sql":
                 chal_class = get_chal_class(challenge.type)
