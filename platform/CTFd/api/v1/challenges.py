@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from typing import List  # noqa: I001
 import pytz
 
-from flask import abort, render_template, request, url_for
+from flask import abort, render_template, request, session, url_for
 from flask_restx import Namespace, Resource
 from sqlalchemy.sql import and_
 
@@ -28,6 +28,7 @@ from CTFd.models import (
     Solves,
     Submissions,
     Tags,
+    Tracking,
     db,
 )
 from CTFd.plugins.challenges import CHALLENGE_CLASSES, get_chal_class
@@ -71,6 +72,7 @@ from CTFd.utils.user import (
     get_current_team_attrs,
     get_current_user,
     get_current_user_attrs,
+    get_ip,
     is_admin,
 )
 
@@ -515,7 +517,8 @@ class Challenge(Resource):
             # Get rating information for this challenge
             rating_info = get_rating_average_for_challenge_id(challenge_id)
             response["ratings"] = {
-                "average": rating_info.average,
+                "up": rating_info.up,
+                "down": rating_info.down,
                 "count": rating_info.count,
             }
         else:
@@ -541,7 +544,24 @@ class Challenge(Resource):
             challenge=chal,
         )
 
-        db.session.close()
+        if (
+            authed() is True
+            and is_admin() is False
+            and Tracking.query.filter_by(
+                type="challenges.open", user_id=session["id"], target=challenge_id
+            ).first()
+            is None
+        ):
+            track = Tracking(
+                ip=get_ip(),
+                user_id=session["id"],
+                type="challenges.open",
+                target=challenge_id,
+            )
+            db.session.add(track)
+            db.session.commit()
+            db.session.close()
+
         return {"success": True, "data": response}
 
     @admins_only
@@ -1081,7 +1101,8 @@ class ChallengeRatings(Resource):
                     "total": paginated_ratings.total,
                 },
                 "summary": {
-                    "average": rating_info.average,
+                    "up": rating_info.up,
+                    "down": rating_info.down,
                     "count": rating_info.count,
                 },
             },
@@ -1132,10 +1153,10 @@ class ChallengeRatings(Resource):
             }, 400
 
         # Validate rating value (1-5 scale)
-        if rating_value < 1 or rating_value > 5:
+        if abs(rating_value) != 1:
             return {
                 "success": False,
-                "errors": {"value": ["Rating value must be between 1 and 5"]},
+                "errors": {"value": ["Rating value must be either 1 or -1"]},
             }, 400
 
         # Get review text (optional)
