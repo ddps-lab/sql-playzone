@@ -25,10 +25,76 @@ class SQLChallenge(Challenges):
     )
     init_query = db.Column(db.Text, default="")
     solution_query = db.Column(db.Text, default="")
-    deadline = db.Column(db.DateTime, nullable=True)
+    deadline_utc = db.Column("deadline", db.DateTime, nullable=True)
 
     def __init__(self, *args, **kwargs):
         super(SQLChallenge, self).__init__(**kwargs)
+
+    @property
+    def deadline(self):
+        """Return deadline in KST format for display in forms"""
+        if self.deadline_utc is None:
+            return None
+
+        import logging
+        logging.debug(f"[deadline getter] deadline_utc={self.deadline_utc}, type={type(self.deadline_utc)}")
+
+        try:
+            # Handle case where deadline_utc might be a string (shouldn't happen but let's be defensive)
+            if isinstance(self.deadline_utc, str):
+                logging.warning(f"[deadline getter] deadline_utc is unexpectedly a string: {self.deadline_utc}")
+                # Try to parse it as a datetime
+                try:
+                    from datetime import datetime as dt
+                    if 'T' in self.deadline_utc:
+                        parsed_dt = dt.fromisoformat(self.deadline_utc.replace('Z', '+00:00'))
+                    else:
+                        parsed_dt = dt.fromisoformat(self.deadline_utc)
+                    # Use the parsed datetime
+                    utc_dt = parsed_dt.replace(tzinfo=pytz.UTC) if parsed_dt.tzinfo is None else parsed_dt.astimezone(pytz.UTC)
+                except Exception as parse_error:
+                    logging.error(f"[deadline getter] Failed to parse string deadline: {parse_error}")
+                    return self.deadline_utc  # Return as-is
+            else:
+                # Normal case: deadline_utc is a datetime object
+                utc_dt = self.deadline_utc.replace(tzinfo=pytz.UTC)
+
+            kst_dt = utc_dt.astimezone(KST)
+            # Return as ISO format string in KST for datetime-local input
+            result = kst_dt.strftime('%Y-%m-%dT%H:%M')
+            logging.debug(f"[deadline getter] Converted to KST string: {result}")
+            return result
+        except Exception as e:
+            logging.error(f"[deadline getter] Error: {e}, deadline_utc={self.deadline_utc}, type={type(self.deadline_utc)}")
+            import traceback
+            logging.error(traceback.format_exc())
+            return None
+
+    @deadline.setter
+    def deadline(self, value):
+        """Store deadline as naive UTC in database"""
+        if value is None or value == '':
+            self.deadline_utc = None
+        elif isinstance(value, str):
+            # Coming from form as KST string
+            try:
+                if 'T' in value:
+                    naive_dt = datetime.fromisoformat(value)
+                else:
+                    naive_dt = datetime.fromisoformat(value.replace(' ', 'T'))
+                # Localize to KST
+                kst_dt = KST.localize(naive_dt)
+                # Convert to UTC for storage
+                utc_dt = kst_dt.astimezone(pytz.UTC)
+                # Store as naive UTC
+                self.deadline_utc = utc_dt.replace(tzinfo=None)
+            except Exception as e:
+                import logging
+                logging.error(f"Failed to parse deadline string '{value}': {e}")
+                self.deadline_utc = None
+        elif isinstance(value, datetime):
+            # Coming from code as datetime object (assume naive UTC)
+            self.deadline_utc = value
 
 
 class SQLChallengeType(BaseChallenge):
@@ -65,31 +131,20 @@ class SQLChallengeType(BaseChallenge):
         init_query = data.get("init_query", "")
         solution_query = data.get("solution_query", "")
         deadline_str = data.get("deadline", "")
-        
-        # Remove fields that don't belong to the model
+
+        # Remove fields that don't belong to the base model
         data.pop("flag", None)
         data.pop("flag_type", None)
-        
+        data.pop("init_query", None)
+        data.pop("solution_query", None)
+        data.pop("deadline", None)
+
         # Create challenge with base fields
         challenge = cls.challenge_model(**data)
         challenge.init_query = init_query
         challenge.solution_query = solution_query
-        
-        # Parse and set deadline if provided (assume input is in KST)
-        if deadline_str:
-            try:
-                # Parse the datetime string (assuming it's in KST from the form)
-                naive_dt = datetime.fromisoformat(deadline_str.replace('T', ' '))
-                # Localize to KST
-                kst_dt = KST.localize(naive_dt)
-                # Convert to UTC for storage
-                utc_dt = kst_dt.astimezone(pytz.UTC)
-                # Store as naive UTC (CTFd convention)
-                challenge.deadline = utc_dt.replace(tzinfo=None)
-            except:
-                challenge.deadline = None
-        else:
-            challenge.deadline = None
+        # deadline setter property will handle the KST->UTC conversion automatically
+        challenge.deadline = deadline_str if deadline_str else None
         
         db.session.add(challenge)
         db.session.commit()
@@ -114,22 +169,15 @@ class SQLChallengeType(BaseChallenge):
         """
         challenge = SQLChallenge.query.filter_by(id=challenge.id).first()
         data = super().read(challenge)
-        
+
         # Add SQL-specific fields
-        deadline_kst = None
-        if challenge.deadline:
-            # Convert UTC to KST for display
-            utc_dt = pytz.UTC.localize(challenge.deadline)
-            kst_dt = utc_dt.astimezone(KST)
-            # Return as ISO format string in KST
-            deadline_kst = kst_dt.strftime('%Y-%m-%dT%H:%M')
-        
+        # The deadline property automatically converts UTC to KST format
         data.update({
             "init_query": challenge.init_query,
             "solution_query": challenge.solution_query,
-            "deadline": deadline_kst,
+            "deadline": challenge.deadline,  # Property handles UTC->KST conversion
         })
-        
+
         return data
 
     @classmethod
@@ -145,21 +193,8 @@ class SQLChallengeType(BaseChallenge):
         if "solution_query" in data:
             challenge.solution_query = data["solution_query"]
         if "deadline" in data:
-            deadline_str = data["deadline"]
-            if deadline_str:
-                try:
-                    # Parse the datetime string (assuming it's in KST from the form)
-                    naive_dt = datetime.fromisoformat(deadline_str.replace('T', ' '))
-                    # Localize to KST
-                    kst_dt = KST.localize(naive_dt)
-                    # Convert to UTC for storage
-                    utc_dt = kst_dt.astimezone(pytz.UTC)
-                    # Store as naive UTC (CTFd convention)
-                    challenge.deadline = utc_dt.replace(tzinfo=None)
-                except:
-                    challenge.deadline = None
-            else:
-                challenge.deadline = None
+            # deadline setter property will handle the KST->UTC conversion automatically
+            challenge.deadline = data["deadline"]
         
         # Update base fields
         for attr, value in data.items():
@@ -194,7 +229,8 @@ class SQLChallengeType(BaseChallenge):
             )
         
         # Check deadline only for actual submissions, not previews
-        if not is_preview and challenge.deadline and datetime.utcnow() > challenge.deadline:
+        # Use deadline_utc (raw datetime) for comparison, not the property (which returns a string)
+        if not is_preview and challenge.deadline_utc and datetime.utcnow() > challenge.deadline_utc:
             return ChallengeResponse(
                 status="incorrect",
                 message="Submission deadline has passed"

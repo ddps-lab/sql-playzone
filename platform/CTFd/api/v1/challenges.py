@@ -231,13 +231,14 @@ class ChallengeList(Resource):
             if challenge.type == "sql":
                 from CTFd.plugins.sql_challenges import SQLChallenge
                 sql_challenge = SQLChallenge.query.filter_by(id=challenge.id).first()
-                if sql_challenge and sql_challenge.deadline:
+                if sql_challenge and sql_challenge.deadline_utc:
                     # Convert UTC to KST for display
                     KST = pytz.timezone('Asia/Seoul')
-                    utc_dt = pytz.UTC.localize(sql_challenge.deadline)
+                    # deadline_utc is stored as naive UTC datetime
+                    utc_dt = sql_challenge.deadline_utc.replace(tzinfo=pytz.UTC)
                     kst_dt = utc_dt.astimezone(KST)
                     deadline = kst_dt.strftime('%Y-%m-%d %H:%M')
-                    
+
                     # Determine deadline status
                     now_kst = datetime.now(KST)
                     if now_kst > kst_dt:
