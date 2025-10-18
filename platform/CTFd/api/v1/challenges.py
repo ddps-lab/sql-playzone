@@ -684,11 +684,13 @@ class ChallengeAttempt(Resource):
 
         challenge = Challenges.query.filter_by(id=challenge_id).first_or_404()
 
-        if challenge.state == "hidden":
-            abort(404)
+        # Allow admins to bypass state checks
+        if not is_admin():
+            if challenge.state == "hidden":
+                abort(404)
 
-        if challenge.state == "locked":
-            abort(403)
+            if challenge.state == "locked":
+                abort(403)
 
         if challenge.requirements:
             requirements = challenge.requirements.get("prerequisites", [])
