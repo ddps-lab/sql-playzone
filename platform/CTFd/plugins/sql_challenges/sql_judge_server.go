@@ -291,7 +291,7 @@ func executeQuery(initQueries []string, query string, req *QueryRequest) (*Query
 			// 	}
 			// }
 
-			_, iter, err := engine.Query(ctx, stmt)
+			_, iter, _, err := engine.Query(ctx, stmt)
 			if err != nil {
 				if len(stmt) > logMaxLength {
 					log.Printf("Failed to execute (truncated): %s...", stmt[:logMaxLength])
@@ -317,7 +317,7 @@ func executeQuery(initQueries []string, query string, req *QueryRequest) (*Query
 	}
 
 	// Execute the main query
-	schema, iter, err := engine.Query(ctx, query)
+	schema, iter, _, err := engine.Query(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("query error: %v", err)
 	}

@@ -4,7 +4,7 @@ go 1.22
 
 toolchain go1.24.5
 
-require github.com/dolthub/go-mysql-server v0.18.1
+require github.com/dolthub/go-mysql-server v0.20.0
 
 require (
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
