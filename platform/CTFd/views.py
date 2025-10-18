@@ -589,9 +589,10 @@ def sql_challenge_page(challenge_id):
 
     # Convert deadline to KST if it exists
     deadline_str = None
-    if sql_challenge.deadline:
+    if sql_challenge.deadline_utc:
         KST = pytz.timezone('Asia/Seoul')
-        utc_dt = pytz.UTC.localize(sql_challenge.deadline)
+        # deadline_utc is stored as naive UTC datetime
+        utc_dt = sql_challenge.deadline_utc.replace(tzinfo=pytz.UTC)
         kst_dt = utc_dt.astimezone(KST)
         # Return as ISO format string for JavaScript
         deadline_str = kst_dt.isoformat()

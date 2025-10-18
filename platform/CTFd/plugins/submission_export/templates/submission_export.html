@@ -1,0 +1,122 @@
+{% extends "admin/base.html" %}
+
+{% block stylesheets %}
+<style>
+.submission-table {
+    font-size: 0.85rem;
+}
+.submission-table th {
+    position: sticky;
+    top: 0;
+    background-color: #343a40;
+    color: white;
+    z-index: 10;
+}
+.submission-table td {
+    text-align: center;
+}
+.submission-table td.user-info {
+    text-align: left;
+    white-space: nowrap;
+}
+.solved {
+    background-color: #d4edda;
+    color: #155724;
+    font-weight: bold;
+}
+.unsolved {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+.table-container {
+    max-height: 70vh;
+    overflow-y: auto;
+    border: 1px solid #dee2e6;
+}
+.export-btn {
+    margin-bottom: 20px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="jumbotron">
+    <div class="container">
+        <h1>Submission Status Export</h1>
+        <p class="lead">View and export submission status for all users</p>
+    </div>
+</div>
+
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <a href="{{ url_for('submission_export.export_csv') }}" class="btn btn-primary export-btn">
+                <i class="fas fa-download"></i> Export to CSV
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="table-container">
+                <table class="table table-bordered table-striped submission-table">
+                    <thead>
+                        <tr>
+                            <th rowspan="2">Name</th>
+                            <th rowspan="2">Email</th>
+                            <th rowspan="2">Student ID</th>
+                            <th colspan="{{ challenges|length }}" class="text-center">Challenges</th>
+                            <th rowspan="2">Total Score</th>
+                        </tr>
+                        <tr>
+                            {% for challenge in challenges %}
+                            <th class="text-center" title="{{ challenge.name }} (ID: {{ challenge.id }})">
+                                <div style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    {{ challenge.name }}
+                                </div>
+                                <small>(ID:{{ challenge.id }}, {{ challenge.value or 0 }}pts)</small>
+                            </th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td class="user-info">{{ user.name }}</td>
+                            <td class="user-info">{{ user.email }}</td>
+                            <td class="user-info">{{ user.student_id or 'N/A' }}</td>
+                            {% set ns = namespace(total_score=0) %}
+                            {% for challenge in challenges %}
+                                {% set score = user.challenge_scores[challenge.id] %}
+                                {% if score > 0 %}
+                                    <td class="solved">{{ score }}</td>
+                                    {% set ns.total_score = ns.total_score + score %}
+                                {% else %}
+                                    <td class="unsolved">0</td>
+                                {% endif %}
+                            {% endfor %}
+                            <td class="text-center"><strong>{{ ns.total_score }}</strong></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if users|length == 0 %}
+    <div class="row mt-3">
+        <div class="col-md-12">
+            <div class="alert alert-info text-center">
+                No users found.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{% endblock %}
