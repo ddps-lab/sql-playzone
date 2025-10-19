@@ -169,29 +169,59 @@ function showAutoSaveNotification(message) {
     const notification = document.createElement('div');
     notification.className = 'alert alert-info fade show position-fixed';
     notification.style.cssText = 'top: 70px; right: 20px; z-index: 1050; max-width: 350px; padding: 0.75rem 2.5rem 0.75rem 1rem; position: relative;';
-    
+
     // Create message content
     const messageContent = document.createElement('div');
     messageContent.style.cssText = 'display: flex; align-items: center;';
     messageContent.innerHTML = `<i class="fas fa-save me-2"></i><span>${message}</span>`;
-    
+
     // Create close button
     const closeButton = document.createElement('button');
     closeButton.type = 'button';
     closeButton.className = 'btn-close btn-sm';
     closeButton.style.cssText = 'position: absolute; top: 50%; right: 0.5rem; transform: translateY(-50%); padding: 0.25rem; font-size: 0.875rem;';
     closeButton.onclick = function() { notification.remove(); };
-    
+
     notification.appendChild(messageContent);
     notification.appendChild(closeButton);
     document.body.appendChild(notification);
-    
+
     // Auto-hide after 3 seconds
     setTimeout(() => {
         if (notification.parentNode) {
             notification.remove();
         }
     }, 3000);
+}
+
+// Show error toast notification
+function showErrorToast(message) {
+    const notification = document.createElement('div');
+    notification.className = 'alert alert-danger fade show position-fixed';
+    notification.style.cssText = 'top: 70px; right: 20px; z-index: 1050; max-width: 400px; padding: 0.75rem 2.5rem 0.75rem 1rem; position: relative;';
+
+    // Create message content
+    const messageContent = document.createElement('div');
+    messageContent.style.cssText = 'display: flex; align-items: center;';
+    messageContent.innerHTML = `<i class="fas fa-exclamation-triangle me-2"></i><span>${escapeHtml(message)}</span>`;
+
+    // Create close button
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'btn-close btn-sm';
+    closeButton.style.cssText = 'position: absolute; top: 50%; right: 0.5rem; transform: translateY(-50%); padding: 0.25rem; font-size: 0.875rem;';
+    closeButton.onclick = function() { notification.remove(); };
+
+    notification.appendChild(messageContent);
+    notification.appendChild(closeButton);
+    document.body.appendChild(notification);
+
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
 }
 
 // Clear saved code when challenge is solved
@@ -264,14 +294,21 @@ async function executeSQLQuery() {
         };
         // Request body prepared
 
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
+
         const response = await fetch('/api/v1/challenges/attempt', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'CSRF-Token': init.csrfNonce
             },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         // Response received
         if (!response.ok) {
@@ -289,7 +326,7 @@ async function executeSQLQuery() {
         } catch (e) {
             console.error('Failed to parse response as JSON:', e);
             console.error('Response was:', responseText);
-            alert('Server returned invalid JSON response');
+            showErrorToast('Server returned invalid JSON response');
             return;
         }
         // Result parsed
@@ -297,7 +334,7 @@ async function executeSQLQuery() {
         // Check if result has the expected structure
         if (!result || typeof result !== 'object') {
             console.error('Invalid result structure:', result);
-            alert('Invalid response from server');
+            showErrorToast('Invalid response from server');
             return;
         }
 
@@ -315,9 +352,14 @@ async function executeSQLQuery() {
         }
 
     } catch (error) {
-        console.error('Error executing query:', error);
-        console.error('Error details:', error.message, error.stack);
-        alert('Error executing query. Please check console for details.');
+        if (error.name === 'AbortError') {
+            console.error('Request timed out after 20 seconds');
+            showErrorToast('Request timed out. The server took too long to respond. Please try again.');
+        } else {
+            console.error('Error executing query:', error);
+            console.error('Error details:', error.message, error.stack);
+            showErrorToast('Error executing query. Please try again.');
+        }
     }
 }
 
@@ -333,7 +375,7 @@ async function submitSQLChallenge() {
         alert('Please enter a SQL query');
         return;
     }
-    
+
     // Check deadline before submitting
     const deadlineElement = document.getElementById('deadline-time');
     if (deadlineElement) {
@@ -355,8 +397,12 @@ async function submitSQLChallenge() {
             }
         }
     }
-    
+
     try {
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
+
         const response = await fetch('/api/v1/challenges/attempt', {
             method: 'POST',
             headers: {
@@ -368,16 +414,19 @@ async function submitSQLChallenge() {
                 submission: submission,
                 user_id: userId,
                 user_name: userName
-            })
+            }),
+            signal: controller.signal
         });
-        
+
+        clearTimeout(timeoutId);
+
         const result = await response.json();
         // Submit result received
-        
+
         // Check if result has the expected structure
         if (!result || typeof result !== 'object') {
             console.error('Invalid result structure:', result);
-            alert('Invalid response from server');
+            showErrorToast('Invalid response from server');
             return;
         }
 
@@ -389,7 +438,7 @@ async function submitSQLChallenge() {
                 submit_status: submitStatus
             })
         }
-        
+
         // CTFd API returns {success: bool, data: {...}} structure
         if (!result.hasOwnProperty('data')) {
             // Wrapping result in CTFd format
@@ -401,10 +450,15 @@ async function submitSQLChallenge() {
         } else {
             displayResult(result, false);
         }
-        
+
     } catch (error) {
-        console.error('Error submitting challenge:', error);
-        alert('Error submitting challenge. Please try again.');
+        if (error.name === 'AbortError') {
+            console.error('Request timed out after 20 seconds');
+            showErrorToast('Request timed out. The server took too long to respond. Please try again.');
+        } else {
+            console.error('Error submitting challenge:', error);
+            showErrorToast('Error submitting challenge. Please try again.');
+        }
     }
 }
 
