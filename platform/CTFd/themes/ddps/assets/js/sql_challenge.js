@@ -169,29 +169,59 @@ function showAutoSaveNotification(message) {
     const notification = document.createElement('div');
     notification.className = 'alert alert-info fade show position-fixed';
     notification.style.cssText = 'top: 70px; right: 20px; z-index: 1050; max-width: 350px; padding: 0.75rem 2.5rem 0.75rem 1rem; position: relative;';
-    
+
     // Create message content
     const messageContent = document.createElement('div');
     messageContent.style.cssText = 'display: flex; align-items: center;';
     messageContent.innerHTML = `<i class="fas fa-save me-2"></i><span>${message}</span>`;
-    
+
     // Create close button
     const closeButton = document.createElement('button');
     closeButton.type = 'button';
     closeButton.className = 'btn-close btn-sm';
     closeButton.style.cssText = 'position: absolute; top: 50%; right: 0.5rem; transform: translateY(-50%); padding: 0.25rem; font-size: 0.875rem;';
     closeButton.onclick = function() { notification.remove(); };
-    
+
     notification.appendChild(messageContent);
     notification.appendChild(closeButton);
     document.body.appendChild(notification);
-    
+
     // Auto-hide after 3 seconds
     setTimeout(() => {
         if (notification.parentNode) {
             notification.remove();
         }
     }, 3000);
+}
+
+// Show error toast notification
+function showErrorToast(message) {
+    const notification = document.createElement('div');
+    notification.className = 'alert alert-danger fade show position-fixed';
+    notification.style.cssText = 'top: 70px; right: 20px; z-index: 1050; max-width: 400px; padding: 0.75rem 2.5rem 0.75rem 1rem; position: relative;';
+
+    // Create message content
+    const messageContent = document.createElement('div');
+    messageContent.style.cssText = 'display: flex; align-items: center;';
+    messageContent.innerHTML = `<i class="fas fa-exclamation-triangle me-2"></i><span>${escapeHtml(message)}</span>`;
+
+    // Create close button
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'btn-close btn-sm';
+    closeButton.style.cssText = 'position: absolute; top: 50%; right: 0.5rem; transform: translateY(-50%); padding: 0.25rem; font-size: 0.875rem;';
+    closeButton.onclick = function() { notification.remove(); };
+
+    notification.appendChild(messageContent);
+    notification.appendChild(closeButton);
+    document.body.appendChild(notification);
+
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
 }
 
 // Clear saved code when challenge is solved
@@ -241,47 +271,54 @@ function resetSQLEditor() {
     showAutoSaveNotification('Editor has been reset');
 }
 
-// Execute SQL Query (without submission)
+// Execute SQL Query (test mode - checks correctness but doesn't record submission)
 async function executeSQLQuery() {
     const challengeId = document.getElementById('challenge-id').value;
     const submission = sqlEditor ? sqlEditor.getValue() : document.getElementById('challenge-input').value;
     // Get user information from CTFd object
     const userId = (CTFd && CTFd.user) ? CTFd.user.id : null;
     const userName = (CTFd && CTFd.user) ? CTFd.user.name : 'anonymous';
-    
+
     if (!submission.trim()) {
         alert('Please enter a SQL query');
         return;
     }
-    
+
     try {
         const requestBody = {
             challenge_id: parseInt(challengeId),
             submission: submission,
-            preview: true,  // Flag to indicate this is just a preview/test
+            test: true,  // Flag to indicate this is a test (checks correctness but doesn't record)
             user_id: userId,
             user_name: userName
         };
         // Request body prepared
-        
+
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
+
         const response = await fetch('/api/v1/challenges/attempt', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'CSRF-Token': init.csrfNonce
             },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
         });
-        
+
+        clearTimeout(timeoutId);
+
         // Response received
         if (!response.ok) {
             console.error('Response not OK:', response.statusText);
         }
-        
+
         // First get the response as text to debug
         const responseText = await response.text();
         // Response text received
-        
+
         // Try to parse as JSON
         let result;
         try {
@@ -289,18 +326,18 @@ async function executeSQLQuery() {
         } catch (e) {
             console.error('Failed to parse response as JSON:', e);
             console.error('Response was:', responseText);
-            alert('Server returned invalid JSON response');
+            showErrorToast('Server returned invalid JSON response');
             return;
         }
         // Result parsed
-        
+
         // Check if result has the expected structure
         if (!result || typeof result !== 'object') {
             console.error('Invalid result structure:', result);
-            alert('Invalid response from server');
+            showErrorToast('Invalid response from server');
             return;
         }
-        
+
         // CTFd API returns {success: bool, data: {...}} structure
         // We need to wrap our result if it doesn't have this structure
         if (!result.hasOwnProperty('data')) {
@@ -313,11 +350,16 @@ async function executeSQLQuery() {
         } else {
             displayResult(result, true);
         }
-        
+
     } catch (error) {
-        console.error('Error executing query:', error);
-        console.error('Error details:', error.message, error.stack);
-        alert('Error executing query. Please check console for details.');
+        if (error.name === 'AbortError') {
+            console.error('Request timed out after 20 seconds');
+            showErrorToast('Request timed out. The server took too long to respond. Please try again.');
+        } else {
+            console.error('Error executing query:', error);
+            console.error('Error details:', error.message, error.stack);
+            showErrorToast('Error executing query. Please try again.');
+        }
     }
 }
 
@@ -333,7 +375,7 @@ async function submitSQLChallenge() {
         alert('Please enter a SQL query');
         return;
     }
-    
+
     // Check deadline before submitting
     const deadlineElement = document.getElementById('deadline-time');
     if (deadlineElement) {
@@ -355,8 +397,12 @@ async function submitSQLChallenge() {
             }
         }
     }
-    
+
     try {
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
+
         const response = await fetch('/api/v1/challenges/attempt', {
             method: 'POST',
             headers: {
@@ -368,16 +414,19 @@ async function submitSQLChallenge() {
                 submission: submission,
                 user_id: userId,
                 user_name: userName
-            })
+            }),
+            signal: controller.signal
         });
-        
+
+        clearTimeout(timeoutId);
+
         const result = await response.json();
         // Submit result received
-        
+
         // Check if result has the expected structure
         if (!result || typeof result !== 'object') {
             console.error('Invalid result structure:', result);
-            alert('Invalid response from server');
+            showErrorToast('Invalid response from server');
             return;
         }
 
@@ -389,7 +438,7 @@ async function submitSQLChallenge() {
                 submit_status: submitStatus
             })
         }
-        
+
         // CTFd API returns {success: bool, data: {...}} structure
         if (!result.hasOwnProperty('data')) {
             // Wrapping result in CTFd format
@@ -401,36 +450,41 @@ async function submitSQLChallenge() {
         } else {
             displayResult(result, false);
         }
-        
+
     } catch (error) {
-        console.error('Error submitting challenge:', error);
-        alert('Error submitting challenge. Please try again.');
+        if (error.name === 'AbortError') {
+            console.error('Request timed out after 20 seconds');
+            showErrorToast('Request timed out. The server took too long to respond. Please try again.');
+        } else {
+            console.error('Error submitting challenge:', error);
+            showErrorToast('Error submitting challenge. Please try again.');
+        }
     }
 }
 
 // Display Result
-function displayResult(result, isPreview = false) {
+function displayResult(result, isTest = false) {
     const container = document.getElementById('query-result-container');
-    
+
     // Clear and prepare container
     container.innerHTML = '';
-    
-    // Parse message first to check if it's a preview
+
+    // Parse message first to check if it's a test
     let message = result.data.message || '';
-    const isActuallyPreview = message.startsWith('[PREVIEW]');
-    
+    const isActuallyTest = message.startsWith('[TEST]');
+
     // Create status message
     const statusDiv = document.createElement('div');
     const isAlreadySolved = result.data.status === 'already_solved';
-    statusDiv.className = result.data.status === 'correct' || isAlreadySolved ? 'alert alert-success' : 
-                          (result.data.status === 'incorrect' && !isActuallyPreview) ? 'alert alert-danger' : 
-                          isActuallyPreview ? 'alert alert-info' :
+    statusDiv.className = result.data.status === 'correct' || isAlreadySolved ? 'alert alert-success' :
+                          (result.data.status === 'incorrect' && !isActuallyTest) ? 'alert alert-danger' :
+                          isActuallyTest ? 'alert alert-info' :
                           'alert alert-warning';
     statusDiv.innerHTML = '<span id="status-text"></span>';
-    
+
     // Continue processing message
-    if (isActuallyPreview) {
-        message = message.replace('[PREVIEW]\n', '');
+    if (isActuallyTest) {
+        message = message.replace('[TEST]\n', '');
     }
     
     // Remove "but you already solved this" from message for parsing
@@ -517,24 +571,24 @@ function displayResult(result, isPreview = false) {
         // No user result to render
     }
     
-    // Show success modal if correct (only for actual submissions, not previews)
-    if (result.data.status === 'correct' && !isPreview) {
+    // Show success modal if correct (only for actual submissions, not tests)
+    if (result.data.status === 'correct' && !isTest) {
         // Challenge solved! Showing success modal
-        
+
         // Clear saved code since challenge is solved
         clearSavedCode();
-        
+
         // Update earned points if available
         if (result.data.points) {
             document.getElementById('earned-points').textContent = result.data.points;
         }
-        
+
         // Show modal after a short delay to let the result display first
         setTimeout(() => {
             try {
                 const modalElement = document.getElementById('successModal');
                 // Modal element found
-                
+
                 if (modalElement) {
                     // Manually show modal
                     modalElement.classList.add('show');
@@ -550,7 +604,7 @@ function displayResult(result, isPreview = false) {
             }
         }, 1000);
     }
-    
+
 
 }
 

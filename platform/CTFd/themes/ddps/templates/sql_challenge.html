@@ -75,12 +75,12 @@ WHERE condition;"
             <div class="deadline-display">
                 {% if challenge.deadline %}
                 <span class="text-muted">
-                    <i class="fas fa-clock"></i> Deadline: 
+                    <i class="fas fa-clock"></i> Deadline:
                     <span id="deadline-time" data-deadline="{{ challenge.deadline }}">{{ challenge.deadline }}</span>
                 </span>
                 {% endif %}
             </div>
-            
+
             <!-- Buttons -->
             <div class="d-flex gap-2">
                 <button
@@ -103,9 +103,9 @@ WHERE condition;"
                     id="challenge-execute"
                     class="btn btn-secondary"
                     type="button"
-                    title="Run query without submitting"
+                    title="Test your query and check if it's correct"
                 >
-                    <i class="fas fa-play me-1"></i> Execute
+                    <i class="fas fa-vial me-1"></i> Test
                 </button>
                 <button
                     id="challenge-submit"
@@ -113,7 +113,7 @@ WHERE condition;"
                     type="button"
                     title="Submit query for grading"
                 >
-                    <i class="fas fa-check me-1"></i> Execute & Submit
+                    <i class="fas fa-check me-1"></i> Submit
                 </button>
             </div>
         </div>

@@ -211,26 +211,26 @@ class SQLChallengeType(BaseChallenge):
         """
         data = request.form or request.get_json()
         submission = data.get("submission", "").strip()
-        is_preview = data.get("preview", False)  # Check if this is just a preview/test
-        
+        is_test = data.get("test", False)  # Check if this is test mode (checks correctness but doesn't record)
+
         # Get user information from request
         user_id = str(data.get("user_id", ""))
         user_name = data.get("user_name", "")
         client_ip = get_ip()
-        
+
         # Debug logging
         import logging
-        logging.info(f"SQL Challenge attempt - Preview: {is_preview}, User ID: {user_id}, User Name: {user_name}, IP: {client_ip}")
-        
+        logging.info(f"SQL Challenge attempt - Test mode: {is_test}, User ID: {user_id}, User Name: {user_name}, IP: {client_ip}")
+
         if not submission:
             return ChallengeResponse(
                 status="incorrect",
                 message="Please provide a SQL query"
             )
-        
-        # Check deadline only for actual submissions, not previews
+
+        # Check deadline only for actual submissions, not test mode
         # Use deadline_utc (raw datetime) for comparison, not the property (which returns a string)
-        if not is_preview and challenge.deadline_utc and datetime.utcnow() > challenge.deadline_utc:
+        if not is_test and challenge.deadline_utc and datetime.utcnow() > challenge.deadline_utc:
             return ChallengeResponse(
                 status="incorrect",
                 message="Submission deadline has passed"
@@ -240,17 +240,17 @@ class SQLChallengeType(BaseChallenge):
         try:
             import requests
             import json
-            
+
             # Use Go MySQL server
             go_server_url = os.environ.get('SQL_JUDGE_SERVER_URL', 'http://localhost:8080')
-            
-            if is_preview:
-                # For preview, only execute the user query without comparing
+
+            if is_test:
+                # For test mode, check correctness but format message differently
                 response = requests.post(
                     f"{go_server_url}/judge",
                     json={
                         'init_query': challenge.init_query,
-                        'solution_query': submission,  # Use user query as solution to get its result
+                        'solution_query': challenge.solution_query,
                         'user_query': submission,
                         'user_id': user_id,
                         'user_name': user_name,
@@ -259,26 +259,34 @@ class SQLChallengeType(BaseChallenge):
                     },
                     timeout=10
                 )
-                
+
                 if response.status_code == 200:
                     result = response.json()
-                    
+
                     if not result.get('success'):
                         return ChallengeResponse(
                             status="incorrect",
-                            message=f"[PREVIEW]\nError: {result.get('error', 'Unknown error')}"
+                            message=f"[TEST]\nError: {result.get('error', 'Unknown error')}"
                         )
-                    
-                    # Just show the query result without grading
+
+                    # Format results for display
                     user_result_str = json.dumps(result['user_result'])
-                    return ChallengeResponse(
-                        status="incorrect",
-                        message=f"[PREVIEW]\nQuery executed successfully:\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]"
-                    )
+
+                    if result['match']:
+                        return ChallengeResponse(
+                            status="correct",
+                            message=f"[TEST]\n✅ Correct! Your query produces the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]"
+                        )
+                    else:
+                        expected_result_str = json.dumps(result['expected_result'])
+                        return ChallengeResponse(
+                            status="incorrect",
+                            message=f"[TEST]\n❌ Incorrect. Your query does not produce the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]\n\n[EXPECTED_RESULT]\n{expected_result_str}\n[/EXPECTED_RESULT]"
+                        )
                 else:
                     return ChallengeResponse(
                         status="incorrect",
-                        message=f"[PREVIEW]\nSQL judge server error: HTTP {response.status_code}"
+                        message=f"[TEST]\nSQL judge server error: HTTP {response.status_code}"
                     )
             else:
                 # Normal submission - compare with solution

@@ -83,7 +83,7 @@
                 The state of the challenge (visible, hidden)
             </small>
         </label>
-        <select class="form-control challenge-state" name="state">
+        <select class="form-control" name="state">
             <option value="visible" {% if challenge.state == "visible" %}selected{% endif %}>Visible</option>
             <option value="hidden" {% if challenge.state == "hidden" %}selected{% endif %}>Hidden</option>
         </select>
@@ -97,6 +97,11 @@
         </label>
         <input type="number" class="form-control challenge-max-attempts" name="max_attempts" placeholder="0" value="{{ challenge.max_attempts }}">
     </div>
-    
-    <button type="submit" class="btn btn-primary">Update</button>
+
+    <div class="d-flex gap-8">
+        <button type="submit" class="btn btn-primary mr-2">Update</button>
+        <a href="/challenges/sql/{{ challenge.id }}" class="btn btn-info" target="_blank">
+            <i class="fas fa-external-link-alt me-1"></i> View Challenge Page
+        </a>
+    </div>
 </form>

@@ -1,15 +1,15 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
 # Copy go mod files
 COPY go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
-
-# Copy source code
+# Copy source code (needed for go mod tidy to detect dependencies)
 COPY sql_judge_server.go .
+
+# Download dependencies and tidy
+RUN go mod download && go mod tidy
 
 # Build the application
 RUN go build -o sql-judge-server sql_judge_server.go
