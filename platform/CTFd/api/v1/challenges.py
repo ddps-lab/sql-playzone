@@ -631,19 +631,19 @@ class ChallengeAttempt(Resource):
             request_data = request.get_json()
 
         challenge_id = request_data.get("challenge_id")
-        
-        # Check for preview flag in request data (for both admin and regular users)
-        preview = request_data.get("preview", False)
-        
-        # Allow preview for SQL challenges
-        if preview:
+
+        # Check for test flag in request data (for testing without recording submission)
+        test = request_data.get("test", False)
+
+        # Allow test mode for SQL challenges
+        if test:
             challenge = Challenges.query.filter_by(id=challenge_id).first_or_404()
 
             # Check if challenge is hidden and user is not admin
             if challenge.state == "hidden" and not is_admin():
                 abort(403)
 
-            # Only allow preview for SQL challenges
+            # Only allow test mode for SQL challenges
             if challenge.type == "sql":
                 chal_class = get_chal_class(challenge.type)
                 response = chal_class.attempt(challenge, request)

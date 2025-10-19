@@ -241,29 +241,29 @@ function resetSQLEditor() {
     showAutoSaveNotification('Editor has been reset');
 }
 
-// Execute SQL Query (without submission)
+// Execute SQL Query (test mode - checks correctness but doesn't record submission)
 async function executeSQLQuery() {
     const challengeId = document.getElementById('challenge-id').value;
     const submission = sqlEditor ? sqlEditor.getValue() : document.getElementById('challenge-input').value;
     // Get user information from CTFd object
     const userId = (CTFd && CTFd.user) ? CTFd.user.id : null;
     const userName = (CTFd && CTFd.user) ? CTFd.user.name : 'anonymous';
-    
+
     if (!submission.trim()) {
         alert('Please enter a SQL query');
         return;
     }
-    
+
     try {
         const requestBody = {
             challenge_id: parseInt(challengeId),
             submission: submission,
-            preview: true,  // Flag to indicate this is just a preview/test
+            test: true,  // Flag to indicate this is a test (checks correctness but doesn't record)
             user_id: userId,
             user_name: userName
         };
         // Request body prepared
-        
+
         const response = await fetch('/api/v1/challenges/attempt', {
             method: 'POST',
             headers: {
@@ -272,16 +272,16 @@ async function executeSQLQuery() {
             },
             body: JSON.stringify(requestBody)
         });
-        
+
         // Response received
         if (!response.ok) {
             console.error('Response not OK:', response.statusText);
         }
-        
+
         // First get the response as text to debug
         const responseText = await response.text();
         // Response text received
-        
+
         // Try to parse as JSON
         let result;
         try {
@@ -293,14 +293,14 @@ async function executeSQLQuery() {
             return;
         }
         // Result parsed
-        
+
         // Check if result has the expected structure
         if (!result || typeof result !== 'object') {
             console.error('Invalid result structure:', result);
             alert('Invalid response from server');
             return;
         }
-        
+
         // CTFd API returns {success: bool, data: {...}} structure
         // We need to wrap our result if it doesn't have this structure
         if (!result.hasOwnProperty('data')) {
@@ -313,7 +313,7 @@ async function executeSQLQuery() {
         } else {
             displayResult(result, true);
         }
-        
+
     } catch (error) {
         console.error('Error executing query:', error);
         console.error('Error details:', error.message, error.stack);
@@ -409,28 +409,28 @@ async function submitSQLChallenge() {
 }
 
 // Display Result
-function displayResult(result, isPreview = false) {
+function displayResult(result, isTest = false) {
     const container = document.getElementById('query-result-container');
-    
+
     // Clear and prepare container
     container.innerHTML = '';
-    
-    // Parse message first to check if it's a preview
+
+    // Parse message first to check if it's a test
     let message = result.data.message || '';
-    const isActuallyPreview = message.startsWith('[PREVIEW]');
-    
+    const isActuallyTest = message.startsWith('[TEST]');
+
     // Create status message
     const statusDiv = document.createElement('div');
     const isAlreadySolved = result.data.status === 'already_solved';
-    statusDiv.className = result.data.status === 'correct' || isAlreadySolved ? 'alert alert-success' : 
-                          (result.data.status === 'incorrect' && !isActuallyPreview) ? 'alert alert-danger' : 
-                          isActuallyPreview ? 'alert alert-info' :
+    statusDiv.className = result.data.status === 'correct' || isAlreadySolved ? 'alert alert-success' :
+                          (result.data.status === 'incorrect' && !isActuallyTest) ? 'alert alert-danger' :
+                          isActuallyTest ? 'alert alert-info' :
                           'alert alert-warning';
     statusDiv.innerHTML = '<span id="status-text"></span>';
-    
+
     // Continue processing message
-    if (isActuallyPreview) {
-        message = message.replace('[PREVIEW]\n', '');
+    if (isActuallyTest) {
+        message = message.replace('[TEST]\n', '');
     }
     
     // Remove "but you already solved this" from message for parsing
@@ -517,24 +517,24 @@ function displayResult(result, isPreview = false) {
         // No user result to render
     }
     
-    // Show success modal if correct (only for actual submissions, not previews)
-    if (result.data.status === 'correct' && !isPreview) {
+    // Show success modal if correct (only for actual submissions, not tests)
+    if (result.data.status === 'correct' && !isTest) {
         // Challenge solved! Showing success modal
-        
+
         // Clear saved code since challenge is solved
         clearSavedCode();
-        
+
         // Update earned points if available
         if (result.data.points) {
             document.getElementById('earned-points').textContent = result.data.points;
         }
-        
+
         // Show modal after a short delay to let the result display first
         setTimeout(() => {
             try {
                 const modalElement = document.getElementById('successModal');
                 // Modal element found
-                
+
                 if (modalElement) {
                     // Manually show modal
                     modalElement.classList.add('show');
@@ -550,7 +550,7 @@ function displayResult(result, isPreview = false) {
             }
         }, 1000);
     }
-    
+
 
 }
 
