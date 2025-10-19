@@ -273,6 +273,13 @@ function resetSQLEditor() {
 
 // Execute SQL Query (test mode - checks correctness but doesn't record submission)
 async function executeSQLQuery() {
+    const testButton = document.getElementById('challenge-execute');
+
+    // Prevent duplicate clicks
+    if (testButton.disabled) {
+        return;
+    }
+
     const challengeId = document.getElementById('challenge-id').value;
     const submission = sqlEditor ? sqlEditor.getValue() : document.getElementById('challenge-input').value;
     // Get user information from CTFd object
@@ -283,6 +290,11 @@ async function executeSQLQuery() {
         alert('Please enter a SQL query');
         return;
     }
+
+    // Disable button and show loading state
+    testButton.disabled = true;
+    const originalHTML = testButton.innerHTML;
+    testButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Testing...';
 
     try {
         const requestBody = {
@@ -360,11 +372,22 @@ async function executeSQLQuery() {
             console.error('Error details:', error.message, error.stack);
             showErrorToast('Error executing query. Please try again.');
         }
+    } finally {
+        // Re-enable button and restore original text
+        testButton.disabled = false;
+        testButton.innerHTML = originalHTML;
     }
 }
 
 // Submit SQL Challenge
 async function submitSQLChallenge() {
+    const submitButton = document.getElementById('challenge-submit');
+
+    // Prevent duplicate clicks
+    if (submitButton.disabled) {
+        return;
+    }
+
     const challengeId = document.getElementById('challenge-id').value;
     const submission = sqlEditor ? sqlEditor.getValue() : document.getElementById('challenge-input').value;
     // Get user information from CTFd object
@@ -375,6 +398,11 @@ async function submitSQLChallenge() {
         alert('Please enter a SQL query');
         return;
     }
+
+    // Disable button and show loading state
+    submitButton.disabled = true;
+    const originalHTML = submitButton.innerHTML;
+    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Submitting...';
 
     // Check deadline before submitting
     const deadlineElement = document.getElementById('deadline-time');
@@ -393,6 +421,9 @@ async function submitSQLChallenge() {
                     }
                 };
                 displayResult(deadlineResult, false);
+                // Re-enable button
+                submitButton.disabled = false;
+                submitButton.innerHTML = originalHTML;
                 return;
             }
         }
@@ -459,6 +490,10 @@ async function submitSQLChallenge() {
             console.error('Error submitting challenge:', error);
             showErrorToast('Error submitting challenge. Please try again.');
         }
+    } finally {
+        // Re-enable button and restore original text
+        submitButton.disabled = false;
+        submitButton.innerHTML = originalHTML;
     }
 }
 
