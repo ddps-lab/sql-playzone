@@ -2,13 +2,13 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
-# Copy go mod files
-COPY go.mod go.sum ./
+# Copy go mod file
+COPY go.mod ./
 
 # Copy source code (needed for go mod tidy to detect dependencies)
 COPY sql_judge_server.go .
 
-# Download dependencies and tidy
+# Download dependencies and generate go.sum
 RUN go mod download && go mod tidy
 
 # Build the application

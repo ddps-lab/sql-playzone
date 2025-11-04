@@ -11,8 +11,6 @@ services:
       - .data/CTFd/logs:/var/log/CTFd
       - .data/CTFd/uploads:/var/uploads
       - .:/opt/CTFd:ro
-    # depends_on:
-    #   - db
     networks:
         default:
         internal:
@@ -27,29 +25,18 @@ services:
     depends_on:
       - ctfd
 
-  # db:
-  #   image: mariadb:10.11
-  #   restart: always
-  #   environment:
-  #     - MARIADB_ROOT_PASSWORD=ctfd
-  #     - MARIADB_USER=ctfd
-  #     - MARIADB_PASSWORD=ctfd
-  #     - MARIADB_DATABASE=ctfd
-  #     - MARIADB_AUTO_UPGRADE=1
-  #   volumes:
-  #     - .data/mysql:/var/lib/mysql
-  #   networks:
-  #       internal:
-  #   # This command is required to set important mariadb defaults
-  #   command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --wait_timeout=28800, --log-warnings=0]
+  mysql-judge:
+    image: mysql:8.0.43
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=ctfd_sql_judge_password
+      - MYSQL_DATABASE=ctfd_sql
+    volumes:
+      - .data/mysql-judge:/var/lib/mysql
+    networks:
+      - internal
+    command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --max-connections=5000]
 
-  # cache:
-  #   image: redis:4
-  #   restart: always
-  #   volumes:
-  #   - .data/redis:/data
-  #   networks:
-  #       internal:
 
   sql-judge:
     build: ./CTFd/plugins/sql_challenges
@@ -60,6 +47,8 @@ services:
       - .env
     volumes:
       - .data/CTFd/logs:/var/log/CTFd
+    depends_on:
+      - mysql-judge
 
 networks:
     default:

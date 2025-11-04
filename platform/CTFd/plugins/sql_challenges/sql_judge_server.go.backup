@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,12 +13,10 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
-	"github.com/google/uuid"
+	sqle "github.com/dolthub/go-mysql-server"
+	"github.com/dolthub/go-mysql-server/memory"
+	"github.com/dolthub/go-mysql-server/sql"
 )
-
-// Global connection pool
-var dbPool *sql.DB
 
 type QueryRequest struct {
 	InitQuery     string `json:"init_query"`
@@ -55,7 +52,7 @@ var dangerousFunctions = []string{
 	"LOAD XML",
 	"FILE",
 	"HANDLER",
-
+	
 	// System operations
 	"SYSTEM",
 	"SHELL",
@@ -63,7 +60,7 @@ var dangerousFunctions = []string{
 	"EXECUTE",
 	"XP_CMDSHELL",
 	"SP_OA",
-
+	
 	// Time-based attacks
 	"BENCHMARK",
 	"SLEEP",
@@ -71,44 +68,44 @@ var dangerousFunctions = []string{
 	"DELAY",
 	"PG_SLEEP",
 	"RANDOMBLOB",
-
+	
 	// Lock operations
 	"GET_LOCK",
 	"RELEASE_LOCK",
 	"MASTER_POS_WAIT",
 	"IS_FREE_LOCK",
 	"IS_USED_LOCK",
-
+	
 	// XML operations (can be used for XXE)
 	"EXTRACTVALUE",
 	"UPDATEXML",
 	"XMLTYPE",
-
+	
 	// Extension loading
 	"LOAD_EXTENSION",
 	"CREATE EXTENSION",
-
+	
 	// Database specific dangerous functions
 	"GENERATE_SERIES",
 	"UTL_",
 	"DBMS_",
 	"SYS.",
 	"SYS_",
-
+	
 	// Access to sensitive system tables
 	"INFORMATION_SCHEMA.PROCESSLIST",
 	"PERFORMANCE_SCHEMA",
 	"MYSQL.USER",
 	"PG_SHADOW",
 	"PG_AUTHID",
-
+	
 	// Network operations
 	"UTL_HTTP",
 	"UTL_TCP",
 	"OPENROWSET",
 	"OPENDATASOURCE",
 	"OPENQUERY",
-
+	
 	// Other dangerous operations
 	"GRANT",
 	"REVOKE",
@@ -124,7 +121,7 @@ func logSecurityEvent(eventType string, details string, req *QueryRequest) {
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	clientInfo := ""
 	if req != nil {
-		clientInfo = fmt.Sprintf(" [IP: %s, User: %s, Challenge: %s]",
+		clientInfo = fmt.Sprintf(" [IP: %s, User: %s, Challenge: %s]", 
 			req.ClientIP, req.UserID, req.ChallengeID)
 	}
 	log.Printf("[%s] SECURITY %s: %s%s", timestamp, eventType, details, clientInfo)
@@ -133,7 +130,7 @@ func logSecurityEvent(eventType string, details string, req *QueryRequest) {
 // Security: Validate SQL query for dangerous operations
 func validateSQLQuery(query string, req *QueryRequest) error {
 	upperQuery := strings.ToUpper(query)
-
+	
 	// Check for dangerous functions
 	for _, dangerous := range dangerousFunctions {
 		if strings.Contains(upperQuery, strings.ToUpper(dangerous)) {
@@ -141,21 +138,21 @@ func validateSQLQuery(query string, req *QueryRequest) error {
 			return fmt.Errorf("security violation: dangerous function '%s' is not allowed", dangerous)
 		}
 	}
-
+	
 	// Check for file system operations using regex
 	fileOpsPattern := regexp.MustCompile(`(?i)(LOAD_FILE|INTO\s+(OUTFILE|DUMPFILE)|LOAD\s+DATA)`)
 	if fileOpsPattern.MatchString(query) {
 		logSecurityEvent("BLOCKED", "File system operation attempt", req)
 		return fmt.Errorf("security violation: file system operations are not allowed")
 	}
-
+	
 	// Check for system command execution patterns
 	systemPattern := regexp.MustCompile(`(?i)(sys_exec|sys_eval|system|shell|exec|execute|xp_cmdshell)`)
 	if systemPattern.MatchString(query) {
 		logSecurityEvent("BLOCKED", "System command execution attempt", req)
 		return fmt.Errorf("security violation: system command execution is not allowed")
 	}
-
+	
 	// Check for SQL injection patterns in comments
 	commentPattern := regexp.MustCompile(`(?i)(\/\*.*\*\/|--.*$|#.*$)`)
 	if commentPattern.MatchString(query) {
@@ -170,87 +167,98 @@ func validateSQLQuery(query string, req *QueryRequest) error {
 			}
 		}
 	}
-
+	
 	// Check for union-based injection with information_schema
 	unionPattern := regexp.MustCompile(`(?i)UNION.*SELECT.*(INFORMATION_SCHEMA|MYSQL\.|PERFORMANCE_SCHEMA)`)
 	if unionPattern.MatchString(query) {
 		logSecurityEvent("BLOCKED", "UNION with system tables attempt", req)
 		return fmt.Errorf("security violation: accessing system tables via UNION is not allowed")
 	}
-
+	
 	return nil
 }
 
-// getMySQLDSN returns MySQL connection string from environment variables
-func getMySQLDSN() string {
-	host := os.Getenv("MYSQL_HOST")
-	if host == "" {
-		host = "mysql-judge"
-	}
+// cleanupSQLStatement processes SQL statements to ensure compatibility
+// Table 생성할 때 Foreign Key 로 constraint 를 생성시 기존의 MySQL 에서는 자동으로 Name 을 생성해 준다.
+// 하지만 go-mysql-server 에서는 자동으로 Foreign Key Name 을 생성해 주지 않기 떄문에 수동으로 Name 을 생성해 주어야 한다.
+// 예시:
+// -- 이름 없는 FK (MySQL 에서는 허용되지만 go-mysql-server 에서는 오류 발생)
+// CREATE TABLE orders (
+//     id INT PRIMARY KEY,
+//     user_id INT,
+//     FOREIGN KEY (user_id) REFERENCES users(id)  -- 이름이 없음!
+// );
 
-	port := os.Getenv("MYSQL_PORT")
-	if port == "" {
-		port = "3306"
+// -- 이름 있는 FK (아래와 같이 명시적 지정 해주어야 함)
+// CREATE TABLE orders (
+//     id INT PRIMARY KEY,
+//     user_id INT,
+//     CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id)
+// );
+func cleanupSQLStatement(stmt string) string {
+	// Generate unique names for unnamed FOREIGN KEY constraints
+	// This prevents "duplicate foreign key constraint name" errors
+	if strings.Contains(strings.ToUpper(stmt), "FOREIGN KEY") {
+		// Simple counter-based approach for unique constraint names
+		timestamp := time.Now().UnixNano()
+		fkCounter := 0
+		
+		// Find and replace unnamed FOREIGN KEY constraints
+		lines := strings.Split(stmt, "\n")
+		for i, line := range lines {
+			if strings.Contains(strings.ToUpper(line), "FOREIGN KEY") && 
+			   !strings.Contains(strings.ToUpper(line), "CONSTRAINT") {
+				// Add a unique constraint name
+				fkCounter++
+				constraintName := fmt.Sprintf("fk_%d_%d", timestamp, fkCounter)
+				lines[i] = strings.Replace(line, "FOREIGN KEY", 
+					fmt.Sprintf("CONSTRAINT %s FOREIGN KEY", constraintName), 1)
+			}
+		}
+		stmt = strings.Join(lines, "\n")
 	}
-
-	password := os.Getenv("MYSQL_ROOT_PASSWORD")
-	if password == "" {
-		password = "ctfd_sql_judge_password"
-	}
-
-	// Connect without database first to create temp databases
-	return fmt.Sprintf("root:%s@tcp(%s:%s)/?charset=utf8mb4&parseTime=true&timeout=5s",
-		password, host, port)
+	
+	return stmt
 }
 
-// executeQuery executes SQL queries in a temporary database using connection pool
 func executeQuery(initQueries []string, query string, req *QueryRequest) (*QueryResult, error) {
 	// Security: Validate the user query before execution
 	if err := validateSQLQuery(query, req); err != nil {
 		return nil, err
 	}
+	
+	dbName := "ctfd_sql_challenge"
+	db := memory.NewDatabase(dbName)
+	db.EnablePrimaryKeyIndexes()  // Enable primary key indexes
+	
+	pro := memory.NewDBProvider(db)
+	engine := sqle.NewDefault(pro)
 
-	// Generate unique temporary database name
-	tempDB := fmt.Sprintf("ctfd_tmp_%s", strings.ReplaceAll(uuid.New().String(), "-", ""))
+	session := memory.NewSession(sql.NewBaseSession(), pro)
+	ctx := sql.NewContext(context.Background(), sql.WithSession(session))
+	ctx.SetCurrentDatabase(dbName)
+	
+	// Set session variables for MySQL compatibility
+	session.SetSessionVariable(ctx, "autocommit", true)
+	session.SetSessionVariable(ctx, "character_set_server", "utf8mb4")
+	session.SetSessionVariable(ctx, "collation_server", "utf8mb4_unicode_ci")
+	session.SetSessionVariable(ctx, "character_set_database", "utf8mb4")
+	session.SetSessionVariable(ctx, "collation_database", "utf8mb4_unicode_ci")
 
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Set timeout for query execution
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	// Ensure database is dropped on exit
-	defer func() {
-		dropCtx, dropCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer dropCancel()
-		_, _ = dbPool.ExecContext(dropCtx, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", tempDB))
-		log.Printf("Cleaned up temporary database: %s", tempDB)
-	}()
-
-	// Create temporary database
-	_, err := dbPool.ExecContext(ctx, fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", tempDB))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary database: %v", err)
-	}
-	log.Printf("Created temporary database: %s", tempDB)
-
-	// Get a connection from pool and use the temporary database
-	conn, err := dbPool.Conn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get connection from pool: %v", err)
-	}
-	defer conn.Close()
-
-	_, err = conn.ExecContext(ctx, fmt.Sprintf("USE `%s`", tempDB))
-	if err != nil {
-		return nil, fmt.Errorf("failed to use temporary database: %v", err)
-	}
-
+	ctx = sql.NewContext(timeoutCtx, sql.WithSession(session))
+	ctx.SetCurrentDatabase(dbName)
+	
 	// Execute initialization queries
 	for _, initQuery := range initQueries {
 		if strings.TrimSpace(initQuery) == "" {
 			continue
 		}
 
-		// Security: Validate init queries as well
+		// Security: Validate init queries as well (with more lenient rules for CREATE/INSERT)
+		// We still want to prevent file operations in init queries
 		if err := validateSQLQuery(initQuery, req); err != nil {
 			// For init queries, we might want to be slightly more permissive
 			// but still block file operations
@@ -266,63 +274,80 @@ func executeQuery(initQueries []string, query string, req *QueryRequest) (*Query
 			if stmt == "" {
 				continue
 			}
+			
+			// Remove charset/collate clauses that go-mysql-server might not support
+			originalStmt := stmt
+			stmt = cleanupSQLStatement(stmt)
+			
+			logMaxLength := 200
+			// 일반적인 상황에서는 이제 로깅은 나중에 디버깅용으로 남겨둠.
+			// 너무 많은 로그가 발생하여 진짜 로그를 판별하기 어렵게 됨
+			// // Log the statement for debugging
+			// if strings.Contains(strings.ToUpper(stmt), "CREATE") || strings.Contains(strings.ToUpper(stmt), "INSERT") {
+			// 	if len(stmt) > logMaxLength {
+			// 		log.Printf("Executing (truncated): %s...", stmt[:logMaxLength])
+			// 	} else {
+			// 		log.Printf("Executing: %s", stmt)
+			// 	}
+			// }
 
-			_, err = conn.ExecContext(ctx, stmt)
+			_, iter, _, err := engine.Query(ctx, stmt)
 			if err != nil {
-				log.Printf("Failed to execute init query: %s", stmt)
+				if len(stmt) > logMaxLength {
+					log.Printf("Failed to execute (truncated): %s...", stmt[:logMaxLength])
+				} else {
+					log.Printf("Failed to execute: %s", stmt)
+				}
+				if len(originalStmt) > logMaxLength {
+					log.Printf("Failed to execute (truncated): %s...", originalStmt[:logMaxLength])
+				} else {
+					log.Printf("Failed to execute: %s", originalStmt)
+				}
 				return nil, fmt.Errorf("init query error: %v", err)
+			}
+
+			// Consume the iterator
+			if iter != nil {
+				_, err = sql.RowIterToRows(ctx, iter)
+				if err != nil {
+					return nil, fmt.Errorf("init query iteration error: %v", err)
+				}
 			}
 		}
 	}
 
 	// Execute the main query
-	rows, err := conn.QueryContext(ctx, query)
+	schema, iter, _, err := engine.Query(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("query error: %v", err)
 	}
-	defer rows.Close()
 
 	// Get column names
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get columns: %v", err)
+	var columns []string
+	if schema != nil {
+		for _, col := range schema {
+			columns = append(columns, col.Name)
+		}
 	}
 
-	// Prepare to scan rows
+	// Get rows
+	rows, err := sql.RowIterToRows(ctx, iter)
+	if err != nil {
+		return nil, fmt.Errorf("row iteration error: %v", err)
+	}
+
+	// Convert rows to string format
 	var stringRows [][]string
-
-	for rows.Next() {
-		// Create a slice of interface{} to hold each column value
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
-		for i := range values {
-			valuePtrs[i] = &values[i]
-		}
-
-		// Scan the row
-		if err := rows.Scan(valuePtrs...); err != nil {
-			return nil, fmt.Errorf("failed to scan row: %v", err)
-		}
-
-		// Convert values to strings
-		stringRow := make([]string, len(columns))
-		for i, val := range values {
+	for _, row := range rows {
+		var stringRow []string
+		for _, val := range row {
 			if val == nil {
-				stringRow[i] = "NULL"
+				stringRow = append(stringRow, "NULL")
 			} else {
-				switch v := val.(type) {
-				case []byte:
-					stringRow[i] = string(v)
-				default:
-					stringRow[i] = fmt.Sprintf("%v", v)
-				}
+				stringRow = append(stringRow, fmt.Sprintf("%v", val))
 			}
 		}
 		stringRows = append(stringRows, stringRow)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("row iteration error: %v", err)
 	}
 
 	return &QueryResult{
@@ -346,7 +371,7 @@ func handleJudge(w http.ResponseWriter, r *http.Request) {
 
 	// Log incoming request
 	logSecurityEvent("REQUEST", fmt.Sprintf("Query submission for challenge"), &req)
-
+	
 	// Prepare init queries
 	initQueries := []string{req.InitQuery}
 
@@ -428,15 +453,6 @@ func compareResults(expected, actual *QueryResult) bool {
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	// Check MySQL connectivity using connection pool
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	if err := dbPool.PingContext(ctx); err != nil {
-		http.Error(w, "MySQL ping failed", http.StatusServiceUnavailable)
-		return
-	}
-
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }
@@ -467,56 +483,17 @@ func setupLogging() {
 	// Set log output to both file and stdout using io.MultiWriter
 	multiWriter := io.MultiWriter(os.Stdout, logFile)
 	log.SetOutput(multiWriter)
-
+	
 	// Set log format with timestamp
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
-
+	
 	log.Printf("SQL Judge Server logging initialized. Log file: %s", logPath)
-}
-
-// initDBPool initializes the global database connection pool
-func initDBPool() error {
-	dsn := getMySQLDSN()
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return fmt.Errorf("failed to open MySQL connection: %v", err)
-	}
-
-	// Configure connection pool settings for 200 concurrent students
-	// Each request uses 1 connection, but executes 2 queries (solution + user)
-	// With proper pooling, we can handle 200+ concurrent requests comfortably
-	db.SetMaxOpenConns(300)           // Maximum number of open connections (enough for 200+ students)
-	db.SetMaxIdleConns(50)            // Keep 50 idle connections ready for quick response
-	db.SetConnMaxLifetime(30 * time.Minute) // Maximum connection lifetime
-	db.SetConnMaxIdleTime(10 * time.Minute) // Maximum idle time (increased for burst traffic)
-
-	// Test the connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := db.PingContext(ctx); err != nil {
-		db.Close()
-		return fmt.Errorf("failed to ping MySQL: %v", err)
-	}
-
-	dbPool = db
-	log.Printf("MySQL connection pool initialized (MaxOpen: 300, MaxIdle: 50) - Ready for 200+ concurrent users")
-	return nil
 }
 
 func main() {
 	// Setup logging first
 	setupLogging()
-
-	// Initialize database connection pool
-	log.Printf("Initializing MySQL connection pool...")
-	if err := initDBPool(); err != nil {
-		log.Fatalf("Failed to initialize database pool: %v", err)
-	}
-	defer dbPool.Close()
-
-	log.Printf("MySQL connection pool ready")
-
+	
 	http.HandleFunc("/judge", handleJudge)
 	http.HandleFunc("/health", handleHealth)
 
