@@ -282,7 +282,7 @@ def init_request_processors(app):
             if user and user.banned:
                 return (
                     render_template(
-                        "errors/403.html", error="You have been banned from this CTF"
+                        "errors/403.html", error="Due to internal policies, your access to the platform has been temporarily restricted."
                     ),
                     403,
                 )
