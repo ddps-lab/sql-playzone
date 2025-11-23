@@ -1,4 +1,5 @@
 import CTFd from "@ctfdio/ctfd-js";
+import { Modal } from "bootstrap";
 
 import dayjs from "dayjs";
 import advancedFormat from "dayjs/plugin/advancedFormat";
@@ -19,6 +20,19 @@ import "./components/language";
 
 dayjs.extend(advancedFormat);
 CTFd.init(window.init);
+
+const originalFetch = CTFd.fetch;
+CTFd.fetch = async (url, options) => {
+  const response = await originalFetch(url, options);
+  if (response.status === 401) {
+    const modalElement = document.getElementById("session-expired-modal");
+    if (modalElement) {
+      const modal = new Modal(modalElement);
+      modal.show();
+    }
+  }
+  return response;
+};
 
 (() => {
   styles();
