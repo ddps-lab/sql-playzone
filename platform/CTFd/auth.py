@@ -6,7 +6,7 @@ from flask import current_app as app
 from flask import redirect, render_template, request, session, url_for
 from flask_babel import lazy_gettext as _l
 
-from CTFd.cache import clear_team_session, clear_user_session
+from CTFd.cache import clear_team_session, clear_user_session, cache
 from CTFd.exceptions.email import (
     UserConfirmTokenInvalidException,
     UserResetPasswordTokenInvalidException,

@@ -2,8 +2,7 @@ import datetime
 import os
 
 from flask import session
-
-from CTFd.cache import clear_user_session
+from CTFd.cache import cache, clear_user_session
 from CTFd.exceptions import UserNotFoundException, UserTokenExpiredException
 from CTFd.models import Users, UserTokens, db
 from CTFd.utils import get_app_config
@@ -17,6 +16,9 @@ def login_user(user):
     session["nonce"] = generate_nonce()
     session["hash"] = hmac(user.password)
     session.permanent = True
+
+    # Store nonce in Redis
+    cache.set(f"user_{user.id}_active_nonce", session["nonce"], timeout=2592000)
 
     # Clear out any currently cached user attributes
     clear_user_session(user_id=user.id)

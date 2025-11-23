@@ -30,6 +30,15 @@ def get_current_user():
                     error = redirect(url_for("auth.login", next=request.full_path))
                 abort(error)
 
+        # Check Redis for active nonce
+        active_nonce = cache.get(f"user_{user.id}_active_nonce")
+        if active_nonce and session.get("nonce") != active_nonce:
+            logout_user()
+            if request.is_json or request.content_type == "application/json":
+                abort(401)
+            else:
+                abort(redirect(url_for("auth.login", next=request.full_path)))
+
         return user
     else:
         return None

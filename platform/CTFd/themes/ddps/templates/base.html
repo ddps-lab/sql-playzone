@@ -158,5 +158,19 @@
 {{ Plugins.scripts }}
 
 {{ Configs.theme_footer }}
+<div class="modal fade" id="session-expired-modal" tabindex="-1" role="dialog" data-backdrop="static" data-keyboard="false">
+  <div class="modal-dialog modal-fullscreen" role="document">
+    <div class="modal-content text-center" style="background-color: #ffffff !important; color: #000000 !important;">
+      <div class="modal-body d-flex flex-column justify-content-center align-items-center">
+        <div class="mb-5">
+            <i class="fas fa-exclamation-triangle fa-9x text-warning" style="font-size: 10rem;"></i>
+        </div>
+        <h1 class="modal-title mb-4 display-3 fw-bold" style="color: #000000 !important; font-weight: bold;">Session Expired</h1>
+        <p class="lead mb-5 display-6" style="color: #000000 !important; font-size: 2rem;">Your session has expired or you have logged in from another device.<br>Please log in again to continue.</p>
+        <a href="{{ url_for('auth.login') }}" class="btn btn-primary btn-lg px-5 py-3 fs-3">Login</a>
+      </div>
+    </div>
+  </div>
+</div>
 </body>
 </html>
