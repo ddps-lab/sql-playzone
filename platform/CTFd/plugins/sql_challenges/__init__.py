@@ -222,6 +222,11 @@ class SQLChallengeType(BaseChallenge):
         import logging
         logging.info(f"SQL Challenge attempt - Test mode: {is_test}, User ID: {user_id}, User Name: {user_name}, IP: {client_ip}")
 
+        # Enforce duplicate login check (session validation)
+        # This will abort if the session is invalid (e.g. duplicate login)
+        from CTFd.utils.user import get_current_user
+        get_current_user()
+
         if not submission:
             return ChallengeResponse(
                 status="incorrect",

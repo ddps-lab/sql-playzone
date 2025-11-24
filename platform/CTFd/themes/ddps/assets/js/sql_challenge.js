@@ -224,6 +224,49 @@ function showErrorToast(message) {
     }, 5000);
 }
 
+// Show session expired modal
+function showSessionExpiredModal() {
+    console.log('[SQL Challenge] showSessionExpiredModal called');
+    
+    // Check if modal already exists
+    const existingModal = document.getElementById('session-expired-modal');
+    if (existingModal) {
+        console.log('[SQL Challenge] Modal already exists, ensuring it is visible');
+        existingModal.classList.add('show');
+        existingModal.style.display = 'block';
+        existingModal.style.zIndex = '9999';
+        return;
+    }
+
+    console.log('[SQL Challenge] Creating new session expired modal');
+    const modalHtml = `
+        <div class="modal fade show" id="session-expired-modal" tabindex="-1" role="dialog" aria-modal="true" style="display: block; background-color: rgba(0,0,0,0.5); z-index: 9999;">
+            <div class="modal-dialog modal-dialog-centered" role="document" style="z-index: 10000;">
+                <div class="modal-content">
+                    <div class="modal-header border-bottom-0">
+                        <h5 class="modal-title text-danger">
+                            <i class="fas fa-exclamation-circle me-2"></i>Session Expired
+                        </h5>
+                    </div>
+                    <div class="modal-body text-center py-4">
+                        <p class="mb-0">Your session has expired or you have logged in from another device.</p>
+                        <p class="text-muted small mt-2">Please reload the page to continue.</p>
+                    </div>
+                    <div class="modal-footer border-top-0 justify-content-center">
+                        <button type="button" class="btn btn-primary px-4" onclick="window.location.reload()">
+                            <i class="fas fa-sync-alt me-2"></i>Reload Page
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    document.body.classList.add('modal-open');
+    console.log('[SQL Challenge] Modal injected into DOM');
+}
+
 // Clear saved code when challenge is solved
 function clearSavedCode() {
     const challengeId = document.getElementById('challenge-id').value;
@@ -323,12 +366,38 @@ async function executeSQLQuery() {
         clearTimeout(timeoutId);
 
         // Response received
+        console.log('[SQL Challenge] Response status:', response.status);
+        console.log('[SQL Challenge] Response redirected:', response.redirected);
+        
         if (!response.ok) {
             console.error('Response not OK:', response.statusText);
+            
+            if (response.status === 401 || response.status === 403) {
+                console.log('[SQL Challenge] 401/403 detected, showing modal');
+                showSessionExpiredModal();
+                return;
+            }
+        }
+
+        // Check for redirect (which might have returned 200 OK for the login page)
+        if (response.redirected && response.url.includes('/login')) {
+            console.log('[SQL Challenge] Redirect to login detected, showing modal');
+            showSessionExpiredModal();
+            return;
         }
 
         // First get the response as text to debug
         const responseText = await response.text();
+        // Response text received
+        
+        // Check if response text looks like an error page (HTML)
+        if (responseText.includes('You don\'t have the permission') || 
+            responseText.includes('Session expired') ||
+            responseText.includes('Sign In')) {
+            console.log('[SQL Challenge] Error page content detected, showing modal');
+            showSessionExpiredModal();
+            return;
+        }
         // Response text received
 
         // Try to parse as JSON
@@ -451,7 +520,47 @@ async function submitSQLChallenge() {
 
         clearTimeout(timeoutId);
 
-        const result = await response.json();
+        console.log('[SQL Challenge] Submit response status:', response.status);
+        console.log('[SQL Challenge] Submit response redirected:', response.redirected);
+        
+        if (!response.ok) {
+            console.error('Submit response not OK:', response.statusText);
+            if (response.status === 401 || response.status === 403) {
+                console.log('[SQL Challenge] 401/403 detected, showing modal');
+                showSessionExpiredModal();
+                return;
+            }
+        }
+
+        // Check for redirect
+        if (response.redirected && response.url.includes('/login')) {
+            console.log('[SQL Challenge] Redirect to login detected, showing modal');
+            showSessionExpiredModal();
+            return;
+        }
+
+        // First get the response as text
+        const responseText = await response.text();
+        
+        // Check if response text looks like an error page (HTML)
+        if (responseText.includes('You don\'t have the permission') || 
+            responseText.includes('Session expired') ||
+            responseText.includes('Sign In')) {
+            console.log('[SQL Challenge] Error page content detected, showing modal');
+            showSessionExpiredModal();
+            return;
+        }
+
+        // Try to parse as JSON
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch (e) {
+            console.error('Failed to parse submit response as JSON:', e);
+            console.error('Submit response was:', responseText);
+            showErrorToast('Server returned invalid JSON response');
+            return;
+        }
         // Submit result received
 
         // Check if result has the expected structure
