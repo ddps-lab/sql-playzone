@@ -77,7 +77,7 @@ def lambda_handler(event, context):
     bucket_name = os.environ.get('BUCKET_NAME', None)
     if bucket_name is None:
         raise ValueError("BUCKET_NAME environment variable must be set")
-    object_name = "behavior/" + start_time.strftime("%Y/%m/%d") + ".csv.gz"
+    object_name = "raw/behavior/" + start_time.strftime("%Y/%m/%d") + ".csv.gz"
     s3.upload_file(base_dir + filename, bucket_name, object_name)
 
     return {

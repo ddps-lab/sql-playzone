@@ -1,0 +1,3 @@
+polars
+boto3
+python-dotenv
