@@ -1,0 +1,13 @@
+# Copy this file to private.auto.tfvars and replace every placeholder.
+# private.auto.tfvars is ignored by Git. Never commit real secret values.
+
+aws_account_id = "786382940258"
+hosted_zone_id = "replace-with-route53-hosted-zone-id"
+ssh_key_name   = "replace-with-ec2-key-pair-name"
+
+db_username    = "replace-with-db-username"
+db_password    = "replace-with-db-password"
+ctfd_secret_key = "replace-with-a-long-random-secret"
+
+google_client_id     = "replace-with-google-oauth-client-id"
+google_client_secret = "replace-with-google-oauth-client-secret"

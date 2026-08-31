@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Durable S3 backend for the SQL Playzone Terraform state
+
+Parameters:
+  StateBucketName:
+    Type: String
+    Description: Globally unique S3 bucket name used by the Terraform backend
+
+Resources:
+  StateBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref StateBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Project
+          Value: sql-playzone
+        - Key: Purpose
+          Value: terraform-state
+        - Key: ManagedBy
+          Value: cloudformation
+
+  StateBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Bucket: !Ref StateBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt StateBucket.Arn
+              - !Sub "${StateBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+Outputs:
+  BucketName:
+    Description: S3 bucket used by the SQL Playzone Terraform backend
+    Value: !Ref StateBucket
+  BucketArn:
+    Description: ARN of the Terraform state bucket
+    Value: !GetAtt StateBucket.Arn
+  StateKey:
+    Description: Terraform state object key configured in backend.tf
+    Value: sql-playzone/prod/terraform.tfstate
+  LockKey:
+    Description: Terraform native S3 lockfile object key
+    Value: sql-playzone/prod/terraform.tfstate.tflock

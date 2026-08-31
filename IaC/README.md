@@ -2,6 +2,58 @@
 
 이 프로젝트는 SQL Playground CTFd 플랫폼을 위한 AWS 인프라를 Terraform으로 관리합니다.
 
+## 원격 state
+
+운영 state는 다음 S3 backend를 정본으로 사용합니다.
+
+| 항목 | 값 |
+|---|---|
+| CloudFormation stack | `sql-playzone-terraform-state-backend` |
+| bucket | `hyu-ddps-sql-playzone-tfstate-786382940258-ap-northeast-2` |
+| region | `ap-northeast-2` |
+| state key | `sql-playzone/prod/terraform.tfstate` |
+| lock | Terraform native S3 lockfile (`use_lockfile = true`) |
+
+bucket은 state bootstrap 순환을 피하기 위해 [`bootstrap/state-backend.yaml`](bootstrap/state-backend.yaml) CloudFormation stack으로 관리합니다. Versioning, SSE-S3, public access block, bucket-owner enforcement, TLS-only policy를 적용하고 stack 삭제 시에도 bucket과 policy를 retain합니다. 과거 version은 자동 만료하지 않습니다.
+
+검증 기준 버전(2026-08-31):
+
+| 구성요소 | 안정 버전 | 코드 constraint |
+|---|---:|---:|
+| Terraform CLI | `1.16.0` | `~> 1.16.0` |
+| hashicorp/aws | `6.62.0` | `~> 6.62.0` |
+| hashicorp/archive | `2.8.0` | `~> 2.8.0` |
+| hashicorp/null | `3.3.1` | `~> 3.3.1` |
+| hashicorp/time | `0.14.1` | `~> 0.14.1` |
+
+`.terraform.lock.hcl`을 commit하며, provider를 갱신할 때는 공식 안정 release를 확인한 뒤 `terraform init -upgrade`와 plan을 별도 검토합니다. prerelease는 운영에 사용하지 않습니다.
+현재 lock file은 `linux_amd64`와 `darwin_arm64` package checksum을 포함합니다.
+
+bootstrap 또는 복구:
+
+```bash
+aws cloudformation deploy \
+  --stack-name sql-playzone-terraform-state-backend \
+  --template-file bootstrap/state-backend.yaml \
+  --parameter-overrides StateBucketName=hyu-ddps-sql-playzone-tfstate-786382940258-ap-northeast-2 \
+  --profile hyu-ddps \
+  --region ap-northeast-2
+
+aws cloudformation update-termination-protection \
+  --enable-termination-protection \
+  --stack-name sql-playzone-terraform-state-backend \
+  --profile hyu-ddps \
+  --region ap-northeast-2
+```
+
+로컬 초기화:
+
+```bash
+terraform init -reconfigure -backend-config="profile=hyu-ddps"
+```
+
+새 backend는 빈 state로 시작합니다. 2025년 환경의 잔존 VPC와 Aurora는 이 state가 관리하지 않습니다. 현재 기본 prefix `playzone`으로 apply하면 기존 자원 이름과 충돌할 수 있으므로, 신규 환경 prefix와 CIDR/log bucket을 먼저 확정하고 plan을 검토해야 합니다.
+
 ## 아키텍처
 
 - **VPC**: Public/Private/Data 서브넷으로 구성
@@ -15,30 +67,12 @@
 
 1. AWS CLI 설정 및 프로필 구성
 2. Terraform 설치
-3. `private_var.tf` 파일 생성:
+3. `private.auto.tfvars` 파일 생성:
 ```bash
-cp private_var.tf.example private_var.tf
+cp private.auto.tfvars.example private.auto.tfvars
 ```
 
-4. `private_var.tf`에 다음 값 설정:
-```hcl
-variable "db_username" {
-    type        = string
-    default     = "your_db_username"
-    sensitive   = true
-}
-
-variable "db_password" {
-    type        = string
-    default     = "your_secure_password"
-    sensitive   = true
-}
-
-variable "hosted_zone_id" {
-    type        = string
-    default     = "your_route53_hosted_zone_id"
-}
-```
+4. `private.auto.tfvars`의 placeholder를 실제 secret store와 AWS 설정에 맞게 교체합니다. 이 파일은 Git에서 ignore되며 commit하면 안 됩니다.
 
 ## AWS 프로필 설정
 
@@ -58,7 +92,7 @@ terraform apply -var="aws_profile=your-profile-name"
 
 ### 전체 인프라 배포
 ```bash
-terraform init
+terraform init -reconfigure -backend-config="profile=hyu-ddps"
 terraform plan
 terraform apply
 ```

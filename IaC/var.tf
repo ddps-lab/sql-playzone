@@ -4,6 +4,56 @@ variable "prefix" {
   default     = "playzone"
 }
 
+variable "aws_profile" {
+  description = "AWS CLI profile used by local provisioner commands"
+  type        = string
+  default     = "hyu-ddps"
+}
+
+variable "aws_account_id" {
+  description = "AWS account ID where SQL Playzone is deployed"
+  type        = string
+}
+
+variable "db_username" {
+  description = "Aurora master username"
+  type        = string
+  sensitive   = true
+}
+
+variable "db_password" {
+  description = "Aurora master password"
+  type        = string
+  sensitive   = true
+}
+
+variable "hosted_zone_id" {
+  description = "Route53 hosted zone ID"
+  type        = string
+}
+
+variable "ssh_key_name" {
+  description = "EC2 key pair name"
+  type        = string
+}
+
+variable "ctfd_secret_key" {
+  description = "CTFd session signing secret"
+  type        = string
+  sensitive   = true
+}
+
+variable "google_client_id" {
+  description = "Google OAuth client ID"
+  type        = string
+}
+
+variable "google_client_secret" {
+  description = "Google OAuth client secret"
+  type        = string
+  sensitive   = true
+}
+
 variable "region" {
   description = "AWS region"
   type        = string
@@ -46,25 +96,25 @@ variable "data_subnet_cidrs" {
 variable "aurora_engine_version" {
   description = "Aurora MySQL engine version"
   type        = string
-  default     = "8.0.mysql_aurora.3.08.2"  # Aurora MySQL 8.0 compatible
+  default     = "8.0.mysql_aurora.3.08.2" # Aurora MySQL 8.0 compatible
 }
 
 variable "aurora_min_capacity" {
   description = "Minimum capacity for Aurora Serverless v2 (in ACUs)"
   type        = number
-  default     = 0.5  # 최소 0.5 ACU
+  default     = 0.5 # 최소 0.5 ACU
 }
 
 variable "aurora_max_capacity" {
   description = "Maximum capacity for Aurora Serverless v2 (in ACUs)"
   type        = number
-  default     = 32  # 최대 32 ACU
+  default     = 32 # 최대 32 ACU
 }
 
 variable "aurora_instance_count" {
   description = "Number of Aurora instances"
   type        = number
-  default     = 1  # 기본 1개 인스턴스 (writer)
+  default     = 1 # 기본 1개 인스턴스 (writer)
 }
 
 # # 기존 RDS 변수들 (마이그레이션 후 제거 예정)

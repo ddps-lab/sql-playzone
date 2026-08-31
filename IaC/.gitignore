@@ -1,5 +1,11 @@
-**private_var.tf
-**.terraform**
-**.tfstate**
+**/private_var.tf
+**/.terraform/**
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+
+!.terraform.lock.hcl
+!*.tfvars.example
 .DS_Store
 *.zip
