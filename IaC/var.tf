@@ -89,7 +89,7 @@ variable "ondemand_server_instance_class" {
 variable "domain_name" {
   description = "Domain name for the application"
   type        = string
-  default     = "playzone.ddps.cloud"
+  default     = "sql.ddps.cloud"
 }
 
 variable "on_demand_base_capacity" {
