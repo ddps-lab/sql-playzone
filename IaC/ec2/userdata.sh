@@ -14,38 +14,38 @@ cat << 'CWCONFIG' | tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-a
         "collect_list": [
           {
             "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/logins.log",
-            "log_group_name": "/aws/ec2/sql-playzone",
+            "log_group_name": "${APPLICATION_LOG_GROUP_NAME}",
             "log_stream_name": "logins",
             "timezone": "Local"
           },
           {
             "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/registrations.log",
-            "log_group_name": "/aws/ec2/sql-playzone",
+            "log_group_name": "${APPLICATION_LOG_GROUP_NAME}",
             "log_stream_name": "registrations",
             "timezone": "Local"
           },
           {
             "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/submissions.log",
-            "log_group_name": "/aws/ec2/sql-playzone",
+            "log_group_name": "${APPLICATION_LOG_GROUP_NAME}",
             "log_stream_name": "submissions",
             "timezone": "Local"
           },
           {
             "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/error.log",
-            "log_group_name": "/aws/ec2/sql-playzone",
+            "log_group_name": "${APPLICATION_LOG_GROUP_NAME}",
             "log_stream_name": "error",
             "timezone": "Local"
           },
           {
             "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/sql-judge.log",
-            "log_group_name": "/aws/ec2/sql-playzone",
+            "log_group_name": "${APPLICATION_LOG_GROUP_NAME}",
             "log_stream_name": "sql-judge",
             "timezone": "Local"
           },
           {
             "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/sql_challenge_behavior.log",
-            "log_group_name": "/aws/ec2/sql-playzone-behavior",
-            "log_stream_name": "sql-challenge",
+            "log_group_name": "${BEHAVIOR_LOG_GROUP_NAME}",
+            "log_stream_name": "${BEHAVIOR_LOG_STREAM_NAME}",
             "timezone": "Local"
           }
         ]
@@ -70,12 +70,12 @@ git pull origin main
 aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
 
 # Pull images from ECR
-docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/platform-sql-judge:latest
-docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/platform-ctfd:latest
+docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${SQL_JUDGE_ECR_REPOSITORY_NAME}:latest
+docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${CTFD_ECR_REPOSITORY_NAME}:latest
 
 # Tag the pulled images with local names that docker-compose expects
-docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/platform-sql-judge:latest platform-sql-judge:latest
-docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/platform-ctfd:latest platform-ctfd:latest
+docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${SQL_JUDGE_ECR_REPOSITORY_NAME}:latest platform-sql-judge:latest
+docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${CTFD_ECR_REPOSITORY_NAME}:latest platform-ctfd:latest
 
 # Run docker-compose
 docker compose up -d

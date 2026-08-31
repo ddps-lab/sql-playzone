@@ -1,7 +1,12 @@
 variable "prefix" {
-  description = "The prefix to use for all resources"
+  description = "Deployment identifier used to name all deployment-scoped resources"
   type        = string
-  default     = "playzone"
+  default     = "sql-2026-s2"
+
+  validation {
+    condition     = length(var.prefix) <= 28 && can(regex("^[a-z0-9][a-z0-9-]*[a-z0-9]$", var.prefix))
+    error_message = "prefix must be at most 28 characters and contain only lowercase letters, numbers, and internal hyphens."
+  }
 }
 
 variable "region" {
@@ -89,7 +94,7 @@ variable "ondemand_server_instance_class" {
 variable "domain_name" {
   description = "Domain name for the application"
   type        = string
-  default     = "playzone.ddps.cloud"
+  default     = "sql.ddps.cloud"
 }
 
 variable "on_demand_base_capacity" {
@@ -120,22 +125,4 @@ variable "asg_desired_capacity" {
   description = "Desired capacity of Auto Scaling Group"
   type        = number
   default     = 1
-}
-
-variable "log_bucket_name" {
-  description = "S3 Bucket name for storing logs"
-  type        = string
-  default     = "sql-playzone-log"
-}
-
-variable "behavior_log_group_name" {
-  description = "CloudWatch Log Group name for behavior logs"
-  type        = string
-  default     = "/aws/ec2/sql-playzone-behavior"
-}
-
-variable "behavior_log_stream_name" {
-  description = "CloudWatch Log Stream name for behavior logs"
-  type        = string
-  default     = "sql-challenge"
 }

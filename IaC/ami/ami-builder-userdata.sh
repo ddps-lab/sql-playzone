@@ -58,9 +58,9 @@ EOF
 docker compose build
 aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
 
-docker tag platform-sql-judge:latest ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/platform-sql-judge:latest
-docker tag platform-ctfd:latest ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/platform-ctfd:latest
-docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/platform-sql-judge:latest
-docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/platform-ctfd:latest
+docker tag platform-sql-judge:latest ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${SQL_JUDGE_ECR_REPOSITORY_NAME}:latest
+docker tag platform-ctfd:latest ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${CTFD_ECR_REPOSITORY_NAME}:latest
+docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${SQL_JUDGE_ECR_REPOSITORY_NAME}:latest
+docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${CTFD_ECR_REPOSITORY_NAME}:latest
 
 docker rmi -f $(docker images -aq)
