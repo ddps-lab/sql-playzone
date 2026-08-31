@@ -76,7 +76,10 @@ class UserSchema(ma.ModelSchema):
         existing_user = Users.query.filter_by(name=name).first()
         current_user = get_current_user()
         if is_admin():
+            # Set to the user_id we are targetting or the instance id for self updates
             user_id = data.get("id")
+            if user_id is None and self.instance:
+                user_id = self.instance.id
             if user_id:
                 if existing_user and existing_user.id != user_id:
                     raise ValidationError(
@@ -84,15 +87,9 @@ class UserSchema(ma.ModelSchema):
                     )
             else:
                 if existing_user:
-                    if current_user:
-                        if current_user.id != existing_user.id:
-                            raise ValidationError(
-                                "User name has already been taken", field_names=["name"]
-                            )
-                    else:
-                        raise ValidationError(
-                            "User name has already been taken", field_names=["name"]
-                        )
+                    raise ValidationError(
+                        "User name has already been taken", field_names=["name"]
+                    )
         else:
             if name == current_user.name:
                 return data
@@ -117,7 +114,10 @@ class UserSchema(ma.ModelSchema):
         existing_user = Users.query.filter_by(email=email).first()
         current_user = get_current_user()
         if is_admin():
+            # Set to the user_id we are targetting or the instance id for self updates
             user_id = data.get("id")
+            if user_id is None and self.instance:
+                user_id = self.instance.id
             if user_id:
                 if existing_user and existing_user.id != user_id:
                     raise ValidationError(
@@ -125,16 +125,9 @@ class UserSchema(ma.ModelSchema):
                     )
             else:
                 if existing_user:
-                    if current_user:
-                        if current_user.id != existing_user.id:
-                            raise ValidationError(
-                                "Email address has already been used",
-                                field_names=["email"],
-                            )
-                    else:
-                        raise ValidationError(
-                            "Email address has already been used", field_names=["email"]
-                        )
+                    raise ValidationError(
+                        "Email address has already been used", field_names=["email"]
+                    )
         else:
             if email == current_user.email:
                 return data
@@ -213,10 +206,13 @@ class UserSchema(ma.ModelSchema):
     @pre_load
     def validate_bracket_id(self, data):
         bracket_id = data.get("bracket_id")
+        if bracket_id is None:
+            return
+
         if is_admin():
             bracket = Brackets.query.filter_by(id=bracket_id, type="users").first()
             if bracket is None:
-                ValidationError(
+                raise ValidationError(
                     "Please provide a valid bracket id", field_names=["bracket_id"]
                 )
         else:
@@ -232,7 +228,7 @@ class UserSchema(ma.ModelSchema):
             ):
                 bracket = Brackets.query.filter_by(id=bracket_id, type="users").first()
                 if bracket is None:
-                    ValidationError(
+                    raise ValidationError(
                         "Please provide a valid bracket id", field_names=["bracket_id"]
                     )
             else:
@@ -348,6 +344,14 @@ class UserSchema(ma.ModelSchema):
         removed_field_ids = []
         fields = UserFields.query.all()
 
+        if isinstance(self.view, string_types) is False or self.view not in self.views:
+            # TODO: CTFd 4.0 Passing a list of fields to UserSchema as the view will be removed
+            # TODO: CTFd 3.9 or higher this should throw an exception instead of soft deprecation
+            print(
+                "CTFd 4.0 To access custom fields while passing a view list create a custom UserSchema subclass"
+            )
+            data.pop("fields", None)
+
         # Select fields for removal based on current view and properties of the field
         for field in fields:
             if self.view == "user":
@@ -418,6 +422,10 @@ class UserSchema(ma.ModelSchema):
             if isinstance(view, string_types):
                 kwargs["only"] = self.views[view]
             elif isinstance(view, list):
+                # TODO: CTFd 4.0 Passing a list of fields to UserSchema as the view will be removed
+                print(
+                    "Passing a list of fields to UserSchema will be removed in CTFd 4.0. Please pass a view name instead."
+                )
                 kwargs["only"] = view
         self.view = view
 

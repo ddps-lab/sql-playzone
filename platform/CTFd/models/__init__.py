@@ -124,6 +124,7 @@ class Challenges(db.Model):
     initial = db.Column(db.Integer, nullable=True)
     minimum = db.Column(db.Integer, nullable=True)
     decay = db.Column(db.Integer, nullable=True)
+    position = db.Column(db.Integer, nullable=False, default=0)
     function = db.Column(db.String(32), default="static")
 
     requirements = db.Column(db.JSON)
@@ -964,6 +965,10 @@ class Partials(Submissions):
 
 class Discards(Submissions):
     __mapper_args__ = {"polymorphic_identity": "discard"}
+
+
+class Ratelimiteds(Submissions):
+    __mapper_args__ = {"polymorphic_identity": "ratelimited"}
 
 
 class Unlocks(db.Model):
