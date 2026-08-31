@@ -70,8 +70,6 @@ module "ami" {
   ctfd_ecr_repository_name      = local.ctfd_ecr_repository_name
   sql_judge_ecr_repository_name = local.sql_judge_ecr_repository_name
   elasticache_serverless_endpoint = module.elasticache.elasticache_serverless_endpoint[0].address
-
-  depends_on = [module.vpc, module.rds, module.elasticache]
 }
 
 # EC2 Module
@@ -100,8 +98,7 @@ module "ec2" {
   behavior_log_group_name          = aws_cloudwatch_log_group.behavior.name
   behavior_log_stream_name         = local.behavior_log_stream_name
 
-  depends_on = [module.vpc, module.rds] # We do not append ami module but you have to create ami before apply this module
-  # depends_on = [module.vpc, module.rds, module.ami] # When you want to use only `terraform apply` without designating targets, use this.
+  depends_on = [module.vpc, module.rds, module.ami]
 }
 
 # Lambda Module
