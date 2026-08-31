@@ -202,6 +202,16 @@ def init_events(app):
 
 
 def init_request_processors(app):
+    application_root = app.config.get("APPLICATION_ROOT")
+    if application_root != "/":
+        # Do application_root check first to prevent issues with cookie paths
+        @app.before_request
+        def force_subdirectory_redirect():
+            if request.path.startswith(application_root) is False:
+                return redirect(
+                    application_root + request.script_root + request.full_path
+                )
+
     @app.url_defaults
     def inject_theme(endpoint, values):
         if "theme" not in values and app.url_map.is_endpoint_expecting(
@@ -221,6 +231,7 @@ def init_request_processors(app):
                 "views.setup",
                 "views.integrations",
                 "views.themes",
+                "views.themes_beta",
                 "views.files",
                 "views.healthcheck",
                 "views.robots",
@@ -231,7 +242,7 @@ def init_request_processors(app):
 
     @app.before_request
     def tracker():
-        if request.endpoint == "views.themes":
+        if request.endpoint in ("views.themes", "views.themes_beta"):
             return
 
         if import_in_progress():
@@ -248,6 +259,7 @@ def init_request_processors(app):
             if ip not in user_ips or request.method in (
                 "POST",
                 "PATCH",
+                "PUT",
                 "DELETE",
             ):
                 track = Tracking.query.filter_by(
@@ -272,7 +284,7 @@ def init_request_processors(app):
 
     @app.before_request
     def banned():
-        if request.endpoint == "views.themes":
+        if request.endpoint in ("views.themes", "views.themes_beta"):
             return
 
         if authed():
@@ -298,7 +310,12 @@ def init_request_processors(app):
 
     @app.before_request
     def change_password():
-        if request.endpoint in ("views.themes", "auth.logout", "auth.reset_password"):
+        if request.endpoint in (
+            "views.themes",
+            "views.themes_beta",
+            "auth.logout",
+            "auth.reset_password",
+        ):
             return
 
         if authed():
@@ -326,7 +343,7 @@ def init_request_processors(app):
     def tokens():
         token = request.headers.get("Authorization")
         if token and (
-            request.mimetype == "application/json"
+            request.is_json
             # Specially allow multipart/form-data for file uploads
             or (
                 request.endpoint == "api.files_files_list"
@@ -338,31 +355,49 @@ def init_request_processors(app):
                 token_type, token = token.split(" ", 1)
                 user = lookup_user_token(token)
             except UserNotFoundException:
-                abort(401)
+                abort(401, description="Your access token is invalid")
             except UserTokenExpiredException:
                 abort(401, description="Your access token has expired")
             except Exception:
-                abort(401)
+                abort(401, description="Invalid authorization header")
             else:
                 login_user(user)
 
     @app.before_request
     def csrf():
+        # TODO: CTFd 4.0 Consider reorganizing this function to only run on non safe methods
+        # Early exit: no CSRF for functions explicitly marked as bypassing CSRF
         try:
             func = app.view_functions[request.endpoint]
         except KeyError:
             abort(404)
         if hasattr(func, "_bypass_csrf"):
             return
+        # No CSRF for theme files using safe methods
+        safe_methods = (
+            "GET",
+            "HEAD",
+            "OPTIONS",
+            "TRACE",
+        )  # See RFC 7231, Section 4.2.1
+        if (
+            request.endpoint in ("views.themes", "views.themes_beta")
+            and request.method in safe_methods
+        ):
+            return
+        # No CSRF for API requests with an Authorization header
         if request.headers.get("Authorization"):
             return
+        # Ensure a session and CSRF nonce are present
         if not session.get("nonce"):
             session["nonce"] = generate_nonce()
-        if request.method not in ("GET", "HEAD", "OPTIONS", "TRACE"):
-            if request.content_type == "application/json":
+        if request.method not in safe_methods:
+            if request.is_json:
+                # API requests with JSON body => token in header
                 if session["nonce"] != request.headers.get("CSRF-Token"):
                     abort(403)
-            if request.content_type != "application/json":
+            else:
+                # Form submissions => token in form body
                 if session["nonce"] != request.form.get("nonce"):
                     abort(403)
 
@@ -373,14 +408,5 @@ def init_request_processors(app):
         )
         return response
 
-    application_root = app.config.get("APPLICATION_ROOT")
     if application_root != "/":
-
-        @app.before_request
-        def force_subdirectory_redirect():
-            if request.path.startswith(application_root) is False:
-                return redirect(
-                    application_root + request.script_root + request.full_path
-                )
-
         app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {application_root: app})

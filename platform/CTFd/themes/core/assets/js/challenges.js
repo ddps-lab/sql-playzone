@@ -1,10 +1,10 @@
 import Alpine from "alpinejs";
-import dayjs from "dayjs";
 
 import CTFd from "./index";
 
 import { Modal, Tab, Tooltip } from "bootstrap";
 import highlight from "./theme/highlight";
+import { intl } from "./theme/times";
 
 function addTargetBlank(html) {
   let dom = new DOMParser();
@@ -121,7 +121,7 @@ Alpine.data("Challenge", () => ({
   async showSolves() {
     this.solves = await CTFd.pages.challenge.loadSolves(this.id);
     this.solves.forEach(solve => {
-      solve.date = dayjs(solve.date).format("MMMM Do, h:mm:ss A");
+      solve.date = intl.format(new Date(solve.date));
       return solve;
     });
     new Tab(this.$el).show();
@@ -131,7 +131,7 @@ Alpine.data("Challenge", () => ({
     let response = await CTFd.pages.users.userSubmissions("me", this.id);
     this.submissions = response.data;
     this.submissions.forEach(s => {
-      s.date = dayjs(s.date).format("MMMM Do, h:mm:ss A");
+      s.date = intl.format(new Date(s.date));
       return s;
     });
     new Tab(this.$el).show();
@@ -140,6 +140,15 @@ Alpine.data("Challenge", () => ({
   getSolutionId() {
     let data = Alpine.store("challenge").data;
     return data.solution_id;
+  },
+
+  getSolutionState() {
+    let data = Alpine.store("challenge").data;
+    return data.solution_state;
+  },
+
+  setSolutionId(solutionId) {
+    Alpine.store("challenge").data.solution_id = solutionId;
   },
 
   async showSolution() {
@@ -205,12 +214,32 @@ Alpine.data("Challenge", () => ({
       this.submission,
     );
 
+    // Challenges page might be visible to anonymous users, redirect to login on submit
+    if (this.response.data.status === "authentication_required") {
+      window.location = `${CTFd.config.urlRoot}/login?next=${CTFd.config.urlRoot}${window.location.pathname}${window.location.hash}`;
+      return;
+    }
+
     await this.renderSubmissionResponse();
   },
 
   async renderSubmissionResponse() {
     if (this.response.data.status === "correct") {
       this.submission = "";
+    }
+
+    // Decide whether to check for the solution
+    if (this.getSolutionId() == null) {
+      if (
+        CTFd.pages.challenge.checkSolution(
+          this.getSolutionState(),
+          Alpine.store("challenge").data,
+          this.response.data.status,
+        )
+      ) {
+        let data = await CTFd.pages.challenge.getSolution(this.id);
+        this.setSolutionId(data.id);
+      }
     }
 
     // Increment attempts counter
