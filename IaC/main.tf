@@ -1,6 +1,14 @@
 provider "aws" {
   region  = var.region
   profile = var.aws_profile
+
+  default_tags {
+    tags = {
+      Project    = "sql-playzone"
+      Deployment = var.prefix
+      ManagedBy  = "terraform"
+    }
+  }
 }
 
 # VPC Module
@@ -59,6 +67,8 @@ module "ami" {
   google_client_id      = var.google_client_id
   google_client_secret  = var.google_client_secret
   aws_account_id        = var.aws_account_id
+  ctfd_ecr_repository_name      = local.ctfd_ecr_repository_name
+  sql_judge_ecr_repository_name = local.sql_judge_ecr_repository_name
   elasticache_serverless_endpoint = module.elasticache.elasticache_serverless_endpoint[0].address
 
   depends_on = [module.vpc, module.rds, module.elasticache]
@@ -84,6 +94,11 @@ module "ec2" {
   ondemand_instance_type           = var.ondemand_server_instance_class
   region                           = var.region
   aws_account_id                   = var.aws_account_id
+  ctfd_ecr_repository_name         = local.ctfd_ecr_repository_name
+  sql_judge_ecr_repository_name    = local.sql_judge_ecr_repository_name
+  application_log_group_name       = aws_cloudwatch_log_group.application.name
+  behavior_log_group_name          = aws_cloudwatch_log_group.behavior.name
+  behavior_log_stream_name         = local.behavior_log_stream_name
 
   depends_on = [module.vpc, module.rds] # We do not append ami module but you have to create ami before apply this module
   # depends_on = [module.vpc, module.rds, module.ami] # When you want to use only `terraform apply` without designating targets, use this.
@@ -96,9 +111,9 @@ module "lambda" {
   prefix         = var.prefix
   region         = var.region
   aws_account_id = var.aws_account_id
-  bucket_name    = var.log_bucket_name
-  log_group_name = var.behavior_log_group_name
-  log_stream_name = var.behavior_log_stream_name
+  bucket_name     = aws_s3_bucket.log_archive.bucket
+  log_group_name  = aws_cloudwatch_log_group.behavior.name
+  log_stream_name = local.behavior_log_stream_name
 
   depends_on = [module.vpc]
 }

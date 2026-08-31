@@ -1,5 +1,5 @@
 resource "aws_ecr_repository" "platform-sql-judge-ecr-repository" {
-  name                 = "platform-sql-judge"
+  name                 = var.sql_judge_ecr_repository_name
   image_tag_mutability = "MUTABLE"
   force_delete         = true  # Allow deletion even with images
 
@@ -9,7 +9,7 @@ resource "aws_ecr_repository" "platform-sql-judge-ecr-repository" {
 }
 
 resource "aws_ecr_repository" "platform-sql-judge-ecr-ctfd" {
-  name                 = "platform-ctfd"
+  name                 = var.ctfd_ecr_repository_name
   image_tag_mutability = "MUTABLE"
   force_delete         = true  # Allow deletion even with images
 
@@ -128,6 +128,8 @@ resource "aws_instance" "ami_builder_arm" {
     GOOGLE_CLIENT_SECRET = var.google_client_secret
     REGION = var.region
     AWS_ACCOUNT_ID = var.aws_account_id
+    CTFD_ECR_REPOSITORY_NAME = var.ctfd_ecr_repository_name
+    SQL_JUDGE_ECR_REPOSITORY_NAME = var.sql_judge_ecr_repository_name
   }))
 
   tags = {

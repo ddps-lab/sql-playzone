@@ -10,4 +10,6 @@ variable "ctfd_secret_key" { type = string }
 variable "google_client_id" { type = string }
 variable "google_client_secret" { type = string }
 variable "aws_account_id" { type = string }
+variable "ctfd_ecr_repository_name" { type = string }
+variable "sql_judge_ecr_repository_name" { type = string }
 variable "elasticache_serverless_endpoint" { type = string }

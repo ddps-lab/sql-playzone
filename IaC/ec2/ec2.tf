@@ -211,8 +211,13 @@ resource "aws_launch_template" "arm_launch_template" {
   }
 
   user_data = base64encode(templatefile("${path.module}/userdata.sh", {
-    REGION         = var.region
-    AWS_ACCOUNT_ID = var.aws_account_id
+    REGION                        = var.region
+    AWS_ACCOUNT_ID                = var.aws_account_id
+    CTFD_ECR_REPOSITORY_NAME      = var.ctfd_ecr_repository_name
+    SQL_JUDGE_ECR_REPOSITORY_NAME = var.sql_judge_ecr_repository_name
+    APPLICATION_LOG_GROUP_NAME    = var.application_log_group_name
+    BEHAVIOR_LOG_GROUP_NAME       = var.behavior_log_group_name
+    BEHAVIOR_LOG_STREAM_NAME      = var.behavior_log_stream_name
   }))
 
   tag_specifications {
