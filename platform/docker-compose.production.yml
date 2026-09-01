@@ -1,0 +1,50 @@
+services:
+  ctfd:
+    image: ${CTFD_IMAGE:?CTFD_IMAGE must be set to an ECR digest}
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - .data/CTFd/logs:/var/log/CTFd
+      - .data/CTFd/uploads:/var/uploads
+    depends_on:
+      permissions:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - internal
+
+  permissions:
+    image: alpine:3.23
+    user: root
+    volumes:
+      - .data/CTFd/logs:/var/log/CTFd
+      - .data/CTFd/uploads:/var/uploads
+    command: chown -R 1001:1001 /var/uploads /var/log/CTFd
+
+  nginx:
+    image: nginx:stable
+    restart: always
+    volumes:
+      - ./conf/nginx/http.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - ctfd
+
+  sql-judge:
+    image: ${SQL_JUDGE_IMAGE:?SQL_JUDGE_IMAGE must be set to an ECR digest}
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - .data/CTFd/logs:/var/log/CTFd
+    networks:
+      - internal
+
+networks:
+  default:
+  internal:
+    internal: true
