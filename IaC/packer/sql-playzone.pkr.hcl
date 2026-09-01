@@ -32,6 +32,14 @@ variable "builder_instance_profile" {
   type = string
 }
 
+variable "builder_base_ami_id" {
+  type = string
+}
+
+variable "artifact_channel" {
+  type = string
+}
+
 variable "repository_url" {
   type    = string
   default = "https://github.com/ddps-lab/sql-playzone.git"
@@ -49,24 +57,20 @@ variable "ctfd_repository_name" {
   type = string
 }
 
+variable "ctfd_cache_repository_name" {
+  type = string
+}
+
 variable "sql_judge_repository_name" {
+  type = string
+}
+
+variable "sql_judge_cache_repository_name" {
   type = string
 }
 
 variable "manifest_output" {
   type = string
-}
-
-data "amazon-ami" "ubuntu_arm" {
-  filters = {
-    name                = "ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-arm64-server-*"
-    root-device-type    = "ebs"
-    virtualization-type = "hvm"
-  }
-  most_recent = true
-  owners      = ["099720109477"]
-  profile     = var.aws_profile
-  region      = var.region
 }
 
 source "amazon-ebs" "sql_playzone" {
@@ -75,10 +79,10 @@ source "amazon-ebs" "sql_playzone" {
 
   associate_public_ip_address = true
   iam_instance_profile        = var.builder_instance_profile
-  instance_type               = "t4g.small"
+  instance_type               = "c7g.xlarge"
   profile                     = var.aws_profile
   region                      = var.region
-  source_ami                  = data.amazon-ami.ubuntu_arm.id
+  source_ami                  = var.builder_base_ami_id
   ssh_timeout                 = "15m"
   ssh_username                = "ubuntu"
 
@@ -101,7 +105,7 @@ source "amazon-ebs" "sql_playzone" {
     device_name           = "/dev/sda1"
     delete_on_termination = true
     encrypted             = true
-    volume_size           = 30
+    volume_size           = 16
     volume_type           = "gp3"
   }
 
@@ -129,13 +133,16 @@ build {
   provisioner "shell" {
     environment_vars = [
       "ARTIFACT_PREFIX=${var.artifact_prefix}",
+      "ARTIFACT_CHANNEL=${var.artifact_channel}",
       "AWS_ACCOUNT_ID=${var.aws_account_id}",
       "AWS_REGION=${var.region}",
       "COMMIT_SHA=${var.commit_sha}",
       "CTFD_REPOSITORY_NAME=${var.ctfd_repository_name}",
+      "CTFD_CACHE_REPOSITORY_NAME=${var.ctfd_cache_repository_name}",
       "RELEASE_ID=${var.release_id}",
       "REPOSITORY_URL=${var.repository_url}",
-      "SQL_JUDGE_REPOSITORY_NAME=${var.sql_judge_repository_name}"
+      "SQL_JUDGE_REPOSITORY_NAME=${var.sql_judge_repository_name}",
+      "SQL_JUDGE_CACHE_REPOSITORY_NAME=${var.sql_judge_cache_repository_name}"
     ]
     script = "${path.root}/provision-artifact.sh"
   }
@@ -143,7 +150,7 @@ build {
   post-processor "manifest" {
     custom_data = {
       artifact_prefix = var.artifact_prefix
-      base_ami_id     = data.amazon-ami.ubuntu_arm.id
+      base_ami_id     = var.builder_base_ami_id
       commit_sha      = var.commit_sha
       release_id      = var.release_id
     }

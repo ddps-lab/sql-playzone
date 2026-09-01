@@ -5,14 +5,12 @@ WORKDIR /app
 # Copy go mod files
 COPY go.mod go.sum ./
 
-# Copy source code (needed for go mod tidy to detect dependencies)
-COPY sql_judge_server.go .
+# Download dependencies before copying source so source-only changes retain this layer.
+RUN go mod download
 
-# Download dependencies and tidy
-RUN go mod download && go mod tidy
+COPY sql_judge_server.go ./
 
-# Build the application
-RUN go build -o sql-judge-server sql_judge_server.go
+RUN go build -trimpath -o sql-judge-server sql_judge_server.go
 
 # Final stage
 FROM alpine:latest

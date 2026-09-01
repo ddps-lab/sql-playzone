@@ -1,6 +1,10 @@
 locals {
   ctfd_repository_name      = "${var.artifact_prefix}-ctfd"
   sql_judge_repository_name = "${var.artifact_prefix}-sql-judge"
+  build_cache_repositories = {
+    ctfd      = "${var.artifact_prefix}-ctfd-cache"
+    sql_judge = "${var.artifact_prefix}-sql-judge-cache"
+  }
 }
 
 resource "aws_ecr_repository" "ctfd" {
@@ -20,6 +24,18 @@ resource "aws_ecr_repository" "sql_judge" {
 
   image_scanning_configuration {
     scan_on_push = true
+  }
+}
+
+resource "aws_ecr_repository" "build_cache" {
+  for_each = local.build_cache_repositories
+
+  name                 = each.value
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = false
   }
 }
 
@@ -64,7 +80,9 @@ resource "aws_iam_role_policy" "packer_builder_ecr" {
         ]
         Resource = [
           aws_ecr_repository.ctfd.arn,
-          aws_ecr_repository.sql_judge.arn
+          aws_ecr_repository.sql_judge.arn,
+          aws_ecr_repository.build_cache["ctfd"].arn,
+          aws_ecr_repository.build_cache["sql_judge"].arn
         ]
       }
     ]
