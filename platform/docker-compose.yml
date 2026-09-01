@@ -60,17 +60,57 @@ services:
   #   networks:
   #       internal:
 
+  mysql-judge:
+    image: mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
+    restart: always
+    env_file:
+      - .env.judge
+    environment:
+      MYSQL_ROOT_HOST: "%"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --disable-log-bin
+      - --innodb-buffer-pool-size=128M
+      - --innodb-flush-log-at-trx-commit=2
+      - --max-allowed-packet=16M
+      - --max-connections=64
+      - --performance-schema=OFF
+      - --skip-name-resolve
+    mem_limit: 768m
+    volumes:
+      - mysql-judge-data:/var/lib/mysql
+    networks:
+      - judge-db
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
   sql-judge:
     build: ./CTFd/plugins/sql_challenges
     restart: always
     networks:
       - internal
+      - judge-db
     env_file:
-      - .env
+      - .env.judge
+    environment:
+      LOG_FOLDER: /var/log/CTFd
     volumes:
       - .data/CTFd/logs:/var/log/CTFd
+    depends_on:
+      mysql-judge:
+        condition: service_healthy
 
 networks:
     default:
     internal:
         internal: true
+    judge-db:
+        internal: true
+
+volumes:
+    mysql-judge-data:
