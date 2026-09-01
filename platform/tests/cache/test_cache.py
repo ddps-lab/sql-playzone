@@ -112,15 +112,20 @@ def test_redis_cache_subclass_commands():
         destroy_ctfd(app)
 
 
-def test_redis_cache_clear_uses_scan_and_batched_delete():
+def test_redis_cache_clear_uses_cluster_safe_deletes():
     from CTFd.cache import clear_redis_backend
 
     backend = MagicMock()
     backend.key_prefix = "flask_cache_"
     backend._read_client.scan_iter.return_value = iter(
-        f"flask_cache_{index}" for index in range(501)
+        f"flask_cache_{index}" for index in range(3)
     )
-    backend._write_client.delete.side_effect = [500, 1]
+
+    def delete_one_key(*keys):
+        assert len(keys) == 1
+        return 1
+
+    backend._write_client.delete.side_effect = delete_one_key
 
     assert clear_redis_backend(backend) is True
 
@@ -128,4 +133,4 @@ def test_redis_cache_clear_uses_scan_and_batched_delete():
     backend._read_client.scan_iter.assert_called_once_with(
         match="flask_cache_*", count=500
     )
-    assert backend._write_client.delete.call_count == 2
+    assert backend._write_client.delete.call_count == 3

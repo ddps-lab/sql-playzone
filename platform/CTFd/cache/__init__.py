@@ -11,16 +11,12 @@ def clear_redis_backend(backend, batch_size=500):
         return bool(backend._write_client.flushdb())
 
     deleted = 0
-    batch = []
     for key in backend._read_client.scan_iter(
         match=f"{backend.key_prefix}*", count=batch_size
     ):
-        batch.append(key)
-        if len(batch) == batch_size:
-            deleted += backend._write_client.delete(*batch)
-            batch.clear()
-    if batch:
-        deleted += backend._write_client.delete(*batch)
+        # ElastiCache Serverless distributes keys across hash slots and rejects
+        # multi-key DEL when the keys do not share a slot.
+        deleted += backend._write_client.delete(key)
     return bool(deleted)
 
 
