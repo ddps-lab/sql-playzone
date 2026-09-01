@@ -132,8 +132,7 @@ trap - EXIT
 # Login to ECR
 aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
 
-# Pull the immutable release images and start the production bundle.
+# Pull the private release images and start the preloaded production bundle.
 docker pull "${CTFD_IMAGE}"
 docker pull "${SQL_JUDGE_IMAGE}"
-docker compose -f docker-compose.yml pull
-docker compose -f docker-compose.yml up -d
+docker compose -f docker-compose.yml up --pull never -d
