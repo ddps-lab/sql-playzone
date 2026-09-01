@@ -19,3 +19,11 @@ variable "sql_judge_ecr_repository_name" { type = string }
 variable "application_log_group_name" { type = string }
 variable "behavior_log_group_name" { type = string }
 variable "behavior_log_stream_name" { type = string }
+variable "google_client_id" {
+  type      = string
+  sensitive = true
+}
+variable "google_client_secret" {
+  type      = string
+  sensitive = true
+}

@@ -218,6 +218,8 @@ resource "aws_launch_template" "arm_launch_template" {
     APPLICATION_LOG_GROUP_NAME    = var.application_log_group_name
     BEHAVIOR_LOG_GROUP_NAME       = var.behavior_log_group_name
     BEHAVIOR_LOG_STREAM_NAME      = var.behavior_log_stream_name
+    GOOGLE_CLIENT_ID_B64          = base64encode(var.google_client_id)
+    GOOGLE_CLIENT_SECRET_B64      = base64encode(var.google_client_secret)
   }))
 
   tag_specifications {
@@ -274,6 +276,18 @@ resource "aws_autoscaling_group" "asg" {
       on_demand_base_capacity                  = var.on_demand_base_capacity
       on_demand_percentage_above_base_capacity = var.on_demand_percentage_above_base  # Scaling 시 on-demand 비율 (0이면 전부 spot)
       spot_allocation_strategy                 = "price-capacity-optimized"
+    }
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
+
+    preferences {
+      auto_rollback                  = true
+      instance_warmup                = "180"
+      min_healthy_percentage         = 100
+      max_healthy_percentage         = 200
+      skip_matching                  = true
     }
   }
 

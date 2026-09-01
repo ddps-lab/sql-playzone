@@ -97,6 +97,8 @@ module "ec2" {
   application_log_group_name       = aws_cloudwatch_log_group.application.name
   behavior_log_group_name          = aws_cloudwatch_log_group.behavior.name
   behavior_log_stream_name         = local.behavior_log_stream_name
+  google_client_id                 = var.google_client_id
+  google_client_secret             = var.google_client_secret
 
   depends_on = [module.vpc, module.rds, module.ami]
 }

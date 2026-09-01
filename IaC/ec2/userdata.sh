@@ -66,6 +66,13 @@ CWCONFIG
 cd /home/ubuntu/sql-playzone/platform
 git pull origin main
 
+# Runtime credentials must be refreshed on every ASG instance launch.
+sed -i '/^GOOGLE_CLIENT_ID=/d; /^GOOGLE_CLIENT_SECRET=/d' .env
+{
+  printf 'GOOGLE_CLIENT_ID=%s\n' "$(printf '%s' '${GOOGLE_CLIENT_ID_B64}' | base64 --decode)"
+  printf 'GOOGLE_CLIENT_SECRET=%s\n' "$(printf '%s' '${GOOGLE_CLIENT_SECRET_B64}' | base64 --decode)"
+} >> .env
+
 # Login to ECR
 aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
 
