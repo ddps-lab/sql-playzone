@@ -37,7 +37,7 @@ resource "aws_rds_cluster" "aurora_serverless" {
   storage_encrypted = true
   
   # Deletion protection
-  deletion_protection = true
+  deletion_protection = var.deletion_protection
   skip_final_snapshot = true
   
   tags = {

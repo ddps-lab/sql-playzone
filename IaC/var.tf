@@ -9,6 +9,46 @@ variable "prefix" {
   }
 }
 
+variable "artifact_prefix" {
+  description = "Semester-scoped prefix used by the artifact foundation"
+  type        = string
+  default     = "sql-2026-s2"
+
+  validation {
+    condition     = length(var.artifact_prefix) <= 28 && can(regex("^[a-z0-9][a-z0-9-]*[a-z0-9]$", var.artifact_prefix))
+    error_message = "artifact_prefix must be at most 28 characters and contain only lowercase letters, numbers, and internal hyphens."
+  }
+}
+
+variable "artifact_channel" {
+  description = "Release channel consumed by this runtime"
+  type        = string
+  default     = "main"
+
+  validation {
+    condition     = contains(["dev", "main"], var.artifact_channel)
+    error_message = "artifact_channel must be dev or main."
+  }
+}
+
+variable "artifact_release_id" {
+  description = "Optional exact release override; null selects the channel current pointer"
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "deployment_mode" {
+  description = "Persistent production runtime or disposable validation runtime"
+  type        = string
+  default     = "persistent"
+
+  validation {
+    condition     = contains(["persistent", "ephemeral"], var.deployment_mode)
+    error_message = "deployment_mode must be persistent or ephemeral."
+  }
+}
+
 variable "region" {
   description = "AWS region"
   type        = string
@@ -51,25 +91,25 @@ variable "data_subnet_cidrs" {
 variable "aurora_engine_version" {
   description = "Aurora MySQL engine version"
   type        = string
-  default     = "8.0.mysql_aurora.3.08.2"  # Aurora MySQL 8.0 compatible
+  default     = "8.0.mysql_aurora.3.08.2" # Aurora MySQL 8.0 compatible
 }
 
 variable "aurora_min_capacity" {
   description = "Minimum capacity for Aurora Serverless v2 (in ACUs)"
   type        = number
-  default     = 0.5  # 최소 0.5 ACU
+  default     = 0.5 # 최소 0.5 ACU
 }
 
 variable "aurora_max_capacity" {
   description = "Maximum capacity for Aurora Serverless v2 (in ACUs)"
   type        = number
-  default     = 32  # 최대 32 ACU
+  default     = 32 # 최대 32 ACU
 }
 
 variable "aurora_instance_count" {
   description = "Number of Aurora instances"
   type        = number
-  default     = 1  # 기본 1개 인스턴스 (writer)
+  default     = 1 # 기본 1개 인스턴스 (writer)
 }
 
 # # 기존 RDS 변수들 (마이그레이션 후 제거 예정)
