@@ -49,6 +49,7 @@ class ArtifactBuildPerformanceTests(unittest.TestCase):
         provisioner = PROVISIONER.read_text()
         self.assertIn("docker buildx rm", provisioner)
         self.assertIn("docker builder prune -af", provisioner)
+        self.assertIn("docker image rm moby/buildkit:buildx-stable-1", provisioner)
         self.assertIn('docker pull "$ctfd_tag"', provisioner)
         self.assertIn('docker pull "$sql_judge_tag"', provisioner)
 

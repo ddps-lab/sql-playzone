@@ -86,6 +86,7 @@ sudo chmod 0600 /opt/sql-playzone/platform/.env
 # Remove BuildKit's local cache and credentials while retaining the pulled runtime images.
 sudo docker buildx rm "$buildx_builder"
 sudo docker builder prune -af
+sudo docker image rm moby/buildkit:buildx-stable-1 || true
 sudo docker logout "$registry" || true
 sudo rm -rf /root/.docker /root/.cache /home/ubuntu/.cache
 sudo cloud-init clean --logs
