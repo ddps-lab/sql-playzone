@@ -90,8 +90,8 @@ resource "aws_iam_policy" "ecr_read_policy" {
         Resource = "*"
       },
       {
-        Effect   = "Allow"
-        Action   = "secretsmanager:GetSecretValue"
+        Effect = "Allow"
+        Action = "secretsmanager:GetSecretValue"
         Resource = [
           "arn:aws:secretsmanager:${var.region}:${var.aws_account_id}:secret:${var.application_secret_name}-*",
           var.rds_master_secret_arn
@@ -130,7 +130,7 @@ resource "aws_lb" "alb" {
   subnets            = var.public_subnet_ids
 
   enable_deletion_protection = false
-  enable_http2              = true
+  enable_http2               = true
 
   tags = {
     Name = "${var.prefix}-alb"
@@ -196,20 +196,21 @@ resource "aws_lb_listener" "https" {
 
 # Launch Template for ARM instances
 resource "aws_launch_template" "arm_launch_template" {
-  name_prefix   = "${var.prefix}-lt-arm"
-  image_id      = data.aws_ami.ctfd_ami_arm.id
-  instance_type = "t4g.micro"
-  key_name      = var.key_name != "" ? var.key_name : null
+  name_prefix            = "${var.prefix}-lt-arm"
+  image_id               = var.ami_id
+  instance_type          = "t4g.micro"
+  key_name               = var.key_name != "" ? var.key_name : null
+  update_default_version = true
 
   vpc_security_group_ids = [var.ec2_security_group_id]
-  
+
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name
   }
 
   block_device_mappings {
     device_name = "/dev/sda1"
-    
+
     ebs {
       volume_size           = 30
       volume_type           = "gp3"
@@ -219,24 +220,36 @@ resource "aws_launch_template" "arm_launch_template" {
   }
 
   user_data = base64encode(templatefile("${path.module}/userdata.sh", {
-    REGION                        = var.region
-    AWS_ACCOUNT_ID                = var.aws_account_id
-    CTFD_ECR_REPOSITORY_NAME      = var.ctfd_ecr_repository_name
-    SQL_JUDGE_ECR_REPOSITORY_NAME = var.sql_judge_ecr_repository_name
-    APPLICATION_LOG_GROUP_NAME    = var.application_log_group_name
-    BEHAVIOR_LOG_GROUP_NAME       = var.behavior_log_group_name
-    BEHAVIOR_LOG_STREAM_NAME      = var.behavior_log_stream_name
-    APPLICATION_SECRET_NAME       = var.application_secret_name
-    RDS_MASTER_SECRET_ARN         = var.rds_master_secret_arn
-    RDS_ENDPOINT                  = var.rds_endpoint
-    ELASTICACHE_ENDPOINT          = var.elasticache_serverless_endpoint
+    REGION                     = var.region
+    AWS_ACCOUNT_ID             = var.aws_account_id
+    CTFD_IMAGE                 = var.ctfd_image
+    SQL_JUDGE_IMAGE            = var.sql_judge_image
+    APPLICATION_LOG_GROUP_NAME = var.application_log_group_name
+    BEHAVIOR_LOG_GROUP_NAME    = var.behavior_log_group_name
+    BEHAVIOR_LOG_STREAM_NAME   = var.behavior_log_stream_name
+    APPLICATION_SECRET_NAME    = var.application_secret_name
+    RDS_MASTER_SECRET_ARN      = var.rds_master_secret_arn
+    RDS_ENDPOINT               = var.rds_endpoint
+    ELASTICACHE_ENDPOINT       = var.elasticache_serverless_endpoint
   }))
 
   tag_specifications {
     resource_type = "instance"
     tags = {
-      Name = "${var.prefix}-instance-arm"
+      Name            = "${var.prefix}-instance-arm"
+      Project         = "sql-playzone"
+      ArtifactPrefix  = var.artifact_prefix
+      ArtifactChannel = var.artifact_channel
+      ArtifactRelease = var.artifact_release_id
     }
+  }
+
+  tags = {
+    Name            = "${var.prefix}-lt-arm"
+    Project         = "sql-playzone"
+    ArtifactPrefix  = var.artifact_prefix
+    ArtifactChannel = var.artifact_channel
+    ArtifactRelease = var.artifact_release_id
   }
 }
 
@@ -245,7 +258,7 @@ resource "aws_autoscaling_group" "asg" {
   name                = "${var.prefix}-asg"
   vpc_zone_identifier = var.public_subnet_ids
   target_group_arns   = [aws_lb_target_group.tg.arn]
-  
+
   min_size         = var.asg_min_size
   max_size         = var.asg_max_size
   desired_capacity = var.asg_desired_capacity
@@ -257,7 +270,7 @@ resource "aws_autoscaling_group" "asg" {
     launch_template {
       launch_template_specification {
         launch_template_id = aws_launch_template.arm_launch_template.id
-        version            = "$Latest"
+        version            = tostring(aws_launch_template.arm_launch_template.latest_version)
       }
 
       # First override - will be used for on-demand base capacity
@@ -270,21 +283,21 @@ resource "aws_autoscaling_group" "asg" {
         instance_type = "t4g.medium"
         launch_template_specification {
           launch_template_id = aws_launch_template.arm_launch_template.id
-          version            = "$Latest"
+          version            = tostring(aws_launch_template.arm_launch_template.latest_version)
         }
       }
       override {
         instance_type = "t4g.large"
         launch_template_specification {
           launch_template_id = aws_launch_template.arm_launch_template.id
-          version            = "$Latest"
+          version            = tostring(aws_launch_template.arm_launch_template.latest_version)
         }
       }
     }
 
     instances_distribution {
       on_demand_base_capacity                  = var.on_demand_base_capacity
-      on_demand_percentage_above_base_capacity = var.on_demand_percentage_above_base  # Scaling 시 on-demand 비율 (0이면 전부 spot)
+      on_demand_percentage_above_base_capacity = var.on_demand_percentage_above_base # Scaling 시 on-demand 비율 (0이면 전부 spot)
       spot_allocation_strategy                 = "price-capacity-optimized"
     }
   }
@@ -293,6 +306,42 @@ resource "aws_autoscaling_group" "asg" {
     key                 = "Name"
     value               = "${var.prefix}-server"
     propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Project"
+    value               = "sql-playzone"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ArtifactPrefix"
+    value               = var.artifact_prefix
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ArtifactChannel"
+    value               = var.artifact_channel
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ArtifactRelease"
+    value               = var.artifact_release_id
+    propagate_at_launch = true
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
+
+    preferences {
+      auto_rollback          = true
+      instance_warmup        = 180
+      min_healthy_percentage = 100
+    }
+
+    triggers = ["tag"]
   }
 }
 
@@ -330,6 +379,6 @@ resource "aws_autoscaling_policy" "request_count_tracking" {
     # 그런데 지금 여러 type 이 있는데 (small, medium, large)
     # 인스턴스당으로 1분당 300요청이면, large 가 동작해서 충분함에도 불구하고 scaling 이 될 수도 있다.
     # 어떤게 좋을지 알아봐야 할듯함.
-    target_value = 300.0  # 인스턴스당 300 요청 유지
+    target_value = 300.0 # 인스턴스당 300 요청 유지
   }
 }
