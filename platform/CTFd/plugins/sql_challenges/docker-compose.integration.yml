@@ -1,0 +1,66 @@
+services:
+  mysql:
+    image: mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
+    environment:
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --disable-log-bin
+      - --innodb-buffer-pool-size=128M
+      - --innodb-flush-log-at-trx-commit=2
+      - --max-allowed-packet=16M
+      - --max-connections=64
+      - --performance-schema=OFF
+      - --skip-name-resolve
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 10s
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  test:
+    image: golang:1.24.5-alpine
+    working_dir: /src
+    environment:
+      LOG_FOLDER: /tmp/sql-judge-logs
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set}
+      SQL_JUDGE_CONTAINER_URL: http://judge:8080
+    depends_on:
+      mysql:
+        condition: service_healthy
+      judge:
+        condition: service_healthy
+    command: go test -mod=readonly -tags=integration -count=1 ./...
+    volumes:
+      - .:/src:ro
+      - go-cache:/root/.cache/go-build
+      - go-mod:/go/pkg/mod
+
+  judge:
+    build: .
+    environment:
+      LOG_FOLDER: /tmp/sql-judge-logs
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
+
+volumes:
+  mysql-data:
+  go-cache:
+  go-mod:
