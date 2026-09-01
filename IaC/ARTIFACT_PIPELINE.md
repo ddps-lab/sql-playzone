@@ -22,34 +22,42 @@ Foundation, dev runtime, production runtime은 서로 다른 Terraform state와 
 ## Dev 검증 순서
 
 1. Private backend 설정으로 `IaC/foundation`을 초기화하고 plan을 검토한 뒤 apply합니다.
-2. 기능 브랜치를 원격에 push하고 full commit SHA를 사용하여 dev release를 빌드합니다.
+2. Builder 도구나 Ubuntu base를 갱신할 때에는 release 빌드에 앞서 builder base AMI를 다시 만듭니다. 일반적인 release 빌드마다 실행할 필요는 없습니다.
+
+   ```bash
+   ./scripts/build-builder-base
+   ```
+
+3. 기능 브랜치를 원격에 push하고 full commit SHA를 사용하여 dev release를 빌드합니다.
 
    ```bash
    ./scripts/build-release --channel dev --commit "$(git rev-parse HEAD)"
    ```
 
-3. 운영 application secret의 OAuth 값과 새 CTFd key로 임시 dev secret을 만듭니다.
+   CTFd와 SQL Judge는 병렬로 빌드되며, channel별 BuildKit cache를 ECR에서 재사용합니다. Builder는 빌드 cache를 제거하고 실행에 필요한 image만 적재한 뒤 AMI를 생성합니다.
+
+4. 운영 application secret의 OAuth 값과 새 CTFd key로 임시 dev secret을 만듭니다.
 
    ```bash
    ./scripts/prepare-dev-secret
    ```
 
-4. Dev 전용 backend와 변수 파일로 runtime을 초기화하고 plan을 검토한 뒤 apply합니다.
+5. Dev 전용 backend와 변수 파일로 runtime을 초기화하고 plan을 검토한 뒤 apply합니다.
 
    ```bash
    terraform -chdir=IaC plan -var-file=environments/dev.tfvars
    terraform -chdir=IaC apply -var-file=environments/dev.tfvars
    ```
 
-5. HTTPS, ALB target health, CTFd 초기 설정, SQL Judge, Aurora, Valkey를 검증합니다.
-6. 검증이 끝나면 dev runtime을 destroy하고 dev secret을 삭제합니다.
+6. HTTPS, ALB target health, CTFd 초기 설정, SQL Judge, Aurora, Valkey를 검증합니다.
+7. 검증이 끝나면 dev runtime을 destroy하고 dev secret을 삭제합니다.
 
    ```bash
    terraform -chdir=IaC destroy -var-file=environments/dev.tfvars
    ./scripts/delete-dev-secret
    ```
 
-7. `Deployment=sql-2026-s2-dev`에 해당하는 비용성 runtime 자원이 남아 있지 않은지 확인합니다.
+8. `Deployment=sql-2026-s2-dev`에 해당하는 비용성 runtime 자원이 남아 있지 않은지 확인합니다.
 
 ## Release와 rollback
 

@@ -1,32 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export DEBIAN_FRONTEND=noninteractive
-
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl git unzip
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc >/dev/null
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-
-. /etc/os-release
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${UBUNTU_CODENAME:-$VERSION_CODENAME} stable" | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
-
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo systemctl enable --now docker
-sudo usermod -aG docker ubuntu
-
 working_directory=$(mktemp -d)
-trap 'sudo rm -rf "$working_directory"' EXIT
+buildx_builder="sql-playzone-${RELEASE_ID}"
 
-curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "$working_directory/awscliv2.zip"
-unzip -q "$working_directory/awscliv2.zip" -d "$working_directory"
-sudo "$working_directory/aws/install"
-
-curl -fsSL "https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/arm64/latest/amazon-cloudwatch-agent.deb" -o "$working_directory/amazon-cloudwatch-agent.deb"
-sudo dpkg -i "$working_directory/amazon-cloudwatch-agent.deb"
-sudo systemctl enable amazon-cloudwatch-agent
+cleanup() {
+  sudo docker buildx rm "$buildx_builder" >/dev/null 2>&1 || true
+  sudo rm -rf "$working_directory"
+}
+trap cleanup EXIT
 
 source_directory="$working_directory/source"
 git init "$source_directory"
@@ -45,12 +27,50 @@ cp "$source_directory/platform/CTFd/config.example.ini" "$source_directory/platf
 registry="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 ctfd_tag="$registry/$CTFD_REPOSITORY_NAME:$RELEASE_ID"
 sql_judge_tag="$registry/$SQL_JUDGE_REPOSITORY_NAME:$RELEASE_ID"
+ctfd_cache="$registry/$CTFD_CACHE_REPOSITORY_NAME:cache-${ARTIFACT_CHANNEL}"
+sql_judge_cache="$registry/$SQL_JUDGE_CACHE_REPOSITORY_NAME:cache-${ARTIFACT_CHANNEL}"
 
 aws ecr get-login-password --region "$AWS_REGION" | sudo docker login --username AWS --password-stdin "$registry"
-sudo docker build --pull --tag "$ctfd_tag" "$source_directory/platform"
-sudo docker build --pull --tag "$sql_judge_tag" "$source_directory/platform/CTFd/plugins/sql_challenges"
-sudo docker push "$ctfd_tag"
-sudo docker push "$sql_judge_tag"
+sudo docker buildx create --name "$buildx_builder" --driver docker-container --use
+sudo docker buildx inspect --bootstrap
+
+build_image() {
+  local name=$1
+  local tag=$2
+  local cache=$3
+  local context=$4
+
+  sudo docker buildx build \
+    --builder "$buildx_builder" \
+    --platform linux/arm64 \
+    --pull \
+    --cache-from "type=registry,ref=$cache" \
+    --cache-to "type=registry,ref=$cache,mode=max,image-manifest=true,oci-mediatypes=true" \
+    --tag "$tag" \
+    --push \
+    "$context" 2>&1 | sed -u "s/^/[$name] /"
+}
+
+build_image "ctfd" "$ctfd_tag" "$ctfd_cache" "$source_directory/platform" &
+ctfd_pid=$!
+build_image "sql-judge" "$sql_judge_tag" "$sql_judge_cache" "$source_directory/platform/CTFd/plugins/sql_challenges" &
+sql_judge_pid=$!
+
+build_failed=0
+if ! wait "$ctfd_pid"; then
+  build_failed=1
+fi
+if ! wait "$sql_judge_pid"; then
+  build_failed=1
+fi
+if (( build_failed != 0 )); then
+  echo "One or more image builds failed" >&2
+  exit 1
+fi
+
+# Load only the immutable runtime images into Docker's image store before removing BuildKit cache.
+sudo docker pull "$ctfd_tag"
+sudo docker pull "$sql_judge_tag"
 
 sudo install -d -o ubuntu -g ubuntu /opt/sql-playzone/platform/conf/nginx
 sudo install -m 0644 "$source_directory/platform/docker-compose.production.yml" /opt/sql-playzone/platform/docker-compose.yml
@@ -63,6 +83,13 @@ sudo touch /opt/sql-playzone/platform/.env
 sudo chown ubuntu:ubuntu /opt/sql-playzone/platform/.env
 sudo chmod 0600 /opt/sql-playzone/platform/.env
 
-sudo apt-get clean
-sudo rm -rf /var/lib/apt/lists/* /root/.cache /home/ubuntu/.cache
+# Remove BuildKit's local cache and credentials while retaining the pulled runtime images.
+sudo docker buildx rm "$buildx_builder"
+sudo docker builder prune -af
+sudo docker image rm moby/buildkit:buildx-stable-1 || true
+sudo docker logout "$registry" || true
+sudo rm -rf /root/.docker /root/.cache /home/ubuntu/.cache
 sudo cloud-init clean --logs
+sudo fstrim -av
+df -h /
+sudo docker images --format '{{.Repository}}@{{.Digest}} {{.Size}}'
