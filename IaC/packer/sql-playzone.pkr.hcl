@@ -65,6 +65,7 @@ data "amazon-ami" "ubuntu_arm" {
   }
   most_recent = true
   owners      = ["099720109477"]
+  profile     = var.aws_profile
   region      = var.region
 }
 
