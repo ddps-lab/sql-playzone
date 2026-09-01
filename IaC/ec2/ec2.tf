@@ -270,7 +270,7 @@ resource "aws_autoscaling_group" "asg" {
     launch_template {
       launch_template_specification {
         launch_template_id = aws_launch_template.arm_launch_template.id
-        version            = "$Default"
+        version            = tostring(aws_launch_template.arm_launch_template.latest_version)
       }
 
       # First override - will be used for on-demand base capacity
@@ -283,14 +283,14 @@ resource "aws_autoscaling_group" "asg" {
         instance_type = "t4g.medium"
         launch_template_specification {
           launch_template_id = aws_launch_template.arm_launch_template.id
-          version            = "$Default"
+          version            = tostring(aws_launch_template.arm_launch_template.latest_version)
         }
       }
       override {
         instance_type = "t4g.large"
         launch_template_specification {
           launch_template_id = aws_launch_template.arm_launch_template.id
-          version            = "$Default"
+          version            = tostring(aws_launch_template.arm_launch_template.latest_version)
         }
       }
     }
