@@ -31,7 +31,6 @@ module "rds" {
   data_subnet_ids         = module.vpc.data_subnet_ids
   rds_security_group_id   = module.vpc.rds_security_group_id
   db_username             = var.db_username
-  db_password             = var.db_password
   aurora_engine_version   = var.aurora_engine_version
   aurora_min_capacity     = var.aurora_min_capacity
   aurora_max_capacity     = var.aurora_max_capacity
@@ -60,16 +59,9 @@ module "ami" {
   aws_profile           = var.aws_profile
   public_subnet_ids     = module.vpc.public_subnet_ids
   ec2_security_group_id = module.vpc.ec2_security_group_id
-  rds_endpoint          = module.rds.rds_endpoint
-  db_username           = var.db_username
-  db_password           = var.db_password
-  ctfd_secret_key       = var.ctfd_secret_key
-  google_client_id      = var.google_client_id
-  google_client_secret  = var.google_client_secret
   aws_account_id        = var.aws_account_id
   ctfd_ecr_repository_name      = local.ctfd_ecr_repository_name
   sql_judge_ecr_repository_name = local.sql_judge_ecr_repository_name
-  elasticache_serverless_endpoint = module.elasticache.elasticache_serverless_endpoint[0].address
 }
 
 # EC2 Module
@@ -97,6 +89,10 @@ module "ec2" {
   application_log_group_name       = aws_cloudwatch_log_group.application.name
   behavior_log_group_name          = aws_cloudwatch_log_group.behavior.name
   behavior_log_stream_name         = local.behavior_log_stream_name
+  application_secret_name          = local.application_secret_name
+  rds_master_secret_arn            = module.rds.master_user_secret_arn
+  rds_endpoint                     = module.rds.rds_endpoint
+  elasticache_serverless_endpoint  = module.elasticache.elasticache_serverless_endpoint[0].address
 
   depends_on = [module.vpc, module.rds, module.ami]
 }

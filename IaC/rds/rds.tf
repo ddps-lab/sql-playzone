@@ -17,7 +17,7 @@ resource "aws_rds_cluster" "aurora_serverless" {
   
   database_name   = "ctfd"
   master_username = var.db_username
-  master_password = var.db_password
+  manage_master_user_password = true
   
   db_subnet_group_name   = aws_db_subnet_group.aurora_subnet_group.name
   vpc_security_group_ids = [var.rds_security_group_id]

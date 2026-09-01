@@ -1,6 +1,7 @@
 locals {
   ctfd_ecr_repository_name      = "${var.prefix}-ctfd"
   sql_judge_ecr_repository_name = "${var.prefix}-sql-judge"
+  application_secret_name       = "sql-playzone/${var.prefix}/application"
 
   application_log_group_name = "/aws/ec2/${var.prefix}"
   behavior_log_group_name    = "/aws/ec2/${var.prefix}-behavior"

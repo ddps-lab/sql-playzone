@@ -58,10 +58,10 @@ resource "aws_iam_role" "ec2_ecr_read_role" {
   }
 }
 
-# IAM Policy for ECR read-only access and CloudWatch Logs
+# IAM Policy for ECR read-only access, CloudWatch Logs, and application secrets
 resource "aws_iam_policy" "ecr_read_policy" {
   name        = "${var.prefix}-ecr-read-policy"
-  description = "Policy for ECR read-only access and CloudWatch Logs"
+  description = "Policy for ECR read-only access, CloudWatch Logs, and application secrets"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -88,6 +88,14 @@ resource "aws_iam_policy" "ecr_read_policy" {
           "logs:DescribeLogStreams"
         ]
         Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "secretsmanager:GetSecretValue"
+        Resource = [
+          "arn:aws:secretsmanager:${var.region}:${var.aws_account_id}:secret:${var.application_secret_name}-*",
+          var.rds_master_secret_arn
+        ]
       }
     ]
   })
@@ -218,6 +226,10 @@ resource "aws_launch_template" "arm_launch_template" {
     APPLICATION_LOG_GROUP_NAME    = var.application_log_group_name
     BEHAVIOR_LOG_GROUP_NAME       = var.behavior_log_group_name
     BEHAVIOR_LOG_STREAM_NAME      = var.behavior_log_stream_name
+    APPLICATION_SECRET_NAME       = var.application_secret_name
+    RDS_MASTER_SECRET_ARN         = var.rds_master_secret_arn
+    RDS_ENDPOINT                  = var.rds_endpoint
+    ELASTICACHE_ENDPOINT          = var.elasticache_serverless_endpoint
   }))
 
   tag_specifications {
