@@ -54,6 +54,7 @@ resource "aws_iam_role_policy" "packer_builder_ecr" {
         Effect = "Allow"
         Action = [
           "ecr:BatchCheckLayerAvailability",
+          "ecr:BatchGetImage",
           "ecr:CompleteLayerUpload",
           "ecr:DescribeImages",
           "ecr:GetDownloadUrlForLayer",
