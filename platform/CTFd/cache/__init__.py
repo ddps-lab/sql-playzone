@@ -6,6 +6,24 @@ from flask import current_app, request
 from flask_caching import Cache, make_template_fragment_key
 
 
+def clear_redis_backend(backend, batch_size=500):
+    if not backend.key_prefix:
+        return bool(backend._write_client.flushdb())
+
+    deleted = 0
+    batch = []
+    for key in backend._read_client.scan_iter(
+        match=f"{backend.key_prefix}*", count=batch_size
+    ):
+        batch.append(key)
+        if len(batch) == batch_size:
+            deleted += backend._write_client.delete(*batch)
+            batch.clear()
+    if batch:
+        deleted += backend._write_client.delete(*batch)
+    return bool(deleted)
+
+
 class CTFdCache(Cache):
     """
     This subclass exists to give flask-caching some additional features
@@ -40,6 +58,19 @@ class CTFdCache(Cache):
                 self.set(key=key, value=value, timeout=timeout)
                 return True
             return False
+
+    def clear(self):
+        """
+        Clear Redis cache keys without using KEYS.
+
+        ElastiCache Serverless supports SCAN but rejects KEYS. Preserve the
+        configured cache prefix so clearing the CTFd cache does not remove
+        unrelated keys from a shared Redis database.
+        """
+        if current_app.config["CACHE_TYPE"] != "redis":
+            return super().clear()
+
+        return clear_redis_backend(self.cache)
 
 
 cache = CTFdCache()
