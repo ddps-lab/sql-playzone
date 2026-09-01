@@ -112,20 +112,6 @@ resource "aws_instance" "ami_builder_arm" {
   }
 
   user_data = base64encode(templatefile("${path.module}/ami-builder-userdata.sh", {
-    DB_USERNAME  = var.db_username
-    DB_PASSWORD  = var.db_password
-    RDS_ENDPOINT = var.rds_endpoint
-    CTFD_SECRET_KEY = var.ctfd_secret_key
-    UPLOAD_FOLDER="/var/uploads"
-    REDIS_URL="rediss://${var.elasticache_serverless_endpoint}:6379"
-    WORKERS=1
-    LOG_FOLDER="/var/log/CTFd"
-    ACCESS_LOG="/var/log/CTFd/access.log"
-    ERROR_LOG="/var/log/CTFd/error.log"
-    REVERSE_PROXY=true
-    SQL_JUDGE_SERVER_URL="http://sql-judge:8080"
-    GOOGLE_CLIENT_ID = var.google_client_id
-    GOOGLE_CLIENT_SECRET = var.google_client_secret
     REGION = var.region
     AWS_ACCOUNT_ID = var.aws_account_id
     CTFD_ECR_REPOSITORY_NAME = var.ctfd_ecr_repository_name

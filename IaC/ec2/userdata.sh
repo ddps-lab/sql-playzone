@@ -66,6 +66,68 @@ CWCONFIG
 cd /home/ubuntu/sql-playzone/platform
 git pull origin main
 
+# Load application and database credentials from Secrets Manager
+application_secret_file=$(mktemp)
+rds_secret_file=$(mktemp)
+chmod 600 "$application_secret_file" "$rds_secret_file"
+trap 'rm -f "$application_secret_file" "$rds_secret_file"' EXIT
+
+if ! aws secretsmanager get-secret-value \
+    --region ${REGION} \
+    --secret-id ${APPLICATION_SECRET_NAME} \
+    --query SecretString \
+    --output text > "$application_secret_file"; then
+    exit 1
+fi
+
+if ! aws secretsmanager get-secret-value \
+    --region ${REGION} \
+    --secret-id ${RDS_MASTER_SECRET_ARN} \
+    --query SecretString \
+    --output text > "$rds_secret_file"; then
+    exit 1
+fi
+
+python3 - "$application_secret_file" "$rds_secret_file" << 'PY'
+import json
+import sys
+from pathlib import Path
+from urllib.parse import quote_plus
+
+application_secret = json.loads(Path(sys.argv[1]).read_text())
+rds_secret = json.loads(Path(sys.argv[2]).read_text())
+
+env_values = {
+    "DATABASE_URL": (
+        "mysql+pymysql://"
+        f"{quote_plus(rds_secret['username'])}:"
+        f"{quote_plus(rds_secret['password'])}"
+        "@${RDS_ENDPOINT}/ctfd"
+    ),
+    "SECRET_KEY": application_secret["CTFD_SECRET_KEY"],
+    "UPLOAD_FOLDER": "/var/uploads",
+    "REDIS_URL": "rediss://${ELASTICACHE_ENDPOINT}:6379",
+    "WORKERS": "1",
+    "LOG_FOLDER": "/var/log/CTFd",
+    "ACCESS_LOG": "/var/log/CTFd/access.log",
+    "ERROR_LOG": "/var/log/CTFd/error.log",
+    "REVERSE_PROXY": "true",
+    "SQL_JUDGE_SERVER_URL": "http://sql-judge:8080",
+    "GOOGLE_CLIENT_ID": application_secret["GOOGLE_CLIENT_ID"],
+    "GOOGLE_CLIENT_SECRET": application_secret["GOOGLE_CLIENT_SECRET"],
+}
+
+env_path = Path(".env")
+lines = env_path.read_text().splitlines() if env_path.exists() else []
+lines = [line for line in lines if line.partition("=")[0] not in env_values]
+lines.extend(f"{key}={value}" for key, value in env_values.items())
+env_path.write_text("\n".join(lines) + "\n")
+PY
+chmod 600 .env
+
+rm -f "$application_secret_file" "$rds_secret_file"
+trap - EXIT
+
 # Login to ECR
 aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
 

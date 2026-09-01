@@ -38,21 +38,9 @@ cd sql-playzone/platform/CTFd
 cp config.example.ini config.ini
 cd ..
 
-# Create .env file with database configuration
-cat > .env << EOF
-DATABASE_URL=mysql+pymysql://${DB_USERNAME}:${DB_PASSWORD}@${RDS_ENDPOINT}/ctfd
-SECRET_KEY=${CTFD_SECRET_KEY}
-UPLOAD_FOLDER=${UPLOAD_FOLDER}
-REDIS_URL=${REDIS_URL}
-WORKERS=${WORKERS}
-LOG_FOLDER=${LOG_FOLDER}
-ACCESS_LOG=${ACCESS_LOG}
-ERROR_LOG=${ERROR_LOG}
-REVERSE_PROXY=${REVERSE_PROXY}
-SQL_JUDGE_SERVER_URL=${SQL_JUDGE_SERVER_URL}
-GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-EOF
+# docker compose expects the env file to exist while building the images.
+touch .env
+chmod 600 .env
 
 # Run docker-compose
 docker compose build

@@ -12,3 +12,8 @@ output "rds_port" {
   value = aws_rds_cluster.aurora_serverless.port
   description = "Aurora cluster port"
 }
+
+output "master_user_secret_arn" {
+  value       = aws_rds_cluster.aurora_serverless.master_user_secret[0].secret_arn
+  description = "ARN of the RDS-managed master user secret"
+}
