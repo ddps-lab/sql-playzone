@@ -11,12 +11,14 @@ USER_DATA = ROOT / "IaC" / "ec2" / "userdata.sh"
 class RuntimeImageTests(unittest.TestCase):
     def test_public_runtime_images_are_pinned_and_preloaded(self):
         compose = COMPOSE.read_text()
-        for image in ("alpine", "nginx"):
+        for image in ("alpine", "nginx", "mysql"):
             self.assertRegex(compose, rf"image: {image}:[^\n]+@sha256:[0-9a-f]{{64}}")
 
         provisioner = PROVISIONER.read_text()
         self.assertIn("docker compose", provisioner)
-        self.assertRegex(provisioner, r"pull\s+permissions\s+nginx")
+        self.assertRegex(provisioner, r"pull\s+permissions\s+nginx\s+mysql-judge")
+
+        self.assertIn(".env.judge", provisioner)
 
     def test_boot_does_not_pull_public_images(self):
         user_data = USER_DATA.read_text()
