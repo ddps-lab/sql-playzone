@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Review a set of SQL challenge definitions against a disposable MySQL judge.
+#
+#   scripts/review-challenges <challenges.json> [--report <out.json>] [--baseline-url URL] [extra regrade args]
+#
+# Starts MySQL 8.4 and the judge from this checkout with Docker Compose, runs
+# scripts/regrade-challenges --review, prints the findings, and removes the
+# containers and volumes. The JSON comes from scripts/export-challenges or the
+# query documented in scripts/regrade-challenges --help. Keep it outside Git.
+set -euo pipefail
+
+if [ $# -lt 1 ] || [ ! -f "$1" ]; then
+  echo "usage: $0 <challenges.json> [--report <out.json>] [regrade args...]" >&2
+  exit 64
+fi
+challenges=$(realpath "$1"); shift
+repository_root=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
+plugin_dir="$repository_root/platform/CTFd/plugins/sql_challenges"
+project_name="sql-judge-review-${RANDOM}-$$"
+export SQL_JUDGE_REVIEW_PORT="${SQL_JUDGE_REVIEW_PORT:-18080}"
+export MYSQL_ROOT_PASSWORD
+MYSQL_ROOT_PASSWORD=$(openssl rand -hex 32)
+compose=(docker compose --project-name "$project_name" --file "$plugin_dir/docker-compose.integration.yml" --file "$plugin_dir/docker-compose.review.yml")
+
+cleanup() { "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+
+echo "starting MySQL 8.4 and the judge from $(git -C "$repository_root" rev-parse --short HEAD) ..." >&2
+"${compose[@]}" up -d --build --wait mysql judge >/dev/null
+judge_url="http://127.0.0.1:${SQL_JUDGE_REVIEW_PORT}"
+for _ in $(seq 1 30); do curl -fsS "$judge_url/health" >/dev/null 2>&1 && break; sleep 1; done
+
+set +e
+python3 "$repository_root/scripts/regrade-challenges" --challenges "$challenges" --judge-url "$judge_url" --review "$@"
+status=$?
+set -e
+exit $status
