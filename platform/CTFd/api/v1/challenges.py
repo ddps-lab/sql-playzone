@@ -1375,14 +1375,18 @@ BEHAVIOR_EVENT_TYPES = {
     "reset",
     "submit",
 }
-BEHAVIOR_MAX_EVENTS = 50
 BEHAVIOR_MAX_TEXT_CHARS = 8000
 BEHAVIOR_TEXT_FIELDS = ("typed_text", "pasted_text", "query_text")
-# The page's tracker retries a rejected batch forever, so a batch of valid
-# events must always fit: text fields at 12 bytes per character (an
-# ASCII-escaping client writes a supplementary character as two \uXXXX
-# escapes) plus room for the other fields, times the event cap.
-BEHAVIOR_MAX_BODY_BYTES = BEHAVIOR_MAX_EVENTS * (
+# The page's tracker flushes every 5 seconds or 20 events, and puts a
+# rejected batch back in front of its buffer to retry forever. So the
+# number of events per request is not capped: after a transient failure the
+# buffer grows past any fixed limit and a count-based 400 would leave the
+# page stuck, silently losing everything that follows. Only the body size is
+# bounded, sized for 50 events of the largest valid text at 12 bytes per
+# character (an ASCII-escaping client writes a supplementary character as
+# two \uXXXX escapes) plus room for the other fields.
+BEHAVIOR_BODY_BUDGET_EVENTS = 50
+BEHAVIOR_MAX_BODY_BYTES = BEHAVIOR_BODY_BUDGET_EVENTS * (
     len(BEHAVIOR_TEXT_FIELDS) * BEHAVIOR_MAX_TEXT_CHARS * 12 + 2048
 )
 
@@ -1477,11 +1481,6 @@ class BehaviorLog(Resource):
         events = data.get("events") if isinstance(data, dict) else None
         if not isinstance(events, list) or not events:
             return {"success": False, "errors": ["No events provided"]}, 400
-        if len(events) > BEHAVIOR_MAX_EVENTS:
-            return {
-                "success": False,
-                "errors": [f"At most {BEHAVIOR_MAX_EVENTS} events per request"],
-            }, 400
 
         user = get_current_user_attrs()
         challenge_names = {

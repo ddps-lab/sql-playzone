@@ -155,20 +155,23 @@ def test_client_events_are_validated_and_stamped_with_the_real_user(
         assert r.status_code == 400
         r = client.post("/api/v1/challenges/behavior", json={"events": "nope"})
         assert r.status_code == 400
+        # a backlog of any length is accepted: the tracker retries a rejected
+        # batch forever, so a count cap would leave the page stuck
         r = client.post(
             "/api/v1/challenges/behavior",
             json={"events": [{**base, "event_type": "focus"}] * 51},
         )
-        assert r.status_code == 400
-        assert len(behavior_lines(tmp_path)) == 1
+        assert r.status_code == 200
+        assert r.get_json()["data"]["logged"] == 51
+        assert len(behavior_lines(tmp_path)) == 52
 
         # a full batch of the largest valid events is accepted, never 413
         big = {
             **base,
             "event_type": "paste",
-            "pasted_text": "\U0001F600" * 8000,  # emoji: two \uXXXX escapes each
-            "query_text": "\U0001F600" * 8000,
-            "typed_text": "\U0001F600" * 8000,
+            "pasted_text": "\U0001f600" * 8000,  # emoji: two \uXXXX escapes each
+            "query_text": "\U0001f600" * 8000,
+            "typed_text": "\U0001f600" * 8000,
         }
         r = client.post("/api/v1/challenges/behavior", json={"events": [big] * 50})
         assert r.status_code == 200
