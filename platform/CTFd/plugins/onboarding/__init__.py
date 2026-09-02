@@ -6,6 +6,8 @@ through the normal login form instead of another Google round-trip. The gate
 is a request hook in the style of CTFd's own ``change_password`` hook.
 """
 
+from pathlib import Path
+
 from flask import Blueprint, redirect, render_template, request, session, url_for
 from flask_babel import lazy_gettext as _l
 from wtforms import PasswordField, StringField
@@ -16,7 +18,8 @@ from CTFd.forms import BaseForm
 from CTFd.forms.fields import SubmitField
 from CTFd.forms.users import attach_custom_user_fields, build_custom_user_fields
 from CTFd.models import UserFieldEntries, UserFields, Users, db
-from CTFd.utils import get_config, validators
+from CTFd.utils import get_config, set_config, validators
+from CTFd.utils.config.pages import build_markdown
 from CTFd.utils.decorators import authed_only, ratelimit
 from CTFd.utils.logging import log
 from CTFd.utils.security.auth import update_user
@@ -46,6 +49,13 @@ EXEMPT_ENDPOINTS = {
 # Where auth.google_callback lands a user after login (users and teams mode).
 LANDING_ENDPOINTS = {"challenges.listing", "teams.private"}
 
+# Consent to the terms is recorded as a required, non-editable boolean user
+# field: the same CTFd mechanism the student_fields plugin uses for the
+# student ID, so it shows up in the admin user view and exports.
+TERMS_FIELD_NAME = "Terms of Service"
+TERMS_FIELD_DESCRIPTION = "I have read and agree to the Terms of Service above."
+TERMS_TEXT_PATH = Path(__file__).with_name("terms.md")
+
 NAME_MAX_LENGTH = 128
 PASSWORD_MAX_LENGTH = 128
 
@@ -58,6 +68,37 @@ def logged_in_with_google():
 def onboarding_pending(user_id):
     """Google-created accounts have no password until onboarding is done."""
     return db.session.query(Users.password).filter_by(id=user_id).scalar() is None
+
+
+def terms_field():
+    return UserFields.query.filter_by(name=TERMS_FIELD_NAME).first()
+
+
+def ensure_terms(app):
+    """Seed the terms text and the consent field once; admins may edit both later."""
+    with app.app_context():
+        if not get_config("tos_text") and not get_config("tos_url"):
+            set_config("tos_text", TERMS_TEXT_PATH.read_text(encoding="utf-8"))
+        if terms_field() is None:
+            db.session.add(
+                UserFields(
+                    name=TERMS_FIELD_NAME,
+                    description=TERMS_FIELD_DESCRIPTION,
+                    field_type="boolean",
+                    required=True,
+                    public=False,
+                    editable=False,
+                )
+            )
+            db.session.commit()
+
+
+def terms_html():
+    """The terms rendered for the onboarding page, or None when hosted elsewhere."""
+    text = get_config("tos_text")
+    if get_config("tos_url") or not text:
+        return None
+    return build_markdown(text)
 
 
 def OnboardingForm(user_id, *args, **kwargs):
@@ -131,7 +172,10 @@ def validate_submission(user, name, password, include_fields):
     for field in UserFields.query.all() if include_fields else ():
         value = request.form.get(f"fields[{field.id}]", "").strip()
         if field.required is True and value == "":
-            errors.append(_l("Please provide all required fields"))
+            if field.name == TERMS_FIELD_NAME:
+                errors.append(_l("Please agree to the Terms of Service to continue"))
+            else:
+                errors.append(_l("Please provide all required fields"))
             break
         entries[field.id] = bool(value) if field.field_type == "boolean" else value
 
@@ -158,6 +202,8 @@ def complete_onboarding(user, name, password, entries):
 
 
 def load(app):
+    ensure_terms(app)
+
     blueprint = Blueprint(
         "onboarding", __name__, template_folder="templates", url_prefix="/onboarding"
     )
@@ -184,11 +230,14 @@ def load(app):
             )
             if not errors:
                 complete_onboarding(user, name, password, entries)
+                field = terms_field()
+                accepted = bool(field and entries.get(field.id))
                 log(
                     "registrations",
-                    format="[{date}] {ip} - {name} completed onboarding with {email}",
+                    format="[{date}] {ip} - {name} completed onboarding with {email}{terms}",
                     name=user.name,
                     email=user.email,
+                    terms=" and accepted the terms of service" if accepted else "",
                 )
                 db.session.close()
                 return redirect(url_for("challenges.listing"))
@@ -200,6 +249,8 @@ def load(app):
             name=name,
             email=user.email,
             pending=pending,
+            terms=terms_html() if pending else None,
+            terms_field_name=TERMS_FIELD_NAME,
         )
 
     app.register_blueprint(blueprint)

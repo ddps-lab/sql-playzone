@@ -54,7 +54,28 @@
           </div>
 
           {% if pending %}
-            {{ render_extra_fields(form.extra) }}
+            {{ render_extra_fields(form.extra | rejectattr("label.text", "equalto", terms_field_name) | list) }}
+
+            <div class="mb-3">
+              <b><label class="form-label">{% trans %}Terms of Service{% endtrans %}</label></b>
+              {% if terms %}
+                <div class="border rounded p-3 mb-2 small" style="max-height: 18rem; overflow-y: auto;">
+                  {{ terms }}
+                </div>
+              {% else %}
+                <p class="mb-2">
+                  <a href="{{ Configs.tos_link }}" target="_blank" rel="noopener">
+                    {% trans %}Read the Terms of Service{% endtrans %}
+                  </a>
+                </p>
+              {% endif %}
+              {% for field in form.extra if field.label.text == terms_field_name %}
+                <div class="form-check">
+                  {{ field(class="form-check-input") }}
+                  <label class="form-check-label" for="{{ field.id }}">{{ field.description }}</label>
+                </div>
+              {% endfor %}
+            </div>
           {% endif %}
 
           {{ form.nonce() }}

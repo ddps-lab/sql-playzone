@@ -17,6 +17,11 @@ from tests.helpers import (
 )
 
 STUDENT_ID_FIELD = "Student ID Number"  # created by the student_fields plugin
+TERMS_FIELD = "Terms of Service"  # created by the onboarding plugin
+
+
+def field_id(name):
+    return UserFields.query.filter_by(name=name).first().id
 
 
 def create_google_user(
@@ -29,9 +34,18 @@ def create_google_user(
         db.session.add(user)
         db.session.commit()
         if student_id is not None:
-            field = UserFields.query.filter_by(name=STUDENT_ID_FIELD).first()
+            # an account that already finished onboarding: student ID and consent
             db.session.add(
-                UserFieldEntries(field_id=field.id, user_id=user.id, value=student_id)
+                UserFieldEntries(
+                    field_id=field_id(STUDENT_ID_FIELD),
+                    user_id=user.id,
+                    value=student_id,
+                )
+            )
+            db.session.add(
+                UserFieldEntries(
+                    field_id=field_id(TERMS_FIELD), user_id=user.id, value=True
+                )
             )
             db.session.commit()
         return user.id
@@ -56,11 +70,11 @@ def start_session(app, user_id, via_google=True):
 def onboarding_data(client, **overrides):
     with client.session_transaction() as sess:
         nonce = sess["nonce"]
-    field_id = UserFields.query.filter_by(name=STUDENT_ID_FIELD).first().id
     data = {
         "name": "playzone-minsu",
         "password": "hunter22!",
-        f"fields[{field_id}]": "2025123456",
+        f"fields[{field_id(STUDENT_ID_FIELD)}]": "2025123456",
+        f"fields[{field_id(TERMS_FIELD)}]": "y",
         "nonce": nonce,
     }
     data.update(overrides)
@@ -86,6 +100,9 @@ def test_google_account_without_password_is_sent_to_onboarding():
         assert r.status_code == 200
         assert b"minsu@hanyang.ac.kr" in r.data
         assert STUDENT_ID_FIELD.encode() in r.data
+        # the terms are shown inline with a consent checkbox
+        assert "SQL PlayZone 이용 약관".encode() in r.data
+        assert b"I have read and agree to the Terms of Service above." in r.data
 
         # logging out stays possible, and anonymous requests are untouched
         assert client.get("/logout").status_code == 302
@@ -111,6 +128,10 @@ def test_onboarding_sets_name_password_and_student_id_then_form_login_works():
             user_id=user_id, field_id=field.id
         ).first()
         assert entry.value == "2025123456"
+        consent = UserFieldEntries.query.filter_by(
+            user_id=user_id, field_id=field_id(TERMS_FIELD)
+        ).first()
+        assert consent.value is True
 
         # the session survives the password change and the gate is lifted
         assert client.get("/challenges").status_code == 200
@@ -136,8 +157,6 @@ def test_onboarding_rejects_bad_names_passwords_and_missing_student_id():
         gen_user(app.db, name="taken", email="taken@examplectf.com")
         user_id = create_google_user(app)
         client = start_session(app, user_id)
-        field_id = UserFields.query.filter_by(name=STUDENT_ID_FIELD).first().id
-
         cases = [
             ({"name": "taken"}, b"That user name is already taken"),
             (
@@ -146,7 +165,14 @@ def test_onboarding_rejects_bad_names_passwords_and_missing_student_id():
             ),
             ({"name": ""}, b"Pick a longer user name"),
             ({"password": "short"}, b"Password must be at least 8 characters"),
-            ({f"fields[{field_id}]": ""}, b"Please provide all required fields"),
+            (
+                {f"fields[{field_id(STUDENT_ID_FIELD)}]": ""},
+                b"Please provide all required fields",
+            ),
+            (
+                {f"fields[{field_id(TERMS_FIELD)}]": ""},
+                b"Please agree to the Terms of Service to continue",
+            ),
         ]
         for overrides, message in cases:
             r = client.post("/onboarding/", data=onboarding_data(client, **overrides))
@@ -254,4 +280,20 @@ def test_google_login_is_offered_the_page_in_teams_mode_too():
         assert r.status_code == 302
         assert r.location.endswith("/onboarding/")
         assert client.get("/team").status_code == 200
+    destroy_ctfd(app)
+
+
+def test_terms_are_seeded_and_linked_from_the_footer():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        client = app.test_client()
+        r = client.get("/tos")
+        assert r.status_code == 200
+        assert "실행(Test/Execute)한 SQL".encode() in r.data
+        field = UserFields.query.filter_by(name=TERMS_FIELD).first()
+        assert (field.required, field.editable, field.public) == (True, False, False)
+
+        html = client.get("/login").data
+        assert b'href="/tos"' in html
+        assert b"<span data-copyright-year>2026</span>" in html
     destroy_ctfd(app)
