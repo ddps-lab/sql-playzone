@@ -1,4 +1,4 @@
-"""One active session per account, checked on every request, with a login trail.
+"""One active session per student account, checked on every request, with a login trail.
 
 Logging in stores the session's nonce as the account's active nonce in
 the cache, and the fork's ``get_current_user()`` signs out any other
@@ -140,6 +140,11 @@ def load(app):
         # requests have no browser session to compare and are left alone.
         # An invalid token never reaches here: the hook aborts with 401.
         if authenticated_by_token():
+            return
+        # Admins may be signed in from several places (two TAs on one
+        # account, or a token script beside the browser).
+        user = get_current_user_attrs()
+        if user is not None and user.type == "admin":
             return
         if session_is_current():
             return

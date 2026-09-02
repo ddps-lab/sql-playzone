@@ -30,9 +30,14 @@ def get_current_user():
                     error = redirect(url_for("auth.login", next=request.full_path))
                 abort(error)
 
-        # Check Redis for active nonce
+        # Check Redis for active nonce. One session per account is a rule for
+        # students; admins may be signed in from several places at once.
         active_nonce = cache.get(f"user_{user.id}_active_nonce")
-        if active_nonce and session.get("nonce") != active_nonce:
+        if (
+            active_nonce
+            and user.type != "admin"
+            and session.get("nonce") != active_nonce
+        ):
             logout_user()
             if request.is_json or request.content_type == "application/json":
                 abort(401)

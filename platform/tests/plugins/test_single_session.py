@@ -195,3 +195,27 @@ def test_a_refused_login_is_not_logged_as_a_login():
         assert r.status_code == 403
         assert new_login_lines(app, log_path, before) == []
     destroy_ctfd(app)
+
+
+def test_admins_may_be_signed_in_from_several_places():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        first = login_as_user(app, name="admin", password="password")
+        second = login_as_user(app, name="admin", password="password")
+        # neither session is signed out, on pages or on the API
+        assert first.get("/scoreboard").status_code == 200
+        assert first.get("/api/v1/users/me").status_code == 200
+        assert first.get("/admin/users").status_code == 200
+        assert second.get("/admin/users").status_code == 200
+        # a token request beside the browser does not sign the browser out
+        token = generate_user_token(Users.query.filter_by(name="admin").first())
+        headers = {
+            "Authorization": f"Token {token.value}",
+            "Content-Type": "application/json",
+        }
+        assert (
+            app.test_client().get("/api/v1/users/me", headers=headers).status_code
+            == 200
+        )
+        assert first.get("/challenges").status_code == 200
+    destroy_ctfd(app)
