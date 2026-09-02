@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
-from CTFd.models import db, Users, UserFieldEntries, UserFields, Configs
+from CTFd.models import db, Users, UserFieldEntries, UserFields, Configs, Files
 from CTFd.utils.decorators import admins_only
 from CTFd.plugins import register_admin_plugin_menu_bar
 from CTFd.utils import set_config, get_config
@@ -24,7 +24,6 @@ EXAM_BROWSER_EXEMPT_ENDPOINTS = {
     'auth.confirm',
     'views.themes',
     'views.themes_beta',
-    'views.files',
     'views.healthcheck',
     'static',
 }
@@ -41,6 +40,18 @@ def exam_browser_marker():
 
 def is_exam_browser(user_agent):
     return exam_browser_marker().lower() in (user_agent or '').lower()
+
+
+def exam_browser_exempt():
+    if request.endpoint in EXAM_BROWSER_EXEMPT_ENDPOINTS:
+        return True
+    if request.endpoint == 'views.files':
+        # Uploaded files serve both site assets (logo, banner, page images),
+        # which the login and error pages need, and challenge attachments,
+        # which must not be fetched from another browser.
+        upload = Files.query.filter_by(location=request.view_args.get('path')).first()
+        return upload is None or upload.type != 'challenge'
+    return False
 
 
 def load(app):
@@ -135,7 +146,7 @@ def load(app):
 
     @app.before_request
     def require_exam_browser():
-        if request.endpoint in EXAM_BROWSER_EXEMPT_ENDPOINTS or not exam_browser_required():
+        if not exam_browser_required() or exam_browser_exempt():
             return
         if is_admin() or is_exam_browser(request.user_agent.string):
             return
