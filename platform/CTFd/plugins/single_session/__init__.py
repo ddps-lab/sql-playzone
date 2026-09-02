@@ -28,6 +28,21 @@ SIGNED_OUT_MESSAGE = (
 )
 
 
+def authenticated_by_token():
+    """Mirror of the condition under which CTFd's tokens hook logs in.
+
+    Only such requests carry a per-request login with a fresh nonce; a
+    bare Authorization header on any other request proves nothing.
+    """
+    if not request.headers.get("Authorization"):
+        return False
+    return request.is_json or (
+        request.endpoint == "api.files_files_list"
+        and request.method == "POST"
+        and request.mimetype == "multipart/form-data"
+    )
+
+
 def is_api_request():
     # The API blueprint, not the URL prefix: APPLICATION_ROOT may be set.
     return request.is_json or str(request.endpoint or "").startswith("api.")
@@ -45,7 +60,8 @@ def load(app):
             return
         # An API token logs in per request (CTFd's tokens hook), so token
         # requests have no browser session to compare and are left alone.
-        if request.headers.get("Authorization"):
+        # An invalid token never reaches here: the hook aborts with 401.
+        if authenticated_by_token():
             return
         if session_is_current():
             return

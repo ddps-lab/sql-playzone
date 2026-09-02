@@ -68,3 +68,15 @@ def test_api_token_requests_are_not_subject_to_the_browser_session_check():
         for _ in range(3):
             assert client.get("/api/v1/users/me", headers=headers).status_code == 200
     destroy_ctfd(app)
+
+
+def test_a_bare_authorization_header_does_not_bypass_the_check():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        onboarded_student(app)
+        first = login_as_user(app, name="student", password="password")
+        login_as_user(app, name="student", password="password")
+        r = first.get("/scoreboard", headers={"Authorization": "Token forged"})
+        assert r.status_code == 302
+        assert "/login" in r.location
+    destroy_ctfd(app)
