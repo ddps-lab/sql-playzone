@@ -54,7 +54,7 @@ def is_exam_browser(user_agent):
     return exam_browser_marker().lower() in (user_agent or '').lower()
 
 
-# The login view's own limit (auth.login: 30 POSTs per 5 seconds per address).
+# The login view's own limit (auth.login: 120 POSTs per 5 seconds per address).
 # Refused logins share its cache key so they count against the same limit.
 LOGIN_LIMIT = 120
 LOGIN_INTERVAL = 5
