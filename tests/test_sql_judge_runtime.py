@@ -34,6 +34,8 @@ class SQLJudgeRuntimeTests(unittest.TestCase):
             self.assertIn(".env.judge", mysql)
             self.assertIn("judge-db", mysql)
             self.assertIn("--disable-log-bin", mysql)
+            self.assertIn("--event-scheduler=DISABLED", mysql)
+            self.assertIn("--collation-server=utf8mb4_0900_ai_ci", mysql)
             self.assertIn("--innodb-flush-log-at-trx-commit=2", mysql)
             self.assertIn("--max-connections=64", mysql)
             self.assertIn("--performance-schema=OFF", mysql)
@@ -52,6 +54,15 @@ class SQLJudgeRuntimeTests(unittest.TestCase):
             self.assertIn("internal", judge)
             self.assertIn("judge-db", judge)
 
+    def test_ctfd_waits_for_a_healthy_judge(self):
+        for path in (LOCAL_COMPOSE, PRODUCTION_COMPOSE):
+            compose = path.read_text()
+            ctfd = service_block(compose, "ctfd")
+            judge = service_block(compose, "sql-judge")
+            self.assertRegex(ctfd, r"sql-judge:\n\s+condition: service_healthy")
+            self.assertIn("healthcheck:", judge)
+            self.assertIn("http://127.0.0.1:8080/health", judge)
+
     def test_boot_generates_a_stable_instance_local_mysql_password(self):
         user_data = USER_DATA.read_text()
         self.assertIn('judge_env_path = Path(".env.judge")', user_data)
@@ -65,6 +76,8 @@ class SQLJudgeRuntimeTests(unittest.TestCase):
         self.assertIn("CREATE USER ", source)
         self.assertIn("DROP USER IF EXISTS ", source)
         self.assertIn("KILL CONNECTION", source)
+        self.assertIn("GRANT SELECT, SHOW VIEW ON ", source)
+        self.assertIn('"MAX_EXECUTION_TIME",', source)
         self.assertNotIn("ctfd\\_tmp\\_%", source)
         self.assertNotIn("go-mysql-server", source)
         self.assertIn("MultiStatements = false", source)

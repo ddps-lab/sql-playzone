@@ -37,7 +37,7 @@ Before starting the local Compose stack, create `platform/.env.judge` with a loc
 MYSQL_ROOT_PASSWORD=<random local password>
 ```
 
-The judge MySQL service has no host port. CTFd reaches the Go server through the internal Compose network, while only the Go server can reach the judge database.
+The judge MySQL service has no host port. CTFd reaches the Go server through the internal Compose network, while only the Go server can reach the judge database. CTFd waits for the judge `/health` check before it starts, so a freshly booted instance never accepts submissions it cannot grade.
 
 ### Manual Server Start
 
@@ -116,9 +116,12 @@ Participants will:
 ## Security
 
 - Solution and submission queries receive separate temporary databases and separate restricted MySQL accounts
+- Each execution uses two accounts: an init account with full privileges on its temporary database runs the challenge init SQL, and a `SELECT`-only account runs the graded statement, so a submission cannot run DML or DDL, or create events, triggers, or routines
+- The MySQL event scheduler is disabled and the `MAX_EXECUTION_TIME` optimizer hint is rejected, so a submission cannot outlive its per-statement time limit
 - Student SQL never runs through the MySQL root control connection
 - MySQL is isolated on a Docker network that CTFd does not join and does not expose a host port
-- Temporary accounts and databases are deleted after every execution; startup cleanup and a five-minute live-set-aware sweep remove leftovers from interrupted cleanup
+- Temporary accounts and databases are deleted after every execution; startup cleanup and a five-minute live-set-aware sweep remove leftovers from interrupted cleanup, including sessions whose account was already dropped
+- The server collation is `utf8mb4_0900_ai_ci`, the MySQL 8 default, so ordering and comparison match a local MySQL 8 installation
 - No persistent data or access to the main CTFd database
 - A judge request has an 8-second default budget within CTFd's 10-second client timeout
 - Query, request size, result size, row count, and concurrency limits are configurable through `SQL_JUDGE_*` environment variables

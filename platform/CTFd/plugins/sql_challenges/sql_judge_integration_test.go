@@ -118,34 +118,76 @@ func TestIntegrationResultFormattingAndOrder(t *testing.T) {
 
 func TestIntegrationTemporaryUserCannotCrossDatabaseBoundary(t *testing.T) {
 	server := integrationServer(t)
-	databaseA, _ := randomName(temporaryDatabasePrefix, 16)
-	userA, _ := randomName(temporaryUserPrefix, 8)
-	passwordA, _ := randomHex(32)
-	databaseB, _ := randomName(temporaryDatabasePrefix, 16)
-	userB, _ := randomName(temporaryUserPrefix, 8)
-	passwordB, _ := randomHex(32)
+	resourcesA, err := newExecutionResources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resourcesB, err := newExecutionResources()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := server.createExecutionResources(ctx, databaseA, userA, passwordA); err != nil {
+	if err := server.createExecutionResources(ctx, resourcesA); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { server.cleanupExecution(databaseA, userA) })
-	if err := server.createExecutionResources(ctx, databaseB, userB, passwordB); err != nil {
+	t.Cleanup(func() { server.cleanupExecution(resourcesA) })
+	if err := server.createExecutionResources(ctx, resourcesB); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { server.cleanupExecution(databaseB, userB) })
+	t.Cleanup(func() { server.cleanupExecution(resourcesB) })
 
-	db := openIntegrationUser(t, server.config, userA, passwordA, databaseA)
+	db := openIntegrationUser(t, server.config, resourcesA.initUser, resourcesA.initPassword, resourcesA.database)
 	defer db.Close()
 	if _, err := db.ExecContext(ctx, "CREATE TABLE own_table (id INT)"); err != nil {
 		t.Fatalf("own database access failed: %v", err)
 	}
-	if _, err := db.ExecContext(ctx, "CREATE TABLE "+quoteIdentifier(databaseB)+".forbidden (id INT)"); err == nil {
+	if _, err := db.ExecContext(ctx, "CREATE TABLE "+quoteIdentifier(resourcesB.database)+".forbidden (id INT)"); err == nil {
 		t.Fatal("temporary user accessed another execution database")
 	}
 	if _, err := db.QueryContext(ctx, "SELECT User FROM mysql.user"); err == nil {
 		t.Fatal("temporary user accessed mysql.user")
+	}
+}
+
+func TestIntegrationGradedStatementIsReadOnly(t *testing.T) {
+	server := integrationServer(t)
+	init := []string{"CREATE TABLE t (id INT PRIMARY KEY); INSERT INTO t VALUES (2), (1); CREATE VIEW v AS SELECT id FROM t;"}
+	for _, statement := range []string{
+		"INSERT INTO t VALUES (3)",
+		"UPDATE t SET id = id + 10",
+		"DELETE FROM t",
+		"CREATE TABLE copy_table AS SELECT id FROM t",
+		"DROP TABLE t",
+		"CREATE EVENT ev ON SCHEDULE AT CURRENT_TIMESTAMP DO DO 1",
+		"CREATE TRIGGER tr BEFORE INSERT ON t FOR EACH ROW SET NEW.id = 0",
+	} {
+		if _, err := server.executeQuery(context.Background(), init, statement, nil); err == nil {
+			t.Fatalf("%q unexpectedly succeeded under the graded account", statement)
+		}
+	}
+	result, err := server.executeQuery(context.Background(), init, "SELECT id FROM v ORDER BY id", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rowsEqual(result.Rows, [][]string{{"1"}, {"2"}}) {
+		t.Fatalf("rows = %#v", result.Rows)
+	}
+	assertNoTemporaryResources(t, server)
+}
+
+func TestIntegrationServerHardeningSettings(t *testing.T) {
+	server := integrationServer(t)
+	var eventScheduler, collation string
+	if err := server.controlDB.QueryRow("SELECT @@event_scheduler, @@collation_server").Scan(&eventScheduler, &collation); err != nil {
+		t.Fatal(err)
+	}
+	if eventScheduler != "DISABLED" {
+		t.Fatalf("event_scheduler = %q, want DISABLED", eventScheduler)
+	}
+	if collation != temporaryCollation {
+		t.Fatalf("collation_server = %q, want %q", collation, temporaryCollation)
 	}
 }
 
@@ -182,12 +224,13 @@ func TestIntegrationQueryTimeoutAndCleanup(t *testing.T) {
 
 func TestIntegrationStartupSweeperRemovesOrphans(t *testing.T) {
 	server := integrationServer(t)
-	databaseName, _ := randomName(temporaryDatabasePrefix, 16)
-	userName, _ := randomName(temporaryUserPrefix, 8)
-	password, _ := randomHex(32)
+	resources, err := newExecutionResources()
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := server.createExecutionResources(ctx, databaseName, userName, password); err != nil {
+	if err := server.createExecutionResources(ctx, resources); err != nil {
 		t.Fatal(err)
 	}
 	if err := server.cleanupStaleResources(ctx); err != nil {
@@ -198,26 +241,62 @@ func TestIntegrationStartupSweeperRemovesOrphans(t *testing.T) {
 
 func TestIntegrationSweeperPreservesLiveExecution(t *testing.T) {
 	server := integrationServer(t)
-	databaseName, _ := randomName(temporaryDatabasePrefix, 16)
-	userName, _ := randomName(temporaryUserPrefix, 8)
-	password, _ := randomHex(32)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := server.createExecutionResources(ctx, databaseName, userName, password); err != nil {
+	resources, err := newExecutionResources()
+	if err != nil {
 		t.Fatal(err)
 	}
-	server.markExecutionLive(databaseName, userName)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.createExecutionResources(ctx, resources); err != nil {
+		t.Fatal(err)
+	}
+	server.markExecutionLive(resources)
 	if err := server.cleanupStaleResources(ctx); err != nil {
 		t.Fatal(err)
 	}
-	db := openIntegrationUser(t, server.config, userName, password, databaseName)
+	db := openIntegrationUser(t, server.config, resources.queryUser, resources.queryPassword, resources.database)
 	db.Close()
 
-	server.unmarkExecutionLive(databaseName, userName)
+	server.unmarkExecutionLive(resources)
 	if err := server.cleanupStaleResources(ctx); err != nil {
 		t.Fatal(err)
 	}
 	assertNoTemporaryResources(t, server)
+}
+
+func TestIntegrationSweeperStopsSessionsOfDroppedAccounts(t *testing.T) {
+	server := integrationServer(t)
+	resources, err := newExecutionResources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.createExecutionResources(ctx, resources); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { server.cleanupExecution(resources) })
+
+	db := openIntegrationUser(t, server.config, resources.queryUser, resources.queryPassword, resources.database)
+	defer db.Close()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	// An interrupted cleanup can drop the account while its session keeps running.
+	if _, err := server.controlDB.ExecContext(ctx, "DROP USER IF EXISTS "+quoteAccount(resources.queryUser)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, "SELECT 1"); err != nil {
+		t.Fatalf("session should survive DROP USER: %v", err)
+	}
+	if err := server.cleanupStaleResources(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, "SELECT 1"); err == nil {
+		t.Fatal("sweeper left a session of a dropped account running")
+	}
 }
 
 func openIntegrationUser(t *testing.T, cfg Config, user, password, database string) *sql.DB {

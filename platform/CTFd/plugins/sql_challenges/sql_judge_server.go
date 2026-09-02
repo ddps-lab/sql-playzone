@@ -26,6 +26,7 @@ import (
 const (
 	temporaryDatabasePrefix = "ctfd_tmp_"
 	temporaryUserPrefix     = "ct_"
+	temporaryCollation      = "utf8mb4_0900_ai_ci" // MySQL 8 default, so results match a local MySQL 8 install
 )
 
 var (
@@ -84,6 +85,42 @@ type Server struct {
 	live      map[string]struct{}
 }
 
+// executionResources names the disposable MySQL objects of one execution. The
+// init account owns the temporary database so challenge DDL and data loading
+// work. The graded statement runs under a separate read-only account, so a
+// single submission cannot create events, routines, triggers, or tables, and
+// cannot run DML that max_execution_time would not bound.
+type executionResources struct {
+	database      string
+	initUser      string
+	initPassword  string
+	queryUser     string
+	queryPassword string
+}
+
+func (r executionResources) users() []string { return []string{r.initUser, r.queryUser} }
+
+func newExecutionResources() (executionResources, error) {
+	var r executionResources
+	var err error
+	if r.database, err = randomName(temporaryDatabasePrefix, 16); err != nil {
+		return r, fmt.Errorf("generate temporary database name: %w", err)
+	}
+	if r.initUser, err = randomName(temporaryUserPrefix, 8); err != nil {
+		return r, fmt.Errorf("generate temporary user name: %w", err)
+	}
+	if r.initPassword, err = randomHex(32); err != nil {
+		return r, fmt.Errorf("generate temporary user password: %w", err)
+	}
+	if r.queryUser, err = randomName(temporaryUserPrefix, 8); err != nil {
+		return r, fmt.Errorf("generate temporary user name: %w", err)
+	}
+	if r.queryPassword, err = randomHex(32); err != nil {
+		return r, fmt.Errorf("generate temporary user password: %w", err)
+	}
+	return r, nil
+}
+
 // MySQL privileges are the primary isolation boundary. This list preserves
 // the existing defense-in-depth behavior and its compatibility characteristics.
 var dangerousFunctions = []string{
@@ -96,6 +133,8 @@ var dangerousFunctions = []string{
 	"INFORMATION_SCHEMA.PROCESSLIST", "PERFORMANCE_SCHEMA", "MYSQL.USER", "PG_SHADOW", "PG_AUTHID",
 	"UTL_HTTP", "UTL_TCP", "OPENROWSET", "OPENDATASOURCE", "OPENQUERY",
 	"GRANT", "REVOKE", "CREATE USER", "DROP USER", "ALTER USER", "SET ROLE", "SET SESSION AUTHORIZATION",
+	// The optimizer hint would override the SET SESSION max_execution_time applied to every graded statement.
+	"MAX_EXECUTION_TIME",
 }
 
 func defaultConfig() Config {
@@ -309,14 +348,44 @@ func (s *Server) cleanupStaleResources(parent context.Context) error {
 	}
 	userRows.Close()
 
+	// Sessions are matched by account name pattern rather than by mysql.user so
+	// that a thread whose account was already dropped is still stopped.
+	type staleSession struct {
+		id   uint64
+		user string
+	}
+	sessionRows, err := s.controlDB.QueryContext(ctx, "SELECT ID, USER FROM INFORMATION_SCHEMA.PROCESSLIST WHERE USER LIKE 'ct\\_%'")
+	if err != nil {
+		return fmt.Errorf("list stale sessions: %w", err)
+	}
+	var sessions []staleSession
+	for sessionRows.Next() {
+		var session staleSession
+		if err := sessionRows.Scan(&session.id, &session.user); err != nil {
+			sessionRows.Close()
+			return fmt.Errorf("scan stale session: %w", err)
+		}
+		if temporaryUserPattern.MatchString(session.user) {
+			sessions = append(sessions, session)
+		}
+	}
+	if err := sessionRows.Err(); err != nil {
+		sessionRows.Close()
+		return fmt.Errorf("iterate stale sessions: %w", err)
+	}
+	sessionRows.Close()
+
 	var cleanupErrors []error
-	for _, name := range users {
-		if s.resourceIsLive(name) {
+	stoppedSessions := 0
+	for _, session := range sessions {
+		if s.resourceIsLive(session.user) {
 			continue
 		}
-		if err := s.killUserSessions(ctx, name); err != nil {
-			cleanupErrors = append(cleanupErrors, fmt.Errorf("stop stale user %s sessions: %w", name, err))
+		if _, err := s.controlDB.ExecContext(ctx, fmt.Sprintf("KILL CONNECTION %d", session.id)); err != nil && !strings.Contains(err.Error(), "Unknown thread id") {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("stop stale session %d of %s: %w", session.id, session.user, err))
+			continue
 		}
+		stoppedSessions++
 	}
 	droppedDatabases := 0
 	for _, name := range databases {
@@ -340,8 +409,8 @@ func (s *Server) cleanupStaleResources(parent context.Context) error {
 		}
 		droppedUsers++
 	}
-	if droppedDatabases > 0 || droppedUsers > 0 {
-		log.Printf("Removed %d stale judge databases and %d stale judge users", droppedDatabases, droppedUsers)
+	if droppedDatabases > 0 || droppedUsers > 0 || stoppedSessions > 0 {
+		log.Printf("Removed %d stale judge databases and %d stale judge users, stopped %d stale sessions", droppedDatabases, droppedUsers, stoppedSessions)
 	}
 	return errors.Join(cleanupErrors...)
 }
@@ -406,45 +475,37 @@ func (s *Server) executeQuery(parent context.Context, initQueries []string, quer
 	if err := validateSQLQuery(query, req); err != nil {
 		return nil, err
 	}
-	databaseName, err := randomName(temporaryDatabasePrefix, 16)
+	resources, err := newExecutionResources()
 	if err != nil {
-		return nil, fmt.Errorf("generate temporary database name: %w", err)
-	}
-	userName, err := randomName(temporaryUserPrefix, 8)
-	if err != nil {
-		return nil, fmt.Errorf("generate temporary user name: %w", err)
-	}
-	password, err := randomHex(32)
-	if err != nil {
-		return nil, fmt.Errorf("generate temporary user password: %w", err)
+		return nil, err
 	}
 
 	executionCtx, cancel := context.WithTimeout(parent, s.config.QueryTimeout)
 	defer cancel()
-	s.markExecutionLive(databaseName, userName)
-	resourcesReady := false
+	s.markExecutionLive(resources)
+	// Cleanup is idempotent, so registering it before creation also covers a
+	// CREATE that the server applied after the client side was cancelled.
 	defer func() {
-		if !resourcesReady {
-			s.cleanupExecution(databaseName, userName)
-			s.unmarkExecutionLive(databaseName, userName)
-		}
+		s.cleanupExecution(resources)
+		s.unmarkExecutionLive(resources)
 	}()
-	if err := s.createExecutionResources(executionCtx, databaseName, userName, password); err != nil {
+	if err := s.createExecutionResources(executionCtx, resources); err != nil {
 		return nil, err
 	}
-	resourcesReady = true
-	defer func() {
-		s.cleanupExecution(databaseName, userName)
-		s.unmarkExecutionLive(databaseName, userName)
-	}()
+	if err := s.runInitStatements(executionCtx, resources, initQueries, req); err != nil {
+		return nil, err
+	}
+	return s.runGradedQuery(executionCtx, resources, query)
+}
 
+func (s *Server) openRunner(user, password, database string) (*sql.DB, error) {
 	runnerConfig := mysql.NewConfig()
-	runnerConfig.User = userName
+	runnerConfig.User = user
 	runnerConfig.Passwd = password
 	runnerConfig.Net = "tcp"
 	runnerConfig.Addr = net.JoinHostPort(s.config.MySQLHost, s.config.MySQLPort)
-	runnerConfig.DBName = databaseName
-	runnerConfig.Collation = "utf8mb4_unicode_ci"
+	runnerConfig.DBName = database
+	runnerConfig.Collation = temporaryCollation
 	runnerConfig.Timeout = s.config.QueryTimeout
 	runnerConfig.ReadTimeout = s.config.QueryTimeout
 	runnerConfig.WriteTimeout = s.config.QueryTimeout
@@ -457,13 +518,58 @@ func (s *Server) executeQuery(parent context.Context, initQueries []string, quer
 	}
 	runnerDB.SetMaxOpenConns(1)
 	runnerDB.SetMaxIdleConns(1)
-	defer runnerDB.Close()
-	if err := runnerDB.PingContext(executionCtx); err != nil {
-		return nil, fmt.Errorf("connect isolated MySQL user: %w", err)
+	return runnerDB, nil
+}
+
+func (s *Server) runInitStatements(ctx context.Context, r executionResources, initQueries []string, req *QueryRequest) error {
+	var statements []string
+	for _, initQuery := range initQueries {
+		if strings.TrimSpace(initQuery) == "" {
+			continue
+		}
+		if err := validateSQLQuery(initQuery, req); err != nil {
+			if strings.Contains(err.Error(), "file") || strings.Contains(err.Error(), "system") {
+				return fmt.Errorf("security violation in init query: %w", err)
+			}
+		}
+		for _, statement := range strings.Split(initQuery, ";") {
+			if statement = strings.TrimSpace(statement); statement != "" {
+				statements = append(statements, statement)
+			}
+		}
+	}
+	if len(statements) == 0 {
+		return nil
 	}
 
+	initDB, err := s.openRunner(r.initUser, r.initPassword, r.database)
+	if err != nil {
+		return err
+	}
+	defer initDB.Close()
+	for _, statement := range statements {
+		if _, err := initDB.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("init query error: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query string) (*QueryResult, error) {
+	queryDB, err := s.openRunner(r.queryUser, r.queryPassword, r.database)
+	if err != nil {
+		return nil, err
+	}
+	defer queryDB.Close()
+	// Pin one connection so the session limit below applies to the graded statement.
+	conn, err := queryDB.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("connect isolated MySQL user: %w", err)
+	}
+	defer conn.Close()
+
 	maxExecutionMilliseconds := s.config.QueryTimeout.Milliseconds()
-	if deadline, ok := executionCtx.Deadline(); ok {
+	if deadline, ok := ctx.Deadline(); ok {
 		if remaining := time.Until(deadline).Milliseconds(); remaining < maxExecutionMilliseconds {
 			maxExecutionMilliseconds = remaining
 		}
@@ -471,31 +577,11 @@ func (s *Server) executeQuery(parent context.Context, initQueries []string, quer
 	if maxExecutionMilliseconds < 1 {
 		return nil, context.DeadlineExceeded
 	}
-	if _, err := runnerDB.ExecContext(executionCtx, fmt.Sprintf("SET SESSION max_execution_time = %d", maxExecutionMilliseconds)); err != nil {
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf("SET SESSION max_execution_time = %d", maxExecutionMilliseconds)); err != nil {
 		return nil, fmt.Errorf("set query execution limit: %w", err)
 	}
 
-	for _, initQuery := range initQueries {
-		if strings.TrimSpace(initQuery) == "" {
-			continue
-		}
-		if err := validateSQLQuery(initQuery, req); err != nil {
-			if strings.Contains(err.Error(), "file") || strings.Contains(err.Error(), "system") {
-				return nil, fmt.Errorf("security violation in init query: %w", err)
-			}
-		}
-		for _, statement := range strings.Split(initQuery, ";") {
-			statement = strings.TrimSpace(statement)
-			if statement == "" {
-				continue
-			}
-			if _, err := runnerDB.ExecContext(executionCtx, statement); err != nil {
-				return nil, fmt.Errorf("init query error: %w", err)
-			}
-		}
-	}
-
-	rows, err := runnerDB.QueryContext(executionCtx, query)
+	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("query error: %w", err)
 	}
@@ -540,34 +626,51 @@ func (s *Server) executeQuery(parent context.Context, initQueries []string, quer
 	return result, nil
 }
 
-func (s *Server) createExecutionResources(ctx context.Context, databaseName, userName, password string) error {
-	if !temporaryDatabasePattern.MatchString(databaseName) || !temporaryUserPattern.MatchString(userName) || !temporaryPasswordPattern.MatchString(password) {
+func (s *Server) createExecutionResources(ctx context.Context, r executionResources) error {
+	if !temporaryDatabasePattern.MatchString(r.database) || r.initUser == r.queryUser {
 		return errors.New("invalid temporary resource")
 	}
-	if _, err := s.controlDB.ExecContext(ctx, "CREATE DATABASE "+quoteIdentifier(databaseName)+" CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"); err != nil {
-		return fmt.Errorf("create temporary database: %w", err)
+	for _, user := range r.users() {
+		if !temporaryUserPattern.MatchString(user) {
+			return errors.New("invalid temporary resource")
+		}
 	}
-	if _, err := s.controlDB.ExecContext(ctx, "CREATE USER "+quoteAccount(userName)+" IDENTIFIED BY '"+password+"' WITH MAX_USER_CONNECTIONS 2"); err != nil {
-		return fmt.Errorf("create temporary user: %w", err)
+	for _, password := range []string{r.initPassword, r.queryPassword} {
+		if !temporaryPasswordPattern.MatchString(password) {
+			return errors.New("invalid temporary resource")
+		}
 	}
-	if _, err := s.controlDB.ExecContext(ctx, "GRANT ALL PRIVILEGES ON "+quoteIdentifier(databaseName)+".* TO "+quoteAccount(userName)); err != nil {
-		return fmt.Errorf("grant temporary database privileges: %w", err)
+	steps := []struct{ label, statement string }{
+		{"create temporary database", "CREATE DATABASE " + quoteIdentifier(r.database) + " CHARACTER SET utf8mb4 COLLATE " + temporaryCollation},
+		{"create init user", "CREATE USER " + quoteAccount(r.initUser) + " IDENTIFIED BY '" + r.initPassword + "' WITH MAX_USER_CONNECTIONS 2"},
+		{"grant init privileges", "GRANT ALL PRIVILEGES ON " + quoteIdentifier(r.database) + ".* TO " + quoteAccount(r.initUser)},
+		{"create query user", "CREATE USER " + quoteAccount(r.queryUser) + " IDENTIFIED BY '" + r.queryPassword + "' WITH MAX_USER_CONNECTIONS 2"},
+		{"grant read-only query privileges", "GRANT SELECT, SHOW VIEW ON " + quoteIdentifier(r.database) + ".* TO " + quoteAccount(r.queryUser)},
+	}
+	for _, step := range steps {
+		if _, err := s.controlDB.ExecContext(ctx, step.statement); err != nil {
+			return fmt.Errorf("%s: %w", step.label, err)
+		}
 	}
 	return nil
 }
 
-func (s *Server) markExecutionLive(databaseName, userName string) {
+func (s *Server) markExecutionLive(r executionResources) {
 	s.liveMu.Lock()
 	defer s.liveMu.Unlock()
-	s.live[databaseName] = struct{}{}
-	s.live[userName] = struct{}{}
+	s.live[r.database] = struct{}{}
+	for _, user := range r.users() {
+		s.live[user] = struct{}{}
+	}
 }
 
-func (s *Server) unmarkExecutionLive(databaseName, userName string) {
+func (s *Server) unmarkExecutionLive(r executionResources) {
 	s.liveMu.Lock()
 	defer s.liveMu.Unlock()
-	delete(s.live, databaseName)
-	delete(s.live, userName)
+	delete(s.live, r.database)
+	for _, user := range r.users() {
+		delete(s.live, user)
+	}
 }
 
 func (s *Server) resourceIsLive(name string) bool {
@@ -595,20 +698,25 @@ func (s *Server) runResourceSweeper(ctx context.Context) {
 	}
 }
 
-func (s *Server) cleanupExecution(databaseName, userName string) {
+func (s *Server) cleanupExecution(r executionResources) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.config.CleanupTimeout)
 	defer cancel()
-	if err := s.killUserSessions(ctx, userName); err != nil {
-		log.Printf("Failed to stop temporary user %s sessions: %v", userName, err)
-	}
-	if temporaryDatabasePattern.MatchString(databaseName) {
-		if _, err := s.controlDB.ExecContext(ctx, "DROP DATABASE IF EXISTS "+quoteIdentifier(databaseName)); err != nil {
-			log.Printf("Failed to drop temporary database %s: %v", databaseName, err)
+	for _, user := range r.users() {
+		if err := s.killUserSessions(ctx, user); err != nil {
+			log.Printf("Failed to stop temporary user %s sessions: %v", user, err)
 		}
 	}
-	if temporaryUserPattern.MatchString(userName) {
-		if _, err := s.controlDB.ExecContext(ctx, "DROP USER IF EXISTS "+quoteAccount(userName)); err != nil {
-			log.Printf("Failed to drop temporary user %s: %v", userName, err)
+	if temporaryDatabasePattern.MatchString(r.database) {
+		if _, err := s.controlDB.ExecContext(ctx, "DROP DATABASE IF EXISTS "+quoteIdentifier(r.database)); err != nil {
+			log.Printf("Failed to drop temporary database %s: %v", r.database, err)
+		}
+	}
+	for _, user := range r.users() {
+		if !temporaryUserPattern.MatchString(user) {
+			continue
+		}
+		if _, err := s.controlDB.ExecContext(ctx, "DROP USER IF EXISTS "+quoteAccount(user)); err != nil {
+			log.Printf("Failed to drop temporary user %s: %v", user, err)
 		}
 	}
 }
