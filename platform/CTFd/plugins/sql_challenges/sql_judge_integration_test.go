@@ -177,6 +177,50 @@ func TestIntegrationGradedStatementIsReadOnly(t *testing.T) {
 	assertNoTemporaryResources(t, server)
 }
 
+func TestIntegrationInitSchemaTemplateAndSessionMode(t *testing.T) {
+	server := integrationServer(t)
+	init := []string{`-- KBO Database Schema
+SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;
+SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='TRADITIONAL';
+/* schema management from a local export */
+DROP SCHEMA IF EXISTS kbo;
+CREATE SCHEMA kbo;
+USE kbo;
+CREATE TABLE kbo.PLAYER (id INT PRIMARY KEY, team CHAR(3), height INT);
+INSERT INTO PLAYER VALUES (1, 'K01', 180), (2, 'K01', 190), (3, 'K02', 175);`}
+	// TRADITIONAL does not include ONLY_FULL_GROUP_BY, so this statement only
+	// succeeds when the init session's sql_mode reaches the graded statement.
+	result, err := server.executeQuery(context.Background(), init, "SELECT team, id, MAX(height) FROM kbo.PLAYER GROUP BY team ORDER BY team", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Rows) != 2 || result.Rows[0][0] != "K01" || result.Rows[0][2] != "190" {
+		t.Fatalf("rows = %#v", result.Rows)
+	}
+	var count int
+	if err := server.controlDB.QueryRow("SELECT COUNT(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = 'kbo'").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("init script created a real 'kbo' schema instead of using the temporary database")
+	}
+	carried, err := server.executeQuery(context.Background(), init, "SELECT @@SESSION.sql_mode", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(carried.Rows[0][0], "ONLY_FULL_GROUP_BY") || !strings.Contains(carried.Rows[0][0], "STRICT_ALL_TABLES") {
+		t.Fatalf("graded session sql_mode = %q, want the init script's TRADITIONAL mode", carried.Rows[0][0])
+	}
+	plain, err := server.executeQuery(context.Background(), nil, "SELECT @@SESSION.sql_mode", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(plain.Rows[0][0], "ONLY_FULL_GROUP_BY") {
+		t.Fatalf("without an init script the server default sql_mode must apply, got %q", plain.Rows[0][0])
+	}
+	assertNoTemporaryResources(t, server)
+}
+
 func TestIntegrationServerHardeningSettings(t *testing.T) {
 	server := integrationServer(t)
 	var eventScheduler, collation string
@@ -188,6 +232,13 @@ func TestIntegrationServerHardeningSettings(t *testing.T) {
 	}
 	if collation != temporaryCollation {
 		t.Fatalf("collation_server = %q, want %q", collation, temporaryCollation)
+	}
+	var lowerCaseTableNames int
+	if err := server.controlDB.QueryRow("SELECT @@lower_case_table_names").Scan(&lowerCaseTableNames); err != nil {
+		t.Fatal(err)
+	}
+	if lowerCaseTableNames != 1 {
+		t.Fatalf("lower_case_table_names = %d, want 1 (case-insensitive table names like Windows and macOS)", lowerCaseTableNames)
 	}
 }
 

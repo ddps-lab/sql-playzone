@@ -48,6 +48,7 @@ services:
       - --collation-server=utf8mb4_0900_ai_ci
       - --disable-log-bin
       - --event-scheduler=DISABLED
+      - --lower-case-table-names=1
       - --innodb-buffer-pool-size=128M
       - --innodb-flush-log-at-trx-commit=2
       - --max-allowed-packet=16M

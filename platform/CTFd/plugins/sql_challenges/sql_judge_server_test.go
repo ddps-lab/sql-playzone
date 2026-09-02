@@ -163,3 +163,49 @@ func TestTemporaryNamesFitMySQLLimits(t *testing.T) {
 		t.Fatal("temporary name quoting mixed SQL literal and identifier delimiters")
 	}
 }
+
+func TestInitSchemaStatementsMapOntoTemporaryDatabase(t *testing.T) {
+	for statement, want := range map[string]string{
+		"CREATE SCHEMA kbo": "kbo",
+		"create database if not exists `world` default character set utf8": "world",
+		"DROP SCHEMA IF EXISTS kbo":                                        "kbo",
+		"USE kbo":                                                          "kbo",
+		"/* @@SESSION note */\nDROP SCHEMA IF EXISTS company":              "company",
+		"-- KBO Database Schema\n-- Version 1.0\nUSE airport":              "airport",
+		"-------------\n-- Schema\n-------------\nUSE company":             "company",
+		"CREATE DATABASE /*!32312 IF NOT EXISTS*/ `world` /*!40100 DEFAULT CHARACTER SET utf8mb4 */": "world",
+		"--\n-- Current Database: `world`\n--\n/*!40000 DROP DATABASE IF EXISTS `world`*/":           "world",
+	} {
+		got, ok := schemaStatementName(statement)
+		if !ok || got != want {
+			t.Fatalf("schemaStatementName(%q) = %q, %v; want %q", statement, got, ok, want)
+		}
+	}
+	for _, statement := range []string{
+		"-- comment only",
+		"SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='TRADITIONAL'",
+		"CREATE TABLE kbo (id INT)",
+		"/*!40101 SET NAMES utf8 */",
+		"INSERT INTO t VALUES ('USE kbo')",
+	} {
+		if name, ok := schemaStatementName(statement); ok {
+			t.Fatalf("schemaStatementName(%q) unexpectedly matched %q", statement, name)
+		}
+	}
+	rewritten := rewriteSchemaAliases("SELECT * FROM kbo.PLAYER p JOIN `kbo`.`TEAM` t ON t.id = p.team_id WHERE akbo.x = 1", []string{"kbo"}, "ctfd_tmp_x")
+	if !strings.Contains(rewritten, "FROM `ctfd_tmp_x`.PLAYER") || !strings.Contains(rewritten, "JOIN `ctfd_tmp_x`.`TEAM`") || !strings.Contains(rewritten, "akbo.x") {
+		t.Fatalf("unexpected rewrite: %s", rewritten)
+	}
+	if got := rewriteSchemaAliases("SELECT 1", nil, "ctfd_tmp_x"); got != "SELECT 1" {
+		t.Fatalf("rewrite without aliases changed the statement: %s", got)
+	}
+	if got := stripLeadingComments("-----------\n-- Data\n-----------\nINSERT INTO t VALUES (1)"); got != "INSERT INTO t VALUES (1)" {
+		t.Fatalf("stripLeadingComments() = %q", got)
+	}
+	if got := stripLeadingComments("/*!40101 SET NAMES utf8 */"); !strings.HasPrefix(got, "/*!40101") {
+		t.Fatalf("version comment must be kept for execution, got %q", got)
+	}
+	if got := stripLeadingComments("-- only a comment"); got != "" {
+		t.Fatalf("comment-only chunk should be empty, got %q", got)
+	}
+}

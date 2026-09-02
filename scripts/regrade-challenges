@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
+import math
 import sys
 import time
 import urllib.error
@@ -129,8 +130,9 @@ def classify_error(message: str) -> str:
 
 
 def numeric_equal(left: str, right: str) -> bool:
+    """Equal as numbers, allowing for DECIMAL vs float text precision (72220.1111 vs 72220.11111111111)."""
     try:
-        return float(left) == float(right)
+        return math.isclose(float(left), float(right), rel_tol=1e-6, abs_tol=1e-9)
     except ValueError:
         return False
 
