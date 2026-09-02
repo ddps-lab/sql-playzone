@@ -234,6 +234,13 @@ def test_students_cannot_log_in_from_another_browser_during_the_exam():
         app.config["PRESET_ADMIN_EMAIL"] = "preset@examplectf.com"
         app.config["PRESET_ADMIN_PASSWORD"] = "preset-password"
         assert login(CHROME, "preset-admin", "preset-password") == (302, True)
+        # ... but only with the preset password, and never a student account
+        # that happens to hold the preset name
+        app.config["PRESET_ADMIN_NAME"] = "another-preset"
+        assert login(CHROME, "another-preset", "wrong") == (403, False)
+        app.config["PRESET_ADMIN_NAME"] = "student"
+        assert login(CHROME, "student", "preset-password") == (403, False)
+        app.config["PRESET_ADMIN_NAME"] = "preset-admin"
 
         # refused attempts count against the login rate limit
         from CTFd.cache import cache

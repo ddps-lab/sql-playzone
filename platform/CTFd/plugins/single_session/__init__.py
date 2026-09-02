@@ -34,6 +34,7 @@ EXEMPT_ENDPOINTS = {
     "static",
 }
 LOGIN_ENDPOINTS = {
+    "auth.register": "registration",
     "auth.login": "form",
     "auth.google_callback": "google",
     "auth.oauth_redirect": "mlc",

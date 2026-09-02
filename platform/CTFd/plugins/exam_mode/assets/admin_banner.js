@@ -26,5 +26,7 @@
   banner.className = "alert alert-warning text-center rounded-0 mb-0";
   banner.setAttribute("role", "alert");
   banner.textContent = `Exam rules are on: ${active.join(", ")}. Switch them off after the exam (Admin > Exam Mode).`;
-  document.body.insertBefore(banner, document.body.firstChild);
+  // <main> starts below the fixed navbar; the body itself is covered by it
+  const container = document.querySelector("main") || document.body;
+  container.insertBefore(banner, container.firstChild);
 })();

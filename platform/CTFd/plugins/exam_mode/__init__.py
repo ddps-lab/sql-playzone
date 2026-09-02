@@ -79,16 +79,23 @@ def non_admin_login_from_other_browser():
     if is_exam_browser(request.user_agent.string):
         return False
     name = (request.form.get('name') or '').strip()
-    # A configured preset admin exists in the database only after its first
-    # login (auth.login creates it), so it is recognised by name here.
-    preset = {get_app_config('PRESET_ADMIN_NAME'), get_app_config('PRESET_ADMIN_EMAIL')}
-    if name and name in preset:
-        return False
     if validators.validate_email(name) is True:
         user = Users.query.filter_by(email=name).first()
     else:
         user = Users.query.filter_by(name=name).first()
-    return user is None or user.type != 'admin'
+    if user is not None:
+        return user.type != 'admin'
+    # A configured preset admin exists in the database only after its first
+    # login (auth.login creates it), so until then it is recognised by the
+    # same credentials auth.login accepts.
+    preset_password = get_app_config('PRESET_ADMIN_PASSWORD')
+    preset_names = {get_app_config('PRESET_ADMIN_NAME'), get_app_config('PRESET_ADMIN_EMAIL')}
+    return not (
+        name
+        and preset_password
+        and name in preset_names
+        and request.form.get('password') == preset_password
+    )
 
 
 def refused_login_response():

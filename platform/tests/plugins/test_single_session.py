@@ -187,6 +187,52 @@ def test_every_login_is_logged_with_its_browser_and_the_previous_login():
     destroy_ctfd(app)
 
 
+def test_registration_is_logged_as_the_first_session():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
+        before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+
+        client = app.test_client()
+        client.environ_base["HTTP_USER_AGENT"] = CHROME
+        client.get("/register")
+        with client.session_transaction() as sess:
+            nonce = sess["nonce"]
+        data = {
+            "name": "newcomer",
+            "email": "newcomer@examplectf.com",
+            "password": "password",
+            "nonce": nonce,
+        }
+        for field in UserFields.query.all():
+            # the registration form requires the student fields
+            data[f"fields[{field.id}]"] = "2025000011" if "ID" in field.name else "true"
+        r = client.post("/register", data=data)
+        assert r.status_code == 302
+        with client.session_transaction() as sess:
+            assert "id" in sess
+        lines = new_login_lines(app, log_path, before)
+        assert len(lines) == 1
+        assert "newcomer session started via registration (" in lines[0]
+        assert "first session on record" in lines[0]
+
+        # the next login names the registration as the previous session
+        other = app.test_client()
+        other.environ_base["HTTP_USER_AGENT"] = FIREFOX
+        other.get("/login")
+        with other.session_transaction() as sess:
+            nonce = sess["nonce"]
+        r = other.post(
+            "/login",
+            data={"name": "newcomer", "password": "password", "nonce": nonce},
+        )
+        assert r.status_code == 302
+        lines = new_login_lines(app, log_path, before)
+        assert len(lines) == 2
+        assert "previous session 0 min ago from 127.0.0.1" in lines[1]
+    destroy_ctfd(app)
+
+
 def test_a_refused_login_is_not_logged_as_a_login():
     from CTFd.utils import set_config
 
