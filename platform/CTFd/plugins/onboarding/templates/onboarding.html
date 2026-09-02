@@ -64,7 +64,7 @@
                 {{ form.password_confirm.description }}
               </small>
               <ul class="list-unstyled small mt-2 mb-0" id="password-rules">
-                <li id="rule-length" class="text-muted">{% trans %}At least{% endtrans %} {{ password_min_length }} {% trans %}characters{% endtrans %}</li>
+                <li id="rule-length" class="text-muted">{{ password_min_length }}–{{ password_max_length }} {% trans %}characters{% endtrans %}</li>
                 <li id="rule-mix" class="text-muted">{% trans %}Contains both a letter and a digit{% endtrans %}</li>
                 <li id="rule-match" class="text-muted">{% trans %}Both password fields match{% endtrans %}</li>
               </ul>

@@ -475,7 +475,7 @@ def test_consent_field_and_terms_come_back_after_an_import():
         assert r.status_code == 200
         assert "<h1>SQL PlayZone 이용 약관".encode() in r.data
         assert UserFields.query.filter_by(name=TERMS_FIELD).count() == 1
-        assert b"At least 8 characters" in r.data
+        assert "8–128 characters".encode() in r.data
 
         # the gate is back for accounts that never accepted the terms
         gen_user(app.db, name="veteran", email="veteran@examplectf.com")
