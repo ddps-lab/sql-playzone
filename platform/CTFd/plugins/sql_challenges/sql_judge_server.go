@@ -33,7 +33,15 @@ var (
 	temporaryDatabasePattern = regexp.MustCompile(`^ctfd_tmp_[0-9a-f]{32}$`)
 	temporaryUserPattern     = regexp.MustCompile(`^ct_[0-9a-f]{16}$`)
 	temporaryPasswordPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	errResultLimit           = errors.New("query result exceeds configured limit")
+	// Challenge init scripts are usually exported from a local MySQL together
+	// with their own schema name. These statements are mapped onto the
+	// temporary database instead of being executed.
+	schemaStatementPattern = regexp.MustCompile("(?is)^(?:CREATE\\s+(?:DATABASE|SCHEMA)(?:\\s+IF\\s+NOT\\s+EXISTS)?|DROP\\s+(?:DATABASE|SCHEMA)(?:\\s+IF\\s+EXISTS)?|USE)\\s+`?([A-Za-z0-9_$]+)`?(?:\\s|$)")
+	sqlModePattern         = regexp.MustCompile(`^[A-Za-z0-9_,]*$`)
+	// mysqldump wraps schema statements in version comments that MySQL executes,
+	// for example CREATE DATABASE /*!32312 IF NOT EXISTS*/ `world`.
+	versionedCommentPattern = regexp.MustCompile(`/\*!\d*\s*|\*/`)
+	errResultLimit          = errors.New("query result exceeds configured limit")
 )
 
 type QueryRequest struct {
@@ -492,10 +500,11 @@ func (s *Server) executeQuery(parent context.Context, initQueries []string, quer
 	if err := s.createExecutionResources(executionCtx, resources); err != nil {
 		return nil, err
 	}
-	if err := s.runInitStatements(executionCtx, resources, initQueries, req); err != nil {
+	session, err := s.runInitStatements(executionCtx, resources, initQueries, req)
+	if err != nil {
 		return nil, err
 	}
-	return s.runGradedQuery(executionCtx, resources, query)
+	return s.runGradedQuery(executionCtx, resources, query, session)
 }
 
 func (s *Server) openRunner(user, password, database string) (*sql.DB, error) {
@@ -521,7 +530,17 @@ func (s *Server) openRunner(user, password, database string) (*sql.DB, error) {
 	return runnerDB, nil
 }
 
-func (s *Server) runInitStatements(ctx context.Context, r executionResources, initQueries []string, req *QueryRequest) error {
+// initSession carries the parts of the init session that the graded statement
+// must observe as if both ran in one session, which is how the previous
+// in-process engine and a local MySQL client behave.
+type initSession struct {
+	sqlMode       string
+	sqlModeSet    bool
+	schemaAliases []string
+}
+
+func (s *Server) runInitStatements(ctx context.Context, r executionResources, initQueries []string, req *QueryRequest) (initSession, error) {
+	var session initSession
 	var statements []string
 	for _, initQuery := range initQueries {
 		if strings.TrimSpace(initQuery) == "" {
@@ -529,7 +548,7 @@ func (s *Server) runInitStatements(ctx context.Context, r executionResources, in
 		}
 		if err := validateSQLQuery(initQuery, req); err != nil {
 			if strings.Contains(err.Error(), "file") || strings.Contains(err.Error(), "system") {
-				return fmt.Errorf("security violation in init query: %w", err)
+				return session, fmt.Errorf("security violation in init query: %w", err)
 			}
 		}
 		for _, statement := range strings.Split(initQuery, ";") {
@@ -539,23 +558,101 @@ func (s *Server) runInitStatements(ctx context.Context, r executionResources, in
 		}
 	}
 	if len(statements) == 0 {
-		return nil
+		return session, nil
+	}
+	var executable []string
+	for _, statement := range statements {
+		// Leading comment lines are dropped before execution: MySQL treats a
+		// separator such as "-----" as a syntax error, and a chunk that is only
+		// comments would be an empty query.
+		statement = stripLeadingComments(statement)
+		if statement == "" {
+			continue
+		}
+		if name, ok := schemaStatementName(statement); ok {
+			session.schemaAliases = appendUnique(session.schemaAliases, name)
+			continue
+		}
+		executable = append(executable, statement)
 	}
 
 	initDB, err := s.openRunner(r.initUser, r.initPassword, r.database)
 	if err != nil {
-		return err
+		return session, err
 	}
 	defer initDB.Close()
-	for _, statement := range statements {
-		if _, err := initDB.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("init query error: %w", err)
+	// Pin one connection so SET statements in the script stay in effect.
+	conn, err := initDB.Conn(ctx)
+	if err != nil {
+		return session, fmt.Errorf("connect init MySQL user: %w", err)
+	}
+	defer conn.Close()
+	for _, statement := range executable {
+		statement = rewriteSchemaAliases(statement, session.schemaAliases, r.database)
+		if _, err := conn.ExecContext(ctx, statement); err != nil {
+			return session, fmt.Errorf("init query error: %w", err)
 		}
 	}
-	return nil
+	if err := conn.QueryRowContext(ctx, "SELECT @@SESSION.sql_mode").Scan(&session.sqlMode); err != nil {
+		return session, fmt.Errorf("read init session sql_mode: %w", err)
+	}
+	session.sqlModeSet = true
+	return session, nil
 }
 
-func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query string) (*QueryResult, error) {
+// schemaStatementName reports the schema named by a CREATE/DROP DATABASE or
+// USE statement after leading comments are removed.
+func schemaStatementName(statement string) (string, bool) {
+	normalized := versionedCommentPattern.ReplaceAllString(stripLeadingComments(statement), " ")
+	match := schemaStatementPattern.FindStringSubmatch(strings.TrimSpace(normalized))
+	if match == nil {
+		return "", false
+	}
+	return match[1], true
+}
+
+func stripLeadingComments(statement string) string {
+	for {
+		statement = strings.TrimSpace(statement)
+		switch {
+		case strings.HasPrefix(statement, "--") || strings.HasPrefix(statement, "#"):
+			index := strings.IndexByte(statement, '\n')
+			if index < 0 {
+				return ""
+			}
+			statement = statement[index+1:]
+		case strings.HasPrefix(statement, "/*") && !strings.HasPrefix(statement, "/*!"):
+			index := strings.Index(statement, "*/")
+			if index < 0 {
+				return ""
+			}
+			statement = statement[index+2:]
+		default:
+			return statement
+		}
+	}
+}
+
+// rewriteSchemaAliases points schema-qualified names from the init script at
+// the temporary database, so `kbo.PLAYER` works in init and graded statements.
+func rewriteSchemaAliases(statement string, aliases []string, database string) string {
+	for _, alias := range aliases {
+		pattern := regexp.MustCompile("(?i)(^|[^A-Za-z0-9_$.`])`?" + regexp.QuoteMeta(alias) + "`?\\s*\\.\\s*(`?[A-Za-z0-9_$]+`?)")
+		statement = pattern.ReplaceAllString(statement, "${1}"+quoteIdentifier(database)+".${2}")
+	}
+	return statement
+}
+
+func appendUnique(values []string, value string) []string {
+	for _, existing := range values {
+		if strings.EqualFold(existing, value) {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query string, session initSession) (*QueryResult, error) {
 	queryDB, err := s.openRunner(r.queryUser, r.queryPassword, r.database)
 	if err != nil {
 		return nil, err
@@ -580,6 +677,15 @@ func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf("SET SESSION max_execution_time = %d", maxExecutionMilliseconds)); err != nil {
 		return nil, fmt.Errorf("set query execution limit: %w", err)
 	}
+	if session.sqlModeSet {
+		if !sqlModePattern.MatchString(session.sqlMode) {
+			return nil, errors.New("init session left an unexpected sql_mode")
+		}
+		if _, err := conn.ExecContext(ctx, "SET SESSION sql_mode = '"+session.sqlMode+"'"); err != nil {
+			return nil, fmt.Errorf("apply init session sql_mode: %w", err)
+		}
+	}
+	query = rewriteSchemaAliases(query, session.schemaAliases, r.database)
 
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {

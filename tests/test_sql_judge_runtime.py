@@ -35,6 +35,7 @@ class SQLJudgeRuntimeTests(unittest.TestCase):
             self.assertIn("judge-db", mysql)
             self.assertIn("--disable-log-bin", mysql)
             self.assertIn("--event-scheduler=DISABLED", mysql)
+            self.assertIn("--lower-case-table-names=1", mysql)
             self.assertIn("--collation-server=utf8mb4_0900_ai_ci", mysql)
             self.assertIn("--innodb-flush-log-at-trx-commit=2", mysql)
             self.assertIn("--max-connections=64", mysql)

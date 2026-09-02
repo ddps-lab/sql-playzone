@@ -64,6 +64,8 @@ scripts/test-sql-judge
 
 ### Creating a SQL Challenge
 
+Init scripts exported from a local MySQL can keep their `DROP SCHEMA`, `CREATE SCHEMA` and `USE` statements: the judge maps that schema name onto the execution's temporary database and skips those statements, so `kbo.PLAYER` in init or in a submission resolves to the temporary database. `SET` statements in the init script, such as `SET SQL_MODE='TRADITIONAL'`, stay in effect for the graded statement exactly as they would in one local MySQL session. Leading comment lines, including `-----` separators that MySQL itself rejects, are removed from each statement. Table names are case-insensitive (`lower_case_table_names=1`, the Windows and macOS default), so `Salaries` and `salaries` refer to the same table. This setting is fixed when the MySQL data directory is initialized; an existing `mysql-judge-data` volume must be removed before changing it.
+
 1. Go to Admin Panel → Challenges → Create Challenge
 2. Select "sql" as the challenge type
 3. Fill in the challenge details:
