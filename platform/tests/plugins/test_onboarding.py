@@ -199,6 +199,11 @@ def test_onboarding_rejects_bad_names_passwords_and_missing_student_id():
                 {"password": "password"},
                 b"Password must contain both a letter and a digit",
             ),
+            (
+                # a Roman numeral is a number but not a decimal digit
+                {"password": "abcdefg\u2167"},
+                b"Password must contain both a letter and a digit",
+            ),
             ({"password_confirm": "hunter22?"}, b"Passwords do not match"),
             (
                 {f"fields[{field_id(STUDENT_ID_FIELD)}]": ""},
