@@ -172,3 +172,26 @@ def test_every_login_is_logged_with_its_browser_and_the_previous_login():
         )
         assert len(new_login_lines(app, log_path, before)) == 2
     destroy_ctfd(app)
+
+
+def test_a_refused_login_is_not_logged_as_a_login():
+    from CTFd.utils import set_config
+
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        onboarded_student(app)
+        log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
+        client = login_as_user(app, name="student", password="password")
+        set_config("exam_browser_required", "true")
+        before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+        # an authenticated session re-posting the login form from a normal
+        # browser during the exam is refused by the exam-browser rule first
+        with client.session_transaction() as sess:
+            nonce = sess["nonce"]
+        client.environ_base["HTTP_USER_AGENT"] = CHROME
+        r = client.post(
+            "/login", data={"name": "student", "password": "password", "nonce": nonce}
+        )
+        assert r.status_code == 403
+        assert new_login_lines(app, log_path, before) == []
+    destroy_ctfd(app)

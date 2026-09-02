@@ -3,7 +3,8 @@ from CTFd.models import db, Users, UserFieldEntries, UserFields, Configs, Files
 from CTFd.utils.decorators import admins_only
 from CTFd.plugins import register_admin_plugin_menu_bar
 from CTFd.utils import set_config, get_config, validators
-from CTFd.utils.user import is_admin
+from CTFd.utils.user import is_admin, get_ip
+from CTFd.cache import cache
 
 # Exam browser restriction. When enabled, everyone except admins must use a
 # browser whose User-Agent contains the marker (Trustlock's UA looks like
@@ -45,27 +46,45 @@ def is_exam_browser(user_agent):
     return exam_browser_marker().lower() in (user_agent or '').lower()
 
 
-def student_login_from_other_browser():
-    """A non-admin account trying to log in from a browser that is not the exam browser.
+# The login view's own limit (auth.login: 30 POSTs per 5 seconds per address).
+# Refused logins share its cache key so they count against the same limit.
+LOGIN_LIMIT = 30
+LOGIN_INTERVAL = 5
+
+
+def non_admin_login_from_other_browser():
+    """A login from a browser that is not the exam browser, for anything but an admin.
 
     The login page itself stays open so admins can sign in from anywhere,
     but a student's login must be refused before it happens: CTFd's
     login replaces the account's active session, which would sign the
     student out of the exam browser even though the new session then
-    gets nothing but 403.
+    gets nothing but 403. Unknown names are refused the same way, so the
+    response does not reveal which names belong to students.
     """
     if request.endpoint != 'auth.login' or request.method != 'POST':
         return False
     if is_exam_browser(request.user_agent.string):
         return False
     name = (request.form.get('name') or '').strip()
-    if not name:
-        return False
     if validators.validate_email(name) is True:
         user = Users.query.filter_by(email=name).first()
     else:
         user = Users.query.filter_by(name=name).first()
-    return user is not None and user.type != 'admin'
+    return user is None or user.type != 'admin'
+
+
+def refused_login_response():
+    # This runs before the login view's @ratelimit, so apply the same limit
+    # here; otherwise refused attempts would be free of it.
+    key = f"rl:{get_ip()}:auth.login"
+    current = int(cache.get(key) or 0)
+    if current >= LOGIN_LIMIT:
+        response = jsonify({'success': False, 'errors': ['Too many requests']})
+        response.status_code = 429
+        return response
+    cache.set(key, current + 1, timeout=LOGIN_INTERVAL)
+    return render_template('errors/403.html', error=EXAM_BROWSER_MESSAGE), 403
 
 
 def exam_browser_exempt():
@@ -174,8 +193,8 @@ def load(app):
     def require_exam_browser():
         if not exam_browser_required():
             return
-        if student_login_from_other_browser():
-            return render_template('errors/403.html', error=EXAM_BROWSER_MESSAGE), 403
+        if non_admin_login_from_other_browser():
+            return refused_login_response()
         if exam_browser_exempt():
             return
         if is_admin() or is_exam_browser(request.user_agent.string):

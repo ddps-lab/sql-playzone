@@ -120,10 +120,13 @@ def load(app):
     def log_login(response):
         # login_user() issues a new nonce, so a changed nonce means this
         # request logged the account in (a stale login tab included).
+        # No snapshot means an earlier hook refused the request before the
+        # login view ran (the exam-browser rule, for one): nothing to log.
         if (
             request.endpoint in LOGIN_ENDPOINTS
+            and hasattr(g, "nonce_before_login")
             and authed()
-            and session.get("nonce") != getattr(g, "nonce_before_login", None)
+            and session.get("nonce") != g.nonce_before_login
         ):
             record_login(LOGIN_ENDPOINTS[request.endpoint])
         return response

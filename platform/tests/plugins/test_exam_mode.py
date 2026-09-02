@@ -193,6 +193,16 @@ def test_students_cannot_log_in_from_another_browser_during_the_exam():
         # so it cannot sign the student out of the exam browser
         assert login(CHROME, "student") == (403, False)
         assert login(TRUSTLOCK, "student") == (302, True)
+        # unknown names get the same answer, so student names are not revealed
+        assert login(CHROME, "nobody") == (403, False)
         # admins keep logging in from anywhere
         assert login(CHROME, "admin") == (302, True)
+
+        # refused attempts count against the login rate limit
+        from CTFd.cache import cache
+
+        cache.delete("rl:127.0.0.1:auth.login")
+        statuses = {login(CHROME, "student")[0] for _ in range(31)}
+        assert statuses == {403, 429}
+        assert login(CHROME, "student")[0] == 429
     destroy_ctfd(app)
