@@ -12,7 +12,7 @@ from CTFd.models import Challenges, db
 from CTFd.plugins import register_plugin_assets_directory
 from CTFd.plugins.challenges import CHALLENGE_CLASSES, BaseChallenge, ChallengeResponse
 from CTFd.utils.decorators import admins_only, authed_only
-from CTFd.utils.user import get_ip
+from CTFd.utils.user import get_ip, is_admin
 
 # Set KST timezone
 KST = pytz.timezone('Asia/Seoul')
@@ -170,13 +170,16 @@ class SQLChallengeType(BaseChallenge):
         challenge = SQLChallenge.query.filter_by(id=challenge.id).first()
         data = super().read(challenge)
 
-        # Add SQL-specific fields
         # The deadline property automatically converts UTC to KST format
-        data.update({
-            "init_query": challenge.init_query,
-            "solution_query": challenge.solution_query,
-            "deadline": challenge.deadline,  # Property handles UTC->KST conversion
-        })
+        data["deadline"] = challenge.deadline
+        # The init and solution SQL are the answer key. CTFd returns this dict
+        # from the challenge detail API to every logged-in user, so only admins
+        # may receive them.
+        if is_admin():
+            data.update({
+                "init_query": challenge.init_query,
+                "solution_query": challenge.solution_query,
+            })
 
         return data
 
