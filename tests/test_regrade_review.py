@@ -35,9 +35,16 @@ class ReviewHeuristicsTests(unittest.TestCase):
         self.assertTrue(any("ROUND" in f for f in findings) and any("2000ms" in f for f in findings))
         self.assertTrue(regrade.review_findings({"solution_query": "SELECT 1"}, {"status": "query_error", "error": "boom"}, 1500)[0].startswith("실행 실패"))
 
-    def test_numeric_equal_tolerates_precision(self):
+    def test_numeric_equal_tolerates_precision_but_not_value_changes(self):
         self.assertTrue(regrade.numeric_equal("72220.1111", "72220.11111111111"))
+        self.assertTrue(regrade.numeric_equal("183.0901", "183.0900900900901"))
+        self.assertTrue(regrade.numeric_equal("8510700.00", "8510700"))
+        self.assertTrue(regrade.numeric_equal("4017733", "4.017733e+06"))
+        self.assertFalse(regrade.numeric_equal("1000000", "1000001"))
+        self.assertFalse(regrade.numeric_equal("1.5", "1.4"))
         self.assertFalse(regrade.numeric_equal("1", "2"))
+        self.assertFalse(regrade.numeric_equal("abc", "1"))
+        self.assertFalse(regrade.numeric_equal("NaN", "NaN"))
 
 
 if __name__ == "__main__":
