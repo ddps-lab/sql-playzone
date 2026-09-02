@@ -25,6 +25,13 @@ class ASGExamReadinessTests(unittest.TestCase):
         self.assertRegex(asg, r"health_check_grace_period\s*=\s*300\b")
         self.assertRegex(asg, r"instance_warmup\s*=\s*300\b")
 
+    def test_alb_health_check_uses_the_healthcheck_endpoint(self):
+        # The index page is gated by the exam-browser switch; /healthcheck is
+        # exempt in both plugins and reports database and config health.
+        tg = top_level_block(EC2.read_text(), 'resource "aws_lb_target_group" "tg"')
+        self.assertRegex(tg, r'path\s*=\s*"/healthcheck"')
+        self.assertRegex(tg, r'matcher\s*=\s*"200"')
+
     def test_apply_does_not_revert_runtime_capacity(self):
         asg = top_level_block(EC2.read_text(), 'resource "aws_autoscaling_group" "asg"')
         self.assertRegex(asg, r"ignore_changes\s*=\s*\[desired_capacity, min_size\]")

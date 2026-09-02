@@ -158,14 +158,19 @@ resource "aws_lb_target_group" "tg" {
   protocol = "HTTP"
   vpc_id   = var.vpc_id
 
+  # CTFd's /healthcheck answers 200 only when the database and config are
+  # reachable, and it stays open to any client: the exam-browser restriction
+  # and the onboarding gate exempt it. The index page does not qualify; with
+  # the exam-browser switch on it returns 403 and the ASG replaced every
+  # instance six minutes after boot (dev, 2026-09-02).
   health_check {
     enabled             = true
     healthy_threshold   = 2
     unhealthy_threshold = 2
     timeout             = 5
     interval            = 30
-    path                = "/"
-    matcher             = "200,301,302"
+    path                = "/healthcheck"
+    matcher             = "200"
   }
 
   deregistration_delay = 30
