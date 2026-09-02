@@ -36,7 +36,9 @@ var (
 	// Challenge init scripts are usually exported from a local MySQL together
 	// with their own schema name. These statements are mapped onto the
 	// temporary database instead of being executed.
-	schemaStatementPattern = regexp.MustCompile("(?is)^(?:CREATE\\s+(?:DATABASE|SCHEMA)(?:\\s+IF\\s+NOT\\s+EXISTS)?|DROP\\s+(?:DATABASE|SCHEMA)(?:\\s+IF\\s+EXISTS)?|USE)\\s+`?([A-Za-z0-9_$]+)`?(?:\\s|$)")
+	// A schema name is either backtick-quoted (any characters, e.g. `kbo-data`)
+	// or an unquoted identifier.
+	schemaStatementPattern = regexp.MustCompile("(?is)^(?:CREATE\\s+(?:DATABASE|SCHEMA)(?:\\s+IF\\s+NOT\\s+EXISTS)?|DROP\\s+(?:DATABASE|SCHEMA)(?:\\s+IF\\s+EXISTS)?|USE)\\s+(?:`([^`]+)`|([\\p{L}\\p{N}_$]+))(?:\\s|$)")
 	sqlModePattern         = regexp.MustCompile(`^[A-Za-z0-9_,]*$`)
 	// mysqldump wraps schema statements in version comments that MySQL executes,
 	// for example CREATE DATABASE /*!32312 IF NOT EXISTS*/ `world`.
@@ -608,7 +610,10 @@ func schemaStatementName(statement string) (string, bool) {
 	if match == nil {
 		return "", false
 	}
-	return match[1], true
+	if match[1] != "" {
+		return match[1], true
+	}
+	return match[2], true
 }
 
 func stripLeadingComments(statement string) string {
@@ -635,13 +640,75 @@ func stripLeadingComments(statement string) string {
 
 // rewriteSchemaAliases points schema-qualified names from the init script at
 // the temporary database, so `kbo.PLAYER` works in init and graded statements.
+// String literals and comments are copied verbatim: a value such as
+// 'kbo.example' must not change between the solution and submission runs,
+// which use different temporary database names. Versioned comments (/*! */)
+// are executed by MySQL and are rewritten like ordinary code.
 func rewriteSchemaAliases(statement string, aliases []string, database string) string {
-	for _, alias := range aliases {
-		pattern := regexp.MustCompile("(?i)(^|[^A-Za-z0-9_$.`])`?" + regexp.QuoteMeta(alias) + "`?\\s*\\.\\s*(`?[A-Za-z0-9_$]+`?)")
-		statement = pattern.ReplaceAllString(statement, "${1}"+quoteIdentifier(database)+".${2}")
+	if len(aliases) == 0 {
+		return statement
 	}
-	return statement
+	patterns := make([]*regexp.Regexp, 0, len(aliases))
+	for _, alias := range aliases {
+		patterns = append(patterns, regexp.MustCompile("(?i)(^|[^\\p{L}\\p{N}_$.`])`?"+regexp.QuoteMeta(alias)+"`?\\s*\\.\\s*(`[^`]+`|[\\p{L}\\p{N}_$]+)"))
+	}
+	rewrite := func(code string) string {
+		for _, pattern := range patterns {
+			code = pattern.ReplaceAllString(code, "${1}"+quoteIdentifier(database)+".${2}")
+		}
+		return code
+	}
+	var out strings.Builder
+	codeStart := 0
+	for i := 0; i < len(statement); {
+		end := skipLiteralOrComment(statement, i)
+		if end == i {
+			i++
+			continue
+		}
+		out.WriteString(rewrite(statement[codeStart:i]))
+		out.WriteString(statement[i:end])
+		i, codeStart = end, end
+	}
+	out.WriteString(rewrite(statement[codeStart:]))
+	return out.String()
 }
+
+// skipLiteralOrComment returns the index just past the string literal or
+// comment that starts at i, or i itself when nothing verbatim starts there.
+// Backslash escapes and doubled quotes stay inside the literal, "--" only
+// opens a comment when followed by whitespace, and "/*!" is not a comment.
+func skipLiteralOrComment(s string, i int) int {
+	switch c := s[i]; {
+	case c == '\'' || c == '"':
+		for j := i + 1; j < len(s); j++ {
+			switch s[j] {
+			case '\\':
+				j++
+			case c:
+				if j+1 < len(s) && s[j+1] == c {
+					j++
+					continue
+				}
+				return j + 1
+			}
+		}
+		return len(s)
+	case c == '#', c == '-' && strings.HasPrefix(s[i:], "--") && (i+2 == len(s) || isSpaceByte(s[i+2])):
+		if end := strings.IndexByte(s[i:], '\n'); end >= 0 {
+			return i + end + 1
+		}
+		return len(s)
+	case c == '/' && strings.HasPrefix(s[i:], "/*") && !strings.HasPrefix(s[i:], "/*!"):
+		if end := strings.Index(s[i:], "*/"); end >= 0 {
+			return i + end + 2
+		}
+		return len(s)
+	}
+	return i
+}
+
+func isSpaceByte(b byte) bool { return b == ' ' || b == '\t' || b == '\n' || b == '\r' }
 
 func appendUnique(values []string, value string) []string {
 	for _, existing := range values {

@@ -408,3 +408,26 @@ func rowsEqual(left, right [][]string) bool {
 	}
 	return true
 }
+
+func TestIntegrationQuotedSchemaAliasKeepsLiterals(t *testing.T) {
+	server := integrationServer(t)
+	init := []string{"CREATE SCHEMA `kbo-data`;\nUSE `kbo-data`;\nCREATE TABLE `kbo-data`.SITE (id INT PRIMARY KEY, url VARCHAR(50));\nINSERT INTO SITE VALUES (1, 'kbo-data.example'), (2, 'other');"}
+	// The literal 'kbo-data.example' must survive alias rewriting in both the
+	// init script and the graded statement; otherwise the solution and
+	// submission runs would see different values in different temporary DBs.
+	result, err := server.executeQuery(context.Background(), init, "SELECT url FROM `kbo-data`.SITE WHERE url = 'kbo-data.example'", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rowsEqual(result.Rows, [][]string{{"kbo-data.example"}}) {
+		t.Fatalf("rows = %#v", result.Rows)
+	}
+	var count int
+	if err := server.controlDB.QueryRow("SELECT COUNT(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = 'kbo-data'").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("quoted schema statement created a real schema instead of aliasing the temporary database")
+	}
+	assertNoTemporaryResources(t, server)
+}
