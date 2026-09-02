@@ -442,8 +442,9 @@ def register():
 
 
 @auth.route("/login", methods=["POST", "GET"])
-# Students log in with the form at exam start from a shared NAT address.
-@ratelimit(method="POST", limit=30, interval=5)
+# A whole lecture hall logs in with the form at exam start from one NAT
+# address, so the per-address limit must cover the class.
+@ratelimit(method="POST", limit=120, interval=5)
 def login():
     errors = get_errors()
     if request.method == "POST":
@@ -680,7 +681,10 @@ def oauth_redirect():
 
 # Google accounts must belong to this Google Workspace domain. The hd
 # parameter sent to Google only pre-selects accounts; the callback enforces it.
-GOOGLE_HOSTED_DOMAIN = "hanyang.ac.kr"
+def google_hosted_domain():
+    """The Google Workspace domain that may sign in: GOOGLE_HOSTED_DOMAIN in
+    config.ini or the environment, hanyang.ac.kr by default."""
+    return str(get_app_config("GOOGLE_HOSTED_DOMAIN") or "").strip().lower()
 
 
 def google_account_allowed(user_data):
@@ -689,11 +693,13 @@ def google_account_allowed(user_data):
     A consumer Google account can carry a verified university email address,
     so the email suffix alone is not proof of membership; the hd claim is.
     """
+    domain = google_hosted_domain()
     email = str(user_data.get("email") or "").strip().lower()
     return (
-        user_data.get("verified_email") is True
-        and str(user_data.get("hd") or "").lower() == GOOGLE_HOSTED_DOMAIN
-        and email.endswith("@" + GOOGLE_HOSTED_DOMAIN)
+        bool(domain)
+        and user_data.get("verified_email") is True
+        and str(user_data.get("hd") or "").lower() == domain
+        and email.endswith("@" + domain)
     )
 
 
@@ -730,7 +736,7 @@ def google_login():
         f"state={state}&"
         f"access_type=offline&"
         f"prompt=consent&"
-        f"hd={GOOGLE_HOSTED_DOMAIN}"
+        f"hd={google_hosted_domain()}"
     )
     
     return redirect(redirect_url)
@@ -738,8 +744,8 @@ def google_login():
 
 @auth.route("/google/callback")
 # A lecture hall shares one NAT address, so the per-IP limit must cover a
-# whole class signing up at once.
-@ratelimit(method="GET", limit=60, interval=60)
+# whole class signing up in the same minute of the first lecture.
+@ratelimit(method="GET", limit=300, interval=60)
 def google_callback():
     code = request.args.get("code")
     state = request.args.get("state")
@@ -788,11 +794,11 @@ def google_callback():
                         "logins",
                         "[{date}] {ip} - Google account {email} rejected: not a verified {domain} account",
                         email=user_data.get("email"),
-                        domain=GOOGLE_HOSTED_DOMAIN,
+                        domain=google_hosted_domain(),
                     )
                     error_for(
                         endpoint="auth.login",
-                        message=f"Only verified {GOOGLE_HOSTED_DOMAIN} Google accounts can sign in.",
+                        message=f"Only verified {google_hosted_domain()} Google accounts can sign in.",
                     )
                     return redirect(url_for("auth.login"))
 

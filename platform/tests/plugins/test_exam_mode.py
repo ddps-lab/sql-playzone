@@ -70,6 +70,38 @@ def test_admin_toggles_the_exam_browser_requirement_without_touching_bans():
         assert get_config("exam_browser_required") is False
         assert get_config("exam_browser_marker") == "Trustlockbrowser"
         assert Users.query.filter_by(banned=True).count() == 1
+
+        # the same form switches the one-session rule
+        r = admin.post(
+            "/admin/exam_mode/browser",
+            data={"single_session_required": "on", "nonce": nonce},
+        )
+        assert r.status_code == 302
+        assert get_config("single_session_required") is True
+        assert get_config("exam_browser_required") is False
+    destroy_ctfd(app)
+
+
+def test_admin_pages_carry_the_exam_rules_banner_script():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        admin = login_as_user(app, name="admin", password="password")
+        html = admin.get("/admin/statistics").data
+        assert b"/plugins/exam_mode/assets/admin_banner.js" in html
+        r = admin.get("/plugins/exam_mode/assets/admin_banner.js")
+        assert r.status_code == 200
+        assert b"exam_browser_required" in r.data
+    destroy_ctfd(app)
+
+
+def test_the_google_button_is_hidden_while_the_exam_browser_rule_is_on():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        app.config["GOOGLE_CLIENT_ID"] = "client"
+        button = b"Sign up or reset password with HYU Google"
+        assert button in app.test_client().get("/login").data
+        set_config("exam_browser_required", "true")
+        assert button not in app.test_client().get("/login").data
     destroy_ctfd(app)
 
 
@@ -146,8 +178,8 @@ def test_challenge_attachments_need_the_exam_browser_but_site_assets_do_not():
         challenge_id = gen_challenge(app.db).id
         gen_file(app.db, location="attachments/answers.txt", challenge_id=challenge_id)
         gen_file(app.db, location="branding/logo.png")  # a standard upload
-        set_config("exam_browser_required", "true")
         client = student_client(app)
+        set_config("exam_browser_required", "true")
 
         r = client.get("/files/attachments/answers.txt", headers={"User-Agent": CHROME})
         assert r.status_code == 403
@@ -168,4 +200,53 @@ def test_challenge_attachments_need_the_exam_browser_but_site_assets_do_not():
         assert r.status_code == 403
         r = client.get("/files/solutions/answer.sql", headers={"User-Agent": TRUSTLOCK})
         assert r.status_code != 403
+    destroy_ctfd(app)
+
+
+def test_students_cannot_log_in_from_another_browser_during_the_exam():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        student_client(app).get("/logout")
+        set_config("exam_browser_required", "true")
+
+        def login(user_agent, name, password="password"):
+            client = app.test_client()
+            client.environ_base["HTTP_USER_AGENT"] = user_agent
+            client.get("/login")
+            with client.session_transaction() as sess:
+                nonce = sess["nonce"]
+            r = client.post(
+                "/login", data={"name": name, "password": password, "nonce": nonce}
+            )
+            with client.session_transaction() as sess:
+                return r.status_code, "id" in sess
+
+        # a student's login from a normal browser is refused before it happens,
+        # so it cannot sign the student out of the exam browser
+        assert login(CHROME, "student") == (403, False)
+        assert login(TRUSTLOCK, "student") == (302, True)
+        # unknown names get the same answer, so student names are not revealed
+        assert login(CHROME, "nobody") == (403, False)
+        # admins keep logging in from anywhere, including a preset admin that
+        # does not exist in the database until its first login
+        assert login(CHROME, "admin") == (302, True)
+        app.config["PRESET_ADMIN_NAME"] = "preset-admin"
+        app.config["PRESET_ADMIN_EMAIL"] = "preset@examplectf.com"
+        app.config["PRESET_ADMIN_PASSWORD"] = "preset-password"
+        assert login(CHROME, "preset-admin", "preset-password") == (302, True)
+        # ... but only with the preset password, and never a student account
+        # that happens to hold the preset name
+        app.config["PRESET_ADMIN_NAME"] = "another-preset"
+        assert login(CHROME, "another-preset", "wrong") == (403, False)
+        app.config["PRESET_ADMIN_NAME"] = "student"
+        assert login(CHROME, "student", "preset-password") == (403, False)
+        app.config["PRESET_ADMIN_NAME"] = "preset-admin"
+
+        # refused attempts count against the login rate limit
+        from CTFd.cache import cache
+
+        cache.delete("rl:127.0.0.1:auth.login")
+        statuses = {login(CHROME, "student")[0] for _ in range(121)}
+        assert statuses == {403, 429}
+        assert login(CHROME, "student")[0] == 429
     destroy_ctfd(app)

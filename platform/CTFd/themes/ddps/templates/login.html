@@ -61,7 +61,7 @@
             </a>
           {% endif %}
 
-          {% if get_app_config('GOOGLE_CLIENT_ID') %}
+          {% if get_app_config('GOOGLE_CLIENT_ID') and not get_config('exam_browser_required') %}
             <hr>
 
             <p class="text-center text-muted mb-2">

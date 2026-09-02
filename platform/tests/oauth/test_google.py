@@ -61,6 +61,24 @@ def test_google_callback_rejects_accounts_outside_the_course_domain():
     destroy_ctfd(app)
 
 
+def test_the_course_domain_comes_from_the_configuration():
+    app = create_google_ctfd()
+    app.config["GOOGLE_HOSTED_DOMAIN"] = "other.ac.kr"
+    with app.app_context():
+        client = app.test_client()
+        r = google_callback(client, google_userinfo("someone@hanyang.ac.kr"))
+        with client.session_transaction() as sess:
+            assert "id" not in sess
+        client = app.test_client()
+        r = google_callback(
+            client, google_userinfo("someone@other.ac.kr", hd="other.ac.kr")
+        )
+        assert r.status_code == 302
+        with client.session_transaction() as sess:
+            assert "id" in sess
+    destroy_ctfd(app)
+
+
 def test_google_callback_admits_verified_course_accounts():
     app = create_google_ctfd()
     with app.app_context():
