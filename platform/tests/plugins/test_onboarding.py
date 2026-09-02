@@ -487,3 +487,33 @@ def test_duplicate_consent_fields_are_folded_into_the_first():
         client = login_as_user(app, name="김민수", password="hunter22!")
         assert client.get("/api/v1/users/me").status_code == 200
     destroy_ctfd(app)
+
+
+def test_an_older_text_field_with_the_same_name_is_normalized():
+    from CTFd.plugins.onboarding import terms_field
+
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        field = UserFields.query.filter_by(name=TERMS_FIELD).first()
+        field.field_type = "text"
+        field.required = False
+        field.editable = True
+        field.public = True
+        db.session.commit()
+
+        field = terms_field()
+        assert (field.field_type, field.required, field.editable, field.public) == (
+            "boolean",
+            True,
+            False,
+            False,
+        )
+        # a "y" recorded while it was a text field still counts as consent
+        user_id = create_google_user(app, password="hunter22!", student_id="2025000006")
+        UserFieldEntries.query.filter_by(user_id=user_id, field_id=field.id).update(
+            {"value": "y"}
+        )
+        db.session.commit()
+        client = login_as_user(app, name="김민수", password="hunter22!")
+        assert client.get("/api/v1/users/me").status_code == 200
+    destroy_ctfd(app)

@@ -145,7 +145,21 @@ def terms_field():
             {"field_id": field.id}
         )
         db.session.delete(duplicate)
-    if len(fields) > 1:
+    # A same-name field from an older installation is adopted, but it must
+    # have this shape or consent could be stored as text and never count.
+    expected = {
+        "description": TERMS_FIELD_DESCRIPTION,
+        "field_type": "boolean",
+        "required": True,
+        "public": False,
+        "editable": False,
+    }
+    changed = False
+    for attribute, value in expected.items():
+        if getattr(field, attribute) != value:
+            setattr(field, attribute, value)
+            changed = True
+    if len(fields) > 1 or changed:
         db.session.commit()
     return field
 
@@ -159,7 +173,10 @@ def terms_missing(user_id):
     entry = UserFieldEntries.query.filter_by(
         field_id=terms_field().id, user_id=user_id
     ).first()
-    return entry is None or entry.value is not True
+    if entry is None:
+        return True
+    # Entries written while the field was still a text field hold "y".
+    return not (entry.value is True or str(entry.value).lower() in AFFIRMATIVE_VALUES)
 
 
 def terms_text():
