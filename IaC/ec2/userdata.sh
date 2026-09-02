@@ -119,6 +119,9 @@ env_values = {
     "SQL_JUDGE_SERVER_URL": "http://sql-judge:8080",
     "GOOGLE_CLIENT_ID": application_secret["GOOGLE_CLIENT_ID"],
     "GOOGLE_CLIENT_SECRET": application_secret["GOOGLE_CLIENT_SECRET"],
+    # Optional: the Google Workspace domain allowed to sign in (hanyang.ac.kr
+    # when absent).
+    "GOOGLE_HOSTED_DOMAIN": application_secret.get("GOOGLE_HOSTED_DOMAIN", ""),
     "CTFD_IMAGE": "${CTFD_IMAGE}",
     "SQL_JUDGE_IMAGE": "${SQL_JUDGE_IMAGE}",
 }
