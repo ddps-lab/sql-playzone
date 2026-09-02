@@ -73,13 +73,22 @@ def onboarding_done_in_session():
 
 
 def password_min_length():
-    return max(PASSWORD_MIN_LENGTH, int(get_config("password_min_length", default=0)))
+    """CTFd's configured minimum, raised to the floor if it is below it.
+
+    Raising the stored value too keeps the settings page and CTFd's own
+    reset flow on the same rule. Checked here as well as at startup because
+    a CTFd import replaces the configs table without restarting the app.
+    """
+    configured = int(get_config("password_min_length", default=0) or 0)
+    if configured < PASSWORD_MIN_LENGTH:
+        set_config("password_min_length", PASSWORD_MIN_LENGTH)
+        return PASSWORD_MIN_LENGTH
+    return configured
 
 
 def ensure_password_policy(app):
     with app.app_context():
-        if get_config("password_min_length") is None:
-            set_config("password_min_length", PASSWORD_MIN_LENGTH)
+        password_min_length()
 
 
 def onboarding_pending(user_id):
@@ -88,48 +97,65 @@ def onboarding_pending(user_id):
 
 
 def terms_field():
-    return UserFields.query.filter_by(name=TERMS_FIELD_NAME).first()
+    """The consent field, created on first use if it does not exist.
+
+    Created lazily as well as at startup: a CTFd import replaces the
+    fields table while the app keeps running, and without the field every
+    imported account would pass the consent gate.
+    """
+    field = UserFields.query.filter_by(name=TERMS_FIELD_NAME).first()
+    if field is None:
+        field = UserFields(
+            name=TERMS_FIELD_NAME,
+            description=TERMS_FIELD_DESCRIPTION,
+            field_type="boolean",
+            required=True,
+            public=False,
+            editable=False,
+        )
+        db.session.add(field)
+        db.session.commit()
+    return field
 
 
 def terms_missing(user_id):
-    """True while the consent field exists and this account has not said yes.
+    """True until this account has said yes to the terms.
 
     An entry that exists but holds False (an import, an admin edit) is not
     consent, so the value is checked rather than the row's existence.
     """
-    field = terms_field()
-    if field is None:
-        return False
-    entry = UserFieldEntries.query.filter_by(field_id=field.id, user_id=user_id).first()
+    entry = UserFieldEntries.query.filter_by(
+        field_id=terms_field().id, user_id=user_id
+    ).first()
     return entry is None or entry.value is not True
 
 
+def terms_text():
+    """CTFd's tos_text, seeded with the plugin's draft when nothing is set.
+
+    Admins edit the text in Config > Legal; the seed never overwrites it.
+    Seeded lazily as well as at startup for the same import reason.
+    """
+    text = get_config("tos_text")
+    if not text and not get_config("tos_url"):
+        text = TERMS_TEXT_PATH.read_text(encoding="utf-8")
+        set_config("tos_text", text)
+    return text
+
+
 def ensure_terms(app):
-    """Seed the terms text and the consent field once; admins may edit both later."""
+    """Seed the terms text and the consent field at startup."""
     with app.app_context():
-        if not get_config("tos_text") and not get_config("tos_url"):
-            set_config("tos_text", TERMS_TEXT_PATH.read_text(encoding="utf-8"))
-        if terms_field() is None:
-            db.session.add(
-                UserFields(
-                    name=TERMS_FIELD_NAME,
-                    description=TERMS_FIELD_DESCRIPTION,
-                    field_type="boolean",
-                    required=True,
-                    public=False,
-                    editable=False,
-                )
-            )
-            db.session.commit()
+        terms_text()
+        terms_field()
 
 
 def terms_html():
     """The terms rendered for the onboarding page, or None when hosted elsewhere."""
-    text = get_config("tos_text")
-    if get_config("tos_url") or not text:
+    if get_config("tos_url"):
         return None
     # Trusted admin content, rendered the way views.tos renders it.
-    return Markup(build_markdown(text))
+    return Markup(build_markdown(terms_text()))
 
 
 def OnboardingForm(user_id, *args, **kwargs):
@@ -301,13 +327,12 @@ def load(app):
             if not errors:
                 complete_onboarding(user, name, password, entries, credentials)
                 session[ONBOARDING_DONE_SESSION_KEY] = session.get("nonce")
-                field = terms_field()
                 actions = []
                 if mode == "setup":
                     actions.append("completed onboarding")
                 elif mode == "reset":
                     actions.append("set a new password")
-                if field and entries.get(field.id):
+                if entries.get(terms_field().id):
                     actions.append("accepted the terms of service")
                 log(
                     "registrations",

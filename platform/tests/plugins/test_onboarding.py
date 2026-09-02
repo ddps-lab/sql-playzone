@@ -410,3 +410,30 @@ def test_other_oauth_accounts_only_get_the_terms():
         assert client.get("/api/v1/users/me").status_code == 200
         assert client.get("/onboarding/").location.endswith("/settings")
     destroy_ctfd(app)
+
+
+def test_consent_field_and_terms_come_back_after_an_import():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        # a CTFd import replaces the tables while the app keeps running
+        UserFields.query.filter_by(name=TERMS_FIELD).delete()
+        db.session.commit()
+        set_config("tos_text", "")
+        set_config("password_min_length", 4)
+
+        user_id = create_google_user(app)
+        client = start_session(app, user_id)
+        r = client.get("/onboarding/")
+        assert r.status_code == 200
+        assert "<h1>SQL PlayZone 이용 약관".encode() in r.data
+        assert UserFields.query.filter_by(name=TERMS_FIELD).count() == 1
+        assert b"At least 8 characters" in r.data
+        assert int(get_config("password_min_length")) == 8
+
+        # the gate is back for accounts that never accepted the terms
+        gen_user(app.db, name="veteran", email="veteran@examplectf.com")
+        client = login_as_user(app, name="veteran", password="password")
+        r = client.get("/challenges")
+        assert r.status_code == 302
+        assert r.location.endswith("/onboarding/")
+    destroy_ctfd(app)
