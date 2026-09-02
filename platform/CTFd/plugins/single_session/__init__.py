@@ -1,17 +1,23 @@
-"""One active session per account, checked on every request.
+"""One active session per account, checked on every request, with a login trail.
 
 Logging in stores the session's nonce as the account's active nonce in
 the cache, and the fork's ``get_current_user()`` signs out any other
 session it sees. That check only runs on pages that load the full user,
 so an older session could still open the scoreboard or a challenge page
-after a newer login. This hook runs the same check for every request.
+after a newer login. The request hook here runs the same check for
+every request.
+
+Because only one session is ever alive, the sequence of logins is the
+complete record of who held an account and when. Each login is logged
+with the browser and the previous login of the same account, so an exam
+review only needs the logins stream.
 """
 
-from flask import abort, redirect, request, session, url_for
+import time
+
+from flask import abort, g, redirect, request, session, url_for
 
 from CTFd.cache import cache
-from CTFd.models import Users
-from CTFd.utils import validators
 from CTFd.utils.helpers import error_for
 from CTFd.utils.logging import log
 from CTFd.utils.security.auth import logout_user
@@ -25,11 +31,12 @@ EXEMPT_ENDPOINTS = {
     "views.healthcheck",
     "static",
 }
-# A session counts as active for this long after its last request. The
-# active-nonce key itself lives for 30 days and survives logouts, so it
-# cannot tell a live session from a stale one.
-SESSION_ACTIVITY_WINDOW = 30 * 60
-LOGIN_ENDPOINTS = {"auth.login", "auth.google_callback", "auth.oauth_redirect"}
+LOGIN_ENDPOINTS = {
+    "auth.login": "form",
+    "auth.google_callback": "google",
+    "auth.oauth_redirect": "mlc",
+}
+LAST_LOGIN_TTL = 30 * 24 * 3600
 SIGNED_OUT_MESSAGE = (
     "This account signed in from another browser, so this session was signed out. "
     "다른 브라우저에서 로그인되어 이 세션은 로그아웃되었습니다."
@@ -61,71 +68,68 @@ def session_is_current():
     return not active_nonce or session.get("nonce") == active_nonce
 
 
-def seen_key(user_id):
-    return f"user_{user_id}_session_seen"
-
-
-def mark_session_seen():
-    cache.set(
-        seen_key(session["id"]), session.get("nonce"), timeout=SESSION_ACTIVITY_WINDOW
-    )
-
-
-def forget_session():
-    """On logout: no session of this account is active any more.
-
-    Only the activity marker goes. The active nonce stays so that an older
-    session cookie that was superseded remains signed out.
-    """
-    cache.delete(seen_key(session["id"]))
-
-
 def browser():
     return (request.user_agent.string or "")[:120]
 
 
+def last_login_key(user_id):
+    return f"user_{user_id}_last_login"
+
+
+def record_login(via):
+    """One line per login: browser and the previous login of the account."""
+    user = get_current_user_attrs()
+    if user is None:
+        return
+    previous = cache.get(last_login_key(user.id))
+    now = time.time()
+    if previous:
+        log(
+            "logins",
+            "[{date}] {ip} - {name} logged in via {via} ({browser}); "
+            "previous login {minutes} min ago from {previous_ip} ({previous_browser})",
+            name=user.name,
+            via=via,
+            browser=browser(),
+            minutes=int((now - previous["at"]) // 60),
+            previous_ip=previous["ip"],
+            previous_browser=previous["browser"],
+        )
+    else:
+        log(
+            "logins",
+            "[{date}] {ip} - {name} logged in via {via} ({browser}); first login on record",
+            name=user.name,
+            via=via,
+            browser=browser(),
+        )
+    cache.set(
+        last_login_key(user.id),
+        {"at": now, "ip": request.remote_addr, "browser": browser()},
+        timeout=LAST_LOGIN_TTL,
+    )
+
+
 def load(app):
     @app.before_request
-    def note_login_while_another_session_is_active():
-        """DDPS-1303: leave a trace for the exam review, keyed by user and time.
-
-        The login itself is logged by CTFd; this line says that another
-        session was alive at that moment. The older session is signed out
-        on its next request, which is logged there.
-        """
-        if request.endpoint != "auth.login" or request.method != "POST":
-            return
-        name = (request.form.get("name") or "").strip()
-        if not name:
-            return
-        if validators.validate_email(name) is True:
-            user = Users.query.filter_by(email=name).first()
-        else:
-            user = Users.query.filter_by(name=name).first()
-        # The requesting browser's own session (a stale login tab) is not
-        # another session.
-        seen = cache.get(seen_key(user.id)) if user else None
-        if seen and seen != session.get("nonce"):
-            log(
-                "logins",
-                "[{date}] {ip} - {name} login attempt while another session is active ({browser})",
-                name=user.name,
-                browser=browser(),
-            )
+    def remember_nonce_before_login():
+        if request.endpoint in LOGIN_ENDPOINTS:
+            g.nonce_before_login = session.get("nonce")
 
     @app.after_request
-    def mark_new_login_seen(response):
-        # A session counts as active from the moment it logs in, before it
-        # makes any other request.
-        if request.endpoint in LOGIN_ENDPOINTS and authed() and session_is_current():
-            mark_session_seen()
+    def log_login(response):
+        # login_user() issues a new nonce, so a changed nonce means this
+        # request logged the account in (a stale login tab included).
+        if (
+            request.endpoint in LOGIN_ENDPOINTS
+            and authed()
+            and session.get("nonce") != getattr(g, "nonce_before_login", None)
+        ):
+            record_login(LOGIN_ENDPOINTS[request.endpoint])
         return response
 
     @app.before_request
     def enforce_single_session():
-        if request.endpoint == "auth.logout" and authed() and session_is_current():
-            forget_session()
-            return
         if request.endpoint in EXEMPT_ENDPOINTS or not authed():
             return
         # An API token logs in per request (CTFd's tokens hook), so token
@@ -134,19 +138,7 @@ def load(app):
         if authenticated_by_token():
             return
         if session_is_current():
-            mark_session_seen()
             return
-        user = get_current_user_attrs()
-        log(
-            "logins",
-            "[{date}] {ip} - {name} signed out: the account signed in from another browser ({browser})",
-            name=user.name if user else session.get("id"),
-            browser=browser(),
-        )
-        # If this session was the last one seen (an API token replaced the
-        # nonce, not a newer browser), its activity marker must go too.
-        if cache.get(seen_key(session["id"])) == session.get("nonce"):
-            cache.delete(seen_key(session["id"]))
         logout_user()
         if is_api_request():
             abort(401)

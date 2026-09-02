@@ -84,55 +84,6 @@ def test_a_bare_authorization_header_does_not_bypass_the_check():
     destroy_ctfd(app)
 
 
-def test_concurrent_logins_leave_a_trace_in_the_logins_log():
-    app = create_ctfd(enable_plugins=True)
-    with app.app_context():
-        onboarded_student(app)
-        first = login_as_user(app, name="student", password="password")
-        # the logins logger writes to a file and does not propagate to caplog
-        log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
-        before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
-
-        login_as_user(app, name="student", password="password")
-        assert first.get("/scoreboard").status_code == 302
-
-        with open(log_path) as log_file:
-            log_file.seek(before)
-            lines = log_file.read()
-        assert "student login attempt while another session is active" in lines
-        assert "student signed out: the account signed in from another browser" in lines
-    destroy_ctfd(app)
-
-
-def test_a_login_after_logout_is_not_flagged_as_concurrent():
-    app = create_ctfd(enable_plugins=True)
-    with app.app_context():
-        onboarded_student(app)
-        log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
-
-        client = login_as_user(app, name="student", password="password")
-        assert client.get("/scoreboard").status_code == 200
-        assert client.get("/logout").status_code == 302
-        before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
-        login_as_user(app, name="student", password="password")
-        with open(log_path) as log_file:
-            log_file.seek(before)
-            assert "while another session is active" not in log_file.read()
-
-        # a session that went quiet for longer than the activity window is not
-        # flagged either, even though its nonce key is still cached
-        from CTFd.cache import cache
-
-        user_id = Users.query.filter_by(name="student").first().id
-        cache.delete(f"user_{user_id}_session_seen")
-        before = os.path.getsize(log_path)
-        login_as_user(app, name="student", password="password")
-        with open(log_path) as log_file:
-            log_file.seek(before)
-            assert "while another session is active" not in log_file.read()
-    destroy_ctfd(app)
-
-
 def test_logging_out_of_the_newer_session_does_not_revive_the_older_one():
     app = create_ctfd(enable_plugins=True)
     with app.app_context():
@@ -146,33 +97,70 @@ def test_logging_out_of_the_newer_session_does_not_revive_the_older_one():
     destroy_ctfd(app)
 
 
-def test_relogging_in_from_the_same_browser_is_not_flagged():
+CHROME = "Mozilla/5.0 (Macintosh) Chrome/124.0 Safari/537.36"
+FIREFOX = "Mozilla/5.0 (X11; Linux x86_64) Firefox/128.0"
+
+
+def new_login_lines(app, log_path, before):
+    # every create_ctfd() adds another file handler to the shared logger, so
+    # the same line is written several times: compare unique lines
+    with open(log_path) as log_file:
+        log_file.seek(before)
+        lines = [
+            line for line in log_file.read().splitlines() if "logged in via" in line
+        ]
+    return sorted(set(lines), key=lines.index)
+
+
+def test_every_login_is_logged_with_its_browser_and_the_previous_login():
     app = create_ctfd(enable_plugins=True)
     with app.app_context():
         onboarded_student(app)
         log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
-        client = login_as_user(app, name="student", password="password")
         before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
-        # a stale login tab submits the form again from the same session
+
+        client = app.test_client()
+        client.environ_base["HTTP_USER_AGENT"] = CHROME
+        client.get("/login")
         with client.session_transaction() as sess:
             nonce = sess["nonce"]
         r = client.post(
             "/login", data={"name": "student", "password": "password", "nonce": nonce}
         )
         assert r.status_code == 302
-        with open(log_path) as log_file:
-            log_file.seek(before)
-            assert "while another session is active" not in log_file.read()
-    destroy_ctfd(app)
+        lines = new_login_lines(app, log_path, before)
+        assert len(lines) == 1
+        assert (
+            "student logged in via form (Mozilla/5.0 (Macintosh) Chrome/124.0 Safari/537.36); first login on record"
+            in lines[0]
+        )
 
+        # a second login from another browser names the previous one
+        other = app.test_client()
+        other.environ_base["HTTP_USER_AGENT"] = FIREFOX
+        other.get("/login")
+        with other.session_transaction() as sess:
+            nonce = sess["nonce"]
+        r = other.post(
+            "/login", data={"name": "student", "password": "password", "nonce": nonce}
+        )
+        assert r.status_code == 302
+        lines = new_login_lines(app, log_path, before)
+        assert len(lines) == 2
+        assert (
+            "student logged in via form (Mozilla/5.0 (X11; Linux x86_64) Firefox/128.0); previous login 0 min ago from 127.0.0.1 (Mozilla/5.0 (Macintosh) Chrome/124.0 Safari/537.36)"
+            in lines[1]
+        )
 
-def test_token_forced_signout_does_not_flag_the_next_login():
-    app = create_ctfd(enable_plugins=True)
-    with app.app_context():
-        onboarded_student(app)
-        log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
-        browser_client = login_as_user(app, name="student", password="password")
-        # an API token request replaces the account's active nonce (core behavior)
+        # a wrong password logs nothing here
+        with other.session_transaction() as sess:
+            nonce = sess["nonce"]
+        other.post(
+            "/login", data={"name": "student", "password": "wrong", "nonce": nonce}
+        )
+        assert len(new_login_lines(app, log_path, before)) == 2
+
+        # API token requests are not logins of a browser session
         token = generate_user_token(Users.query.filter_by(name="student").first())
         headers = {
             "Authorization": f"Token {token.value}",
@@ -182,12 +170,5 @@ def test_token_forced_signout_does_not_flag_the_next_login():
             app.test_client().get("/api/v1/users/me", headers=headers).status_code
             == 200
         )
-        # the browser session is signed out on its next request
-        assert browser_client.get("/scoreboard").status_code == 302
-
-        before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
-        login_as_user(app, name="student", password="password")
-        with open(log_path) as log_file:
-            log_file.seek(before)
-            assert "while another session is active" not in log_file.read()
+        assert len(new_login_lines(app, log_path, before)) == 2
     destroy_ctfd(app)

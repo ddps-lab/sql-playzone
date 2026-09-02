@@ -146,8 +146,8 @@ def test_challenge_attachments_need_the_exam_browser_but_site_assets_do_not():
         challenge_id = gen_challenge(app.db).id
         gen_file(app.db, location="attachments/answers.txt", challenge_id=challenge_id)
         gen_file(app.db, location="branding/logo.png")  # a standard upload
-        set_config("exam_browser_required", "true")
         client = student_client(app)
+        set_config("exam_browser_required", "true")
 
         r = client.get("/files/attachments/answers.txt", headers={"User-Agent": CHROME})
         assert r.status_code == 403
@@ -168,4 +168,31 @@ def test_challenge_attachments_need_the_exam_browser_but_site_assets_do_not():
         assert r.status_code == 403
         r = client.get("/files/solutions/answer.sql", headers={"User-Agent": TRUSTLOCK})
         assert r.status_code != 403
+    destroy_ctfd(app)
+
+
+def test_students_cannot_log_in_from_another_browser_during_the_exam():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        student_client(app).get("/logout")
+        set_config("exam_browser_required", "true")
+
+        def login(user_agent, name, password="password"):
+            client = app.test_client()
+            client.environ_base["HTTP_USER_AGENT"] = user_agent
+            client.get("/login")
+            with client.session_transaction() as sess:
+                nonce = sess["nonce"]
+            r = client.post(
+                "/login", data={"name": name, "password": password, "nonce": nonce}
+            )
+            with client.session_transaction() as sess:
+                return r.status_code, "id" in sess
+
+        # a student's login from a normal browser is refused before it happens,
+        # so it cannot sign the student out of the exam browser
+        assert login(CHROME, "student") == (403, False)
+        assert login(TRUSTLOCK, "student") == (302, True)
+        # admins keep logging in from anywhere
+        assert login(CHROME, "admin") == (302, True)
     destroy_ctfd(app)

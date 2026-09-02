@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, sessio
 from CTFd.models import db, Users, UserFieldEntries, UserFields, Configs, Files
 from CTFd.utils.decorators import admins_only
 from CTFd.plugins import register_admin_plugin_menu_bar
-from CTFd.utils import set_config, get_config
+from CTFd.utils import set_config, get_config, validators
 from CTFd.utils.user import is_admin
 
 # Exam browser restriction. When enabled, everyone except admins must use a
@@ -43,6 +43,29 @@ def exam_browser_marker():
 
 def is_exam_browser(user_agent):
     return exam_browser_marker().lower() in (user_agent or '').lower()
+
+
+def student_login_from_other_browser():
+    """A non-admin account trying to log in from a browser that is not the exam browser.
+
+    The login page itself stays open so admins can sign in from anywhere,
+    but a student's login must be refused before it happens: CTFd's
+    login replaces the account's active session, which would sign the
+    student out of the exam browser even though the new session then
+    gets nothing but 403.
+    """
+    if request.endpoint != 'auth.login' or request.method != 'POST':
+        return False
+    if is_exam_browser(request.user_agent.string):
+        return False
+    name = (request.form.get('name') or '').strip()
+    if not name:
+        return False
+    if validators.validate_email(name) is True:
+        user = Users.query.filter_by(email=name).first()
+    else:
+        user = Users.query.filter_by(name=name).first()
+    return user is not None and user.type != 'admin'
 
 
 def exam_browser_exempt():
@@ -149,7 +172,11 @@ def load(app):
 
     @app.before_request
     def require_exam_browser():
-        if not exam_browser_required() or exam_browser_exempt():
+        if not exam_browser_required():
+            return
+        if student_login_from_other_browser():
+            return render_template('errors/403.html', error=EXAM_BROWSER_MESSAGE), 403
+        if exam_browser_exempt():
             return
         if is_admin() or is_exam_browser(request.user_agent.string):
             return
