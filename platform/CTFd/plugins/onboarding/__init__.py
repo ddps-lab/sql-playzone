@@ -92,8 +92,13 @@ def OnboardingForm(user_id, *args, **kwargs):
     return _OnboardingForm(*args, **kwargs)
 
 
-def validate_submission(user, name, password):
-    """Same rules as auth.register, applied to an existing account."""
+def validate_submission(user, name, password, include_fields):
+    """Same rules as auth.register, applied to an existing account.
+
+    Custom fields are collected only during the first onboarding. A later
+    password reset must not touch them: the settings API refuses edits to
+    fields marked non-editable, and this page should not offer a way around.
+    """
     errors = []
 
     if len(name) == 0:
@@ -120,7 +125,7 @@ def validate_submission(user, name, password):
         errors.append(_l("Pick a shorter password"))
 
     entries = {}
-    for field in UserFields.query.all():
+    for field in UserFields.query.all() if include_fields else ():
         value = request.form.get(f"fields[{field.id}]", "").strip()
         if field.required is True and value == "":
             errors.append(_l("Please provide all required fields"))
@@ -171,7 +176,9 @@ def load(app):
         if request.method == "POST":
             name = request.form.get("name", "").strip()
             password = request.form.get("password", "").strip()
-            errors, entries = validate_submission(user, name, password)
+            errors, entries = validate_submission(
+                user, name, password, include_fields=pending
+            )
             if not errors:
                 complete_onboarding(user, name, password, entries)
                 log(

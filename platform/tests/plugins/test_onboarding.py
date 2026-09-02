@@ -8,7 +8,13 @@ from CTFd.utils import set_config
 from CTFd.utils.crypto import verify_password
 from CTFd.utils.security.csrf import generate_nonce
 from CTFd.utils.security.signing import hmac
-from tests.helpers import create_ctfd, destroy_ctfd, gen_user, login_as_user
+from tests.helpers import (
+    create_ctfd,
+    destroy_ctfd,
+    gen_field,
+    gen_user,
+    login_as_user,
+)
 
 STUDENT_ID_FIELD = "Student ID Number"  # created by the student_fields plugin
 
@@ -200,14 +206,32 @@ def test_google_login_allows_a_new_password_without_the_current_one():
         r = client.get("/onboarding/")
         assert r.status_code == 200
         assert b"Skip for now" in r.data
+        assert STUDENT_ID_FIELD.encode() not in r.data
+
+        # a password reset leaves custom fields alone, even ones the settings
+        # page would refuse to change
+        cohort = gen_field(app.db, name="Cohort", editable=False, required=True)
+        db.session.add(UserFieldEntries(field_id=cohort.id, user_id=user_id, value="A"))
+        db.session.commit()
+        with client.session_transaction() as sess:
+            nonce = sess["nonce"]
         r = client.post(
             "/onboarding/",
-            data=onboarding_data(client, name="forgot", password="new-password"),
+            data={
+                "name": "forgot",
+                "password": "new-password",
+                f"fields[{cohort.id}]": "B",
+                "nonce": nonce,
+            },
         )
         assert r.status_code == 302
         assert r.location.endswith("/challenges")
         assert verify_password("new-password", stored_password(user_id))
         assert client.get("/api/v1/users/me").status_code == 200
+        entry = UserFieldEntries.query.filter_by(
+            user_id=user_id, field_id=cohort.id
+        ).first()
+        assert entry.value == "A"
 
         # the marker is tied to the nonce Google logged in with
         client = start_session(app, user_id, via_google=False)

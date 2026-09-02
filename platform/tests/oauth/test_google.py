@@ -10,8 +10,11 @@ from CTFd.models import Users
 from tests.helpers import create_ctfd, destroy_ctfd
 
 
-def google_userinfo(email, verified=True):
-    return {"id": "1", "email": email, "verified_email": verified, "name": "Student"}
+def google_userinfo(email, verified=True, hd="hanyang.ac.kr"):
+    info = {"id": "1", "email": email, "verified_email": verified, "name": "Student"}
+    if hd is not None:
+        info["hd"] = hd
+    return info
 
 
 def google_callback(client, userinfo):
@@ -43,6 +46,9 @@ def test_google_callback_rejects_accounts_outside_the_course_domain():
             google_userinfo("someone@hanyang.ac.kr", verified=False),
             google_userinfo("someone@hanyang.ac.kr.example.com"),
             google_userinfo("someone@sub.hanyang.ac.kr"),
+            # a consumer account registered with a university address
+            google_userinfo("someone@hanyang.ac.kr", hd=None),
+            google_userinfo("someone@hanyang.ac.kr", hd="other.ac.kr"),
         )
         for userinfo in rejected:
             client = app.test_client()

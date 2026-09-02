@@ -43,14 +43,14 @@
 
               <div class="row pt-3">
                 <div class="col-6 col-md-8">
+                  <a class="align-middle" href="{{ url_for('auth.reset_password') }}">
+                    {% trans %}Forgot your password?{% endtrans %}
+                  </a>
                   {% if get_app_config('GOOGLE_CLIENT_ID') %}
+                    <br>
                     <small class="text-muted">
-                      {% trans %}Forgot your password? Log in with Google below, then set a new one.{% endtrans %}
+                      {% trans %}HYU accounts can also log in with Google below and set a new password.{% endtrans %}
                     </small>
-                  {% else %}
-                    <a class="align-middle" href="{{ url_for('auth.reset_password') }}">
-                      {% trans %}Forgot your password?{% endtrans %}
-                    </a>
                   {% endif %}
                 </div>
 

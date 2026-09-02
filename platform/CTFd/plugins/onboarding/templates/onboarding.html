@@ -53,7 +53,9 @@
             </small>
           </div>
 
-          {{ render_extra_fields(form.extra) }}
+          {% if pending %}
+            {{ render_extra_fields(form.extra) }}
+          {% endif %}
 
           {{ form.nonce() }}
 

@@ -684,9 +684,16 @@ GOOGLE_HOSTED_DOMAIN = "hanyang.ac.kr"
 
 
 def google_account_allowed(user_data):
+    """Only verified Workspace members of the course domain.
+
+    A consumer Google account can carry a verified university email address,
+    so the email suffix alone is not proof of membership; the hd claim is.
+    """
     email = str(user_data.get("email") or "").strip().lower()
-    return user_data.get("verified_email") is True and email.endswith(
-        "@" + GOOGLE_HOSTED_DOMAIN
+    return (
+        user_data.get("verified_email") is True
+        and str(user_data.get("hd") or "").lower() == GOOGLE_HOSTED_DOMAIN
+        and email.endswith("@" + GOOGLE_HOSTED_DOMAIN)
     )
 
 
