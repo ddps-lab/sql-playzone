@@ -102,3 +102,32 @@ def test_concurrent_logins_leave_a_trace_in_the_logins_log():
         assert "student login attempt while another session is active" in lines
         assert "student signed out: the account signed in from another browser" in lines
     destroy_ctfd(app)
+
+
+def test_a_login_after_logout_is_not_flagged_as_concurrent():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        onboarded_student(app)
+        log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
+
+        client = login_as_user(app, name="student", password="password")
+        assert client.get("/scoreboard").status_code == 200
+        assert client.get("/logout").status_code == 302
+        before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+        login_as_user(app, name="student", password="password")
+        with open(log_path) as log_file:
+            log_file.seek(before)
+            assert "while another session is active" not in log_file.read()
+
+        # a session that went quiet for longer than the activity window is not
+        # flagged either, even though its nonce key is still cached
+        from CTFd.cache import cache
+
+        user_id = Users.query.filter_by(name="student").first().id
+        cache.delete(f"user_{user_id}_session_seen")
+        before = os.path.getsize(log_path)
+        login_as_user(app, name="student", password="password")
+        with open(log_path) as log_file:
+            log_file.seek(before)
+            assert "while another session is active" not in log_file.read()
+    destroy_ctfd(app)

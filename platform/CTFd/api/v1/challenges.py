@@ -1403,10 +1403,8 @@ def record_execute_event(challenge, submission, status, message):
         "user_name": user.name,
         "challenge_id": challenge.id,
         "challenge_name": challenge.name,
-        "already_solved": Solves.query.filter_by(
-            user_id=user.id, challenge_id=challenge.id
-        ).first()
-        is not None,
+        # account semantics: in teams mode a teammate's solve counts
+        "already_solved": challenge.id in get_solve_ids_for_user_id(user_id=user.id),
         "event_type": "execute",
         "typed_text": "",
         "typed_length": 0,

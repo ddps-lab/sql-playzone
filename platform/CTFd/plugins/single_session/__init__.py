@@ -25,6 +25,11 @@ EXEMPT_ENDPOINTS = {
     "views.healthcheck",
     "static",
 }
+# A session counts as active for this long after its last request. The
+# active-nonce key itself lives for 30 days and survives logouts, so it
+# cannot tell a live session from a stale one.
+SESSION_ACTIVITY_WINDOW = 30 * 60
+LOGIN_ENDPOINTS = {"auth.login", "auth.google_callback", "auth.oauth_redirect"}
 SIGNED_OUT_MESSAGE = (
     "This account signed in from another browser, so this session was signed out. "
     "다른 브라우저에서 로그인되어 이 세션은 로그아웃되었습니다."
@@ -56,6 +61,22 @@ def session_is_current():
     return not active_nonce or session.get("nonce") == active_nonce
 
 
+def seen_key(user_id):
+    return f"user_{user_id}_session_seen"
+
+
+def mark_session_seen():
+    cache.set(
+        seen_key(session["id"]), session.get("nonce"), timeout=SESSION_ACTIVITY_WINDOW
+    )
+
+
+def forget_session():
+    """On logout: no session of this account is active any more."""
+    cache.delete(seen_key(session["id"]))
+    cache.delete(f"user_{session['id']}_active_nonce")
+
+
 def browser():
     return (request.user_agent.string or "")[:120]
 
@@ -78,7 +99,7 @@ def load(app):
             user = Users.query.filter_by(email=name).first()
         else:
             user = Users.query.filter_by(name=name).first()
-        if user and cache.get(f"user_{user.id}_active_nonce"):
+        if user and cache.get(seen_key(user.id)):
             log(
                 "logins",
                 "[{date}] {ip} - {name} login attempt while another session is active ({browser})",
@@ -86,8 +107,19 @@ def load(app):
                 browser=browser(),
             )
 
+    @app.after_request
+    def mark_new_login_seen(response):
+        # A session counts as active from the moment it logs in, before it
+        # makes any other request.
+        if request.endpoint in LOGIN_ENDPOINTS and authed() and session_is_current():
+            mark_session_seen()
+        return response
+
     @app.before_request
     def enforce_single_session():
+        if request.endpoint == "auth.logout" and authed() and session_is_current():
+            forget_session()
+            return
         if request.endpoint in EXEMPT_ENDPOINTS or not authed():
             return
         # An API token logs in per request (CTFd's tokens hook), so token
@@ -96,6 +128,7 @@ def load(app):
         if authenticated_by_token():
             return
         if session_is_current():
+            mark_session_seen()
             return
         user = get_current_user_attrs()
         log(

@@ -81,6 +81,16 @@ def test_a_test_run_records_an_execute_event_from_the_server(tmp_path, monkeypat
         assert event["submit_status"] == status
         assert event["session_id"] is None
         assert event["already_solved"] is False
+
+        # once the account has solved the challenge, later Test runs say so
+        from tests.helpers import gen_solve
+
+        gen_solve(app.db, user_id=student_id, challenge_id=challenge_id)
+        client.post(
+            "/api/v1/challenges/attempt",
+            json={"challenge_id": challenge_id, "submission": "SELECT 2", "test": True},
+        )
+        assert behavior_lines(tmp_path)[-1]["already_solved"] is True
     destroy_ctfd(app)
 
 
