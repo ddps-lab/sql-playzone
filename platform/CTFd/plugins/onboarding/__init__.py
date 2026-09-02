@@ -443,6 +443,7 @@ def load(app):
             mode=mode,
             terms=terms_html() if mode != "reset" else None,
             terms_field_name=TERMS_FIELD_NAME,
+            password_min_length=password_min_length(),
         )
 
     app.register_blueprint(blueprint)

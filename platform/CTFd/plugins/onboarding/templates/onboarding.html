@@ -31,7 +31,7 @@
           {% endif %}
         </p>
 
-        <form method="post" accept-charset="utf-8" role="form">
+        <form method="post" accept-charset="utf-8" role="form" id="onboarding-form" data-password-min-length="{{ password_min_length }}">
           {% if mode != "terms" %}
             <div class="mb-3">
               <b>{{ form.name.label(class="form-label") }}</b>
@@ -63,6 +63,11 @@
               <small class="form-text text-muted">
                 {{ form.password_confirm.description }}
               </small>
+              <ul class="list-unstyled small mt-2 mb-0" id="password-rules">
+                <li id="rule-length" class="text-muted">{% trans %}At least{% endtrans %} {{ password_min_length }} {% trans %}characters{% endtrans %}</li>
+                <li id="rule-mix" class="text-muted">{% trans %}Contains both a letter and a digit{% endtrans %}</li>
+                <li id="rule-match" class="text-muted">{% trans %}Both password fields match{% endtrans %}</li>
+              </ul>
             </div>
           {% endif %}
 
@@ -104,4 +109,52 @@
       </div>
     </div>
   </div>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (function () {
+      // Live feedback only; the server applies the same rules on submit.
+      var form = document.getElementById("onboarding-form");
+      if (!form) return;
+      var password = form.elements.namedItem("password");
+      var confirm = form.elements.namedItem("password_confirm");
+      var terms = form.querySelector('input[type="checkbox"]');
+      var submit = form.querySelector('input[type="submit"], button[type="submit"]');
+      var minLength = parseInt(form.dataset.passwordMinLength, 10) || 8;
+      var rules = {
+        length: document.getElementById("rule-length"),
+        mix: document.getElementById("rule-mix"),
+        match: document.getElementById("rule-match")
+      };
+      function mark(node, ok, touched) {
+        if (!node) return;
+        node.classList.remove("text-muted", "text-success", "text-danger");
+        node.classList.add(!touched ? "text-muted" : ok ? "text-success" : "text-danger");
+        node.textContent = (ok && touched ? "\u2713 " : "\u2022 ") + node.textContent.replace(/^[\u2713\u2022] /, "");
+      }
+      function check() {
+        var ready = true;
+        if (password && confirm) {
+          var value = password.value;
+          var touched = value.length > 0 || confirm.value.length > 0;
+          var okLength = value.length >= minLength;
+          var okMix = /\p{L}/u.test(value) && /\p{N}/u.test(value);
+          var okMatch = confirm.value.length > 0 && confirm.value === value;
+          mark(rules.length, okLength, touched);
+          mark(rules.mix, okMix, touched);
+          mark(rules.match, okMatch, touched);
+          ready = okLength && okMix && okMatch;
+        }
+        if (terms) ready = ready && terms.checked;
+        if (submit) submit.disabled = !ready;
+      }
+      [password, confirm, terms].forEach(function (node) {
+        if (node) node.addEventListener("input", check);
+        if (node) node.addEventListener("change", check);
+      });
+      check();
+    })();
+  </script>
 {% endblock %}

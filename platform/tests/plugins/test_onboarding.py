@@ -119,6 +119,9 @@ def test_google_account_without_password_is_sent_to_onboarding():
         r = client.get("/onboarding/")
         assert r.status_code == 200
         assert b"minsu@hanyang.ac.kr" in r.data
+        # live password feedback uses the server's minimum length
+        assert b'data-password-min-length="8"' in r.data
+        assert b'id="password-rules"' in r.data
         assert STUDENT_ID_FIELD.encode() in r.data
         # the terms are shown inline, rendered from markdown, with a consent checkbox
         assert "<h1>SQL PlayZone 이용 약관".encode() in r.data
@@ -389,6 +392,7 @@ def test_existing_accounts_are_asked_for_consent_once():
         assert r.status_code == 200
         assert b"Please read and agree to the Terms of Service" in r.data
         assert b'name="password"' not in r.data
+        assert b'id="password-rules"' not in r.data
         assert STUDENT_ID_FIELD.encode() not in r.data
 
         with client.session_transaction() as sess:
