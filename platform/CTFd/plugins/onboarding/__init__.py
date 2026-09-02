@@ -231,7 +231,11 @@ def load(app):
     @ratelimit(method="POST", limit=10, interval=5)
     def index():
         user = get_current_user()
-        needs_password = user.password is None
+        # Only Google-created accounts set up local credentials here; other
+        # password-less OAuth accounts keep their provider login.
+        needs_password = user.password is None and str(user.oauth_id or "").startswith(
+            GOOGLE_OAUTH_ID_PREFIX
+        )
         # Admins are exempt from required fields, as in require_complete_profile.
         needs_terms = user.type != "admin" and terms_missing(user.id)
         if not needs_password and not needs_terms and not logged_in_with_google():

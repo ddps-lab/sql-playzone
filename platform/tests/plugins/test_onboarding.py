@@ -352,3 +352,34 @@ def test_existing_accounts_are_asked_for_consent_once():
         assert client.get("/api/v1/users/me").status_code == 200
         assert client.get("/onboarding/").location.endswith("/settings")
     destroy_ctfd(app)
+
+
+def test_other_oauth_accounts_only_get_the_terms():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        # an account from CTFd's own OAuth integration: no password, no google_ prefix
+        user = Users(name="mlc", email="mlc@examplectf.com", oauth_id="1337")
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+        client = start_session(app, user_id, via_google=False)
+
+        r = client.get("/challenges")
+        assert r.status_code == 302
+        assert r.location.endswith("/onboarding/")
+        r = client.get("/onboarding/")
+        assert r.status_code == 200
+        assert b'name="password"' not in r.data
+        assert STUDENT_ID_FIELD.encode() not in r.data
+
+        with client.session_transaction() as sess:
+            nonce = sess["nonce"]
+        r = client.post(
+            "/onboarding/",
+            data={f"fields[{field_id(TERMS_FIELD)}]": "y", "nonce": nonce},
+        )
+        assert r.status_code == 302
+        assert stored_password(user_id) is None
+        assert client.get("/api/v1/users/me").status_code == 200
+        assert client.get("/onboarding/").location.endswith("/settings")
+    destroy_ctfd(app)
