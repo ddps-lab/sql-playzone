@@ -11,6 +11,7 @@ from pathlib import Path
 
 from flask import (
     Blueprint,
+    current_app,
     jsonify,
     redirect,
     render_template,
@@ -23,7 +24,7 @@ from markupsafe import Markup
 from wtforms import PasswordField, StringField
 from wtforms.validators import InputRequired
 
-from CTFd.cache import clear_standings
+from CTFd.cache import clear_config, clear_standings
 from CTFd.forms import BaseForm
 from CTFd.forms.fields import SubmitField
 from CTFd.forms.users import attach_custom_user_fields, build_custom_user_fields
@@ -72,6 +73,10 @@ EMAIL_LOCKED_MESSAGE = (
     "Your email address comes from your HYU Google account and cannot be changed here."
 )
 
+# Uploaded files any page may need: logo, banner, page images. Challenge and
+# solution attachments are not among them.
+SITE_ASSET_FILE_TYPES = ("standard", "page")
+
 NAME_MAX_LENGTH = 128
 PASSWORD_MAX_LENGTH = 128
 # A minimal password rule: long enough and not a bare number or bare word.
@@ -84,11 +89,11 @@ def request_is_exempt():
     if request.endpoint in EXEMPT_ENDPOINTS:
         return True
     if request.endpoint == "views.files":
-        # Uploaded files serve both site assets (logo, banner, page images),
-        # which this page needs, and challenge attachments, which stay
-        # gated like every other challenge request.
+        # Uploaded files serve both site assets, which this page needs, and
+        # challenge or solution attachments, which stay gated like every
+        # other challenge request.
         upload = Files.query.filter_by(location=request.view_args.get("path")).first()
-        return upload is None or upload.type != "challenge"
+        return upload is None or upload.type in SITE_ASSET_FILE_TYPES
     return False
 
 
@@ -109,10 +114,15 @@ def password_min_length():
     a CTFd import replaces the configs table without restarting the app.
     """
     configured = int(get_config("password_min_length", default=0) or 0)
-    if configured < PASSWORD_MIN_LENGTH:
+    if configured >= PASSWORD_MIN_LENGTH:
+        return configured
+    presets = current_app.config.get("PRESET_CONFIGS") or {}
+    if "password_min_length" not in presets:
         set_config("password_min_length", PASSWORD_MIN_LENGTH)
-        return PASSWORD_MIN_LENGTH
-    return configured
+        clear_config()
+    # A preset below the floor always wins in get_config and cannot be
+    # raised from here; this plugin's own pages enforce the floor regardless.
+    return PASSWORD_MIN_LENGTH
 
 
 def ensure_password_policy(app):
@@ -155,9 +165,17 @@ def terms_field():
         )
     field = fields[0]
     for duplicate in fields[1:]:
-        UserFieldEntries.query.filter_by(field_id=duplicate.id).update(
-            {"field_id": field.id}
-        )
+        # A user may have an entry under both; keep one row and keep consent.
+        for entry in UserFieldEntries.query.filter_by(field_id=duplicate.id).all():
+            kept = UserFieldEntries.query.filter_by(
+                field_id=field.id, user_id=entry.user_id
+            ).first()
+            if kept is None:
+                entry.field_id = field.id
+                continue
+            if is_affirmative(entry.value) and not is_affirmative(kept.value):
+                kept.value = True
+            db.session.delete(entry)
         db.session.delete(duplicate)
     # A same-name field from an older installation is adopted, but it must
     # have this shape or consent could be stored as text and never count.
@@ -178,6 +196,11 @@ def terms_field():
     return field
 
 
+def is_affirmative(value):
+    # Entries written while the field was still a text field hold "y".
+    return value is True or str(value).lower() in AFFIRMATIVE_VALUES
+
+
 def terms_missing(user_id):
     """True until this account has said yes to the terms.
 
@@ -187,10 +210,7 @@ def terms_missing(user_id):
     entry = UserFieldEntries.query.filter_by(
         field_id=terms_field().id, user_id=user_id
     ).first()
-    if entry is None:
-        return True
-    # Entries written while the field was still a text field hold "y".
-    return not (entry.value is True or str(entry.value).lower() in AFFIRMATIVE_VALUES)
+    return entry is None or not is_affirmative(entry.value)
 
 
 def terms_text():
@@ -203,6 +223,7 @@ def terms_text():
     if not text and not get_config("tos_url"):
         text = TERMS_TEXT_PATH.read_text(encoding="utf-8")
         set_config("tos_text", text)
+        clear_config()
     return text
 
 

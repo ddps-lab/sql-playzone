@@ -17,6 +17,9 @@ EXAM_BROWSER_MESSAGE = (
 # Requests that must keep working from any browser: admins log in (or
 # recover their password) from a normal browser, and the load balancer
 # health check has no User-Agent.
+# Uploaded files any page may need: logo, banner, page images. Challenge and
+# solution attachments are not among them.
+SITE_ASSET_FILE_TYPES = ('standard', 'page')
 EXAM_BROWSER_EXEMPT_ENDPOINTS = {
     'auth.login',
     'auth.logout',
@@ -46,11 +49,11 @@ def exam_browser_exempt():
     if request.endpoint in EXAM_BROWSER_EXEMPT_ENDPOINTS:
         return True
     if request.endpoint == 'views.files':
-        # Uploaded files serve both site assets (logo, banner, page images),
-        # which the login and error pages need, and challenge attachments,
-        # which must not be fetched from another browser.
+        # Uploaded files serve both site assets, which the login and error
+        # pages need, and challenge or solution attachments, which must not
+        # be fetched from another browser.
         upload = Files.query.filter_by(location=request.view_args.get('path')).first()
-        return upload is None or upload.type != 'challenge'
+        return upload is None or upload.type in SITE_ASSET_FILE_TYPES
     return False
 
 

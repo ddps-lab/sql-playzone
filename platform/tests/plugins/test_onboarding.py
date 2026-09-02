@@ -3,7 +3,7 @@
 """Google-registered accounts finish onboarding before they can use the site."""
 
 from CTFd.cache import cache
-from CTFd.models import UserFieldEntries, UserFields, Users, db
+from CTFd.models import SolutionFiles, UserFieldEntries, UserFields, Users, db
 from CTFd.utils import get_config, set_config
 from CTFd.utils.crypto import verify_password
 from CTFd.utils.security.csrf import generate_nonce
@@ -14,6 +14,7 @@ from tests.helpers import (
     gen_challenge,
     gen_field,
     gen_file,
+    gen_solution,
     gen_user,
     login_as_user,
 )
@@ -97,12 +98,18 @@ def test_google_account_without_password_is_sent_to_onboarding():
         challenge = gen_challenge(app.db)
         gen_file(app.db, location="attachments/answers.txt", challenge_id=challenge.id)
         gen_file(app.db, location="branding/logo.png")  # a site asset
+        solution = gen_solution(app.db, challenge_id=challenge.id, state="visible")
+        db.session.add(
+            SolutionFiles(location="solutions/answer.sql", solution_id=solution.id)
+        )
+        db.session.commit()
         for path in (
             "/",
             "/challenges",
             "/settings",
             "/api/v1/users/me",
             "/files/attachments/answers.txt",
+            "/files/solutions/answer.sql",
         ):
             r = client.get(path)
             assert r.status_code == 302, path
@@ -485,11 +492,57 @@ def test_duplicate_consent_fields_are_folded_into_the_first():
         )
         db.session.commit()
 
+        # another user answered under both fields: no under the kept one,
+        # yes under the duplicate
+        other_id = create_google_user(
+            app, name="둘다", email="both@hanyang.ac.kr", password="hunter22!"
+        )
+        db.session.add(
+            UserFieldEntries(field_id=first_id, user_id=other_id, value=False)
+        )
+        db.session.add(
+            UserFieldEntries(field_id=duplicate_id, user_id=other_id, value=True)
+        )
+        db.session.commit()
+
         assert terms_field().id == first_id
         assert UserFields.query.filter_by(name=TERMS_FIELD).count() == 1
         # the entry recorded against the duplicate now counts for the kept field
         client = login_as_user(app, name="김민수", password="hunter22!")
         assert client.get("/api/v1/users/me").status_code == 200
+        entries = UserFieldEntries.query.filter_by(user_id=other_id).all()
+        assert [(e.field_id, e.value) for e in entries] == [(first_id, True)]
+        client = login_as_user(app, name="둘다", password="hunter22!")
+        assert client.get("/api/v1/users/me").status_code == 200
+    destroy_ctfd(app)
+
+
+def test_a_preset_password_minimum_below_the_floor_is_not_rewritten():
+    from CTFd.models import Configs
+    from CTFd.plugins.onboarding import password_min_length
+
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        app.config["PRESET_CONFIGS"] = {"password_min_length": 4}
+        stored_before = Configs.query.filter_by(key="password_min_length").first().value
+        assert password_min_length() == 8
+        assert password_min_length() == 8
+        assert (
+            Configs.query.filter_by(key="password_min_length").first().value
+            == stored_before
+        )
+        # the onboarding page still enforces the floor on its own
+        user_id = create_google_user(app)
+        client = start_session(app, user_id)
+        r = client.post(
+            "/onboarding/",
+            data=onboarding_data(
+                client, password="ab12345", password_confirm="ab12345"
+            ),
+        )
+        assert r.status_code == 200
+        assert b"Password must be at least 8 characters" in r.data
+        app.config["PRESET_CONFIGS"] = None
     destroy_ctfd(app)
 
 

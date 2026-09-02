@@ -2,13 +2,14 @@
 # -*- coding: utf-8 -*-
 """Exam browser restriction: students must use the lockdown browser when enabled."""
 
-from CTFd.models import UserFieldEntries, UserFields, Users, db
+from CTFd.models import SolutionFiles, UserFieldEntries, UserFields, Users, db
 from CTFd.utils import get_config, set_config
 from tests.helpers import (
     create_ctfd,
     destroy_ctfd,
     gen_challenge,
     gen_file,
+    gen_solution,
     gen_user,
     login_as_user,
 )
@@ -142,8 +143,8 @@ def test_admins_and_the_login_page_are_not_restricted():
 def test_challenge_attachments_need_the_exam_browser_but_site_assets_do_not():
     app = create_ctfd(enable_plugins=True)
     with app.app_context():
-        challenge = gen_challenge(app.db)
-        gen_file(app.db, location="attachments/answers.txt", challenge_id=challenge.id)
+        challenge_id = gen_challenge(app.db).id
+        gen_file(app.db, location="attachments/answers.txt", challenge_id=challenge_id)
         gen_file(app.db, location="branding/logo.png")  # a standard upload
         set_config("exam_browser_required", "true")
         client = student_client(app)
@@ -155,5 +156,16 @@ def test_challenge_attachments_need_the_exam_browser_but_site_assets_do_not():
         )
         assert r.status_code != 403
         r = client.get("/files/branding/logo.png", headers={"User-Agent": CHROME})
+        assert r.status_code != 403
+
+        # solution attachments are course material too
+        solution = gen_solution(app.db, challenge_id=challenge_id, state="visible")
+        db.session.add(
+            SolutionFiles(location="solutions/answer.sql", solution_id=solution.id)
+        )
+        db.session.commit()
+        r = client.get("/files/solutions/answer.sql", headers={"User-Agent": CHROME})
+        assert r.status_code == 403
+        r = client.get("/files/solutions/answer.sql", headers={"User-Agent": TRUSTLOCK})
         assert r.status_code != 403
     destroy_ctfd(app)
