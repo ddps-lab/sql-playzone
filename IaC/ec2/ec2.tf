@@ -399,7 +399,9 @@ resource "aws_autoscaling_policy" "request_count_tracking" {
 # the burst at the start of an exam. Each window raises the minimum and desired
 # capacity before the exam and restores the minimum afterwards; target tracking
 # then scales in as load drops. Windows are declared in KST (UTC+9) and
-# scheduled actions require UTC.
+# scheduled actions require UTC. The root module rejects overlapping windows
+# and capacities outside asg_min_size..asg_max_size, so no action ever has to
+# change the maximum and one window's end cannot undo another window's floor.
 locals {
   exam_windows = {
     for window in var.exam_windows : window.name => {
@@ -430,7 +432,7 @@ resource "aws_autoscaling_schedule" "exam_scale_out" {
   start_time             = each.value.start_time
 
   min_size         = each.value.capacity
-  max_size         = max(var.asg_max_size, each.value.capacity)
+  max_size         = -1
   desired_capacity = each.value.capacity
 }
 
@@ -441,10 +443,10 @@ resource "aws_autoscaling_schedule" "exam_scale_in" {
   autoscaling_group_name = aws_autoscaling_group.asg.name
   start_time             = each.value.end_time
 
-  # Only the floor is restored; -1 leaves the desired capacity alone so that
-  # target tracking scales in gradually instead of terminating every extra
-  # instance at once.
+  # Only the floor is restored; -1 leaves the maximum and the desired capacity
+  # alone so that target tracking scales in gradually instead of terminating
+  # every extra instance at once.
   min_size         = var.asg_min_size
-  max_size         = var.asg_max_size
+  max_size         = -1
   desired_capacity = -1
 }

@@ -173,7 +173,7 @@ variable "asg_desired_capacity" {
 }
 
 variable "exam_windows" {
-  description = "Pre-scaling windows for exams and quizzes. The group is raised to capacity at start and its minimum is restored at end. Times are KST without a zone suffix, e.g. 2026-10-20T08:30:00. Windows that have already passed are ignored and should be removed."
+  description = "Pre-scaling windows for exams and quizzes. The group is raised to capacity at start and its minimum is restored at end. Times are KST without a zone suffix, e.g. 2026-10-20T08:30:00. Windows must not overlap (merge back-to-back exams into one window), capacity must stay within asg_min_size..asg_max_size, and windows that have already passed are ignored and should be removed."
   type = list(object({
     name     = string
     start    = string
@@ -208,8 +208,20 @@ variable "exam_windows" {
   validation {
     condition = alltrue([
       for window in var.exam_windows :
-      window.capacity >= 1 && floor(window.capacity) == window.capacity
+      floor(window.capacity) == window.capacity
+      && window.capacity >= var.asg_min_size
+      && window.capacity <= var.asg_max_size
     ])
-    error_message = "exam_windows[*].capacity must be a whole number of at least 1."
+    error_message = "exam_windows[*].capacity must be a whole number between asg_min_size and asg_max_size; raise asg_max_size if an exam needs more."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for i, a in var.exam_windows : [
+        for j, b in var.exam_windows :
+        i >= j || try(timecmp("${a.end}Z", "${b.start}Z") < 0 || timecmp("${b.end}Z", "${a.start}Z") < 0, false)
+      ]
+    ]))
+    error_message = "exam_windows must not overlap or touch; merge back-to-back exams into one window."
   }
 }

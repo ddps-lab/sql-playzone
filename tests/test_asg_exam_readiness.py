@@ -42,22 +42,25 @@ class ASGExamReadinessTests(unittest.TestCase):
         self.assertRegex(scale_out, r"start_time\s*=\s*each\.value\.start_time")
         self.assertRegex(scale_out, r"min_size\s*=\s*each\.value\.capacity")
         self.assertRegex(scale_out, r"desired_capacity\s*=\s*each\.value\.capacity")
-        self.assertRegex(scale_out, r"max_size\s*=\s*max\(var\.asg_max_size, each\.value\.capacity\)")
+        self.assertRegex(scale_out, r"max_size\s*=\s*-1\b")
 
         scale_in = top_level_block(ec2, 'resource "aws_autoscaling_schedule" "exam_scale_in"')
         self.assertRegex(scale_in, r"for_each\s*=\s*local\.exam_scale_in")
         self.assertRegex(scale_in, r"start_time\s*=\s*each\.value\.end_time")
         self.assertRegex(scale_in, r"min_size\s*=\s*var\.asg_min_size")
-        self.assertRegex(scale_in, r"max_size\s*=\s*var\.asg_max_size")
+        self.assertRegex(scale_in, r"max_size\s*=\s*-1\b")
         self.assertRegex(scale_in, r"desired_capacity\s*=\s*-1\b")
 
     def test_exam_windows_are_wired_from_the_root_module(self):
         root_vars = ROOT_VARS.read_text()
         exam_windows = top_level_block(root_vars, 'variable "exam_windows"')
         self.assertRegex(exam_windows, r"default\s*=\s*\[\]")
-        self.assertEqual(exam_windows.count("validation {"), 4)
+        self.assertEqual(exam_windows.count("validation {"), 5)
         self.assertIn('try(timecmp("${window.start}Z", "${window.end}Z") < 0, false)', exam_windows)
         self.assertIn("distinct(var.exam_windows[*].name)", exam_windows)
+        self.assertIn("window.capacity <= var.asg_max_size", exam_windows)
+        self.assertIn('timecmp("${a.end}Z", "${b.start}Z") < 0', exam_windows)
+        self.assertIn("must not overlap", exam_windows)
 
         module_vars = EC2_VARS.read_text()
         self.assertIn('variable "exam_windows"', module_vars)
