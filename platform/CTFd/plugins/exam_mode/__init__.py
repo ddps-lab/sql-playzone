@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, sessio
 from CTFd.models import db, Users, UserFieldEntries, UserFields, Configs, Files
 from CTFd.utils.decorators import admins_only
 from CTFd.plugins import register_admin_plugin_menu_bar
-from CTFd.utils import set_config, get_config, validators
+from CTFd.utils import set_config, get_config, get_app_config, validators
 from CTFd.utils.user import is_admin, get_ip
 from CTFd.cache import cache
 
@@ -67,6 +67,11 @@ def non_admin_login_from_other_browser():
     if is_exam_browser(request.user_agent.string):
         return False
     name = (request.form.get('name') or '').strip()
+    # A configured preset admin exists in the database only after its first
+    # login (auth.login creates it), so it is recognised by name here.
+    preset = {get_app_config('PRESET_ADMIN_NAME'), get_app_config('PRESET_ADMIN_EMAIL')}
+    if name and name in preset:
+        return False
     if validators.validate_email(name) is True:
         user = Users.query.filter_by(email=name).first()
     else:

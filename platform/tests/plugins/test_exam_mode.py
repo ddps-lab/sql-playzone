@@ -195,8 +195,13 @@ def test_students_cannot_log_in_from_another_browser_during_the_exam():
         assert login(TRUSTLOCK, "student") == (302, True)
         # unknown names get the same answer, so student names are not revealed
         assert login(CHROME, "nobody") == (403, False)
-        # admins keep logging in from anywhere
+        # admins keep logging in from anywhere, including a preset admin that
+        # does not exist in the database until its first login
         assert login(CHROME, "admin") == (302, True)
+        app.config["PRESET_ADMIN_NAME"] = "preset-admin"
+        app.config["PRESET_ADMIN_EMAIL"] = "preset@examplectf.com"
+        app.config["PRESET_ADMIN_PASSWORD"] = "preset-password"
+        assert login(CHROME, "preset-admin", "preset-password") == (302, True)
 
         # refused attempts count against the login rate limit
         from CTFd.cache import cache

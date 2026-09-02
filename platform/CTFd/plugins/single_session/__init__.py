@@ -21,7 +21,7 @@ from CTFd.cache import cache
 from CTFd.utils.helpers import error_for
 from CTFd.utils.logging import log
 from CTFd.utils.security.auth import logout_user
-from CTFd.utils.user import authed, get_current_user_attrs
+from CTFd.utils.user import authed, get_current_user_attrs, get_ip
 
 # Requests that need no session check: leaving, static files, health probes.
 EXEMPT_ENDPOINTS = {
@@ -105,7 +105,8 @@ def record_login(via):
         )
     cache.set(
         last_login_key(user.id),
-        {"at": now, "ip": request.remote_addr, "browser": browser()},
+        # the same resolved address CTFd's log lines use (proxies considered)
+        {"at": now, "ip": get_ip(), "browser": browser()},
         timeout=LAST_LOGIN_TTL,
     )
 
