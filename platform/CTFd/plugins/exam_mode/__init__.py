@@ -64,8 +64,27 @@ LOGIN_INTERVAL = 5
 SINGLE_SESSION_CONFIG = 'single_session_required'
 
 
-def non_admin_login_from_other_browser():
-    """A login from a browser that is not the exam browser, for anything but an admin.
+def login_from_other_browser():
+    """A login attempt from a browser that is not the exam browser."""
+    return (
+        request.endpoint == 'auth.login'
+        and request.method == 'POST'
+        and not is_exam_browser(request.user_agent.string)
+    )
+
+
+def login_rate_limit_key():
+    # The login view's @ratelimit uses this key; refused attempts share it
+    # because they are answered before the view runs.
+    return f"rl:{get_ip()}:auth.login"
+
+
+def login_over_limit():
+    return int(cache.get(login_rate_limit_key()) or 0) >= LOGIN_LIMIT
+
+
+def non_admin_login():
+    """A login for anything but an admin account.
 
     The login page itself stays open so admins can sign in from anywhere,
     but a student's login must be refused before it happens: CTFd's
@@ -74,10 +93,6 @@ def non_admin_login_from_other_browser():
     gets nothing but 403. Unknown names are refused the same way, so the
     response does not reveal which names belong to students.
     """
-    if request.endpoint != 'auth.login' or request.method != 'POST':
-        return False
-    if is_exam_browser(request.user_agent.string):
-        return False
     name = (request.form.get('name') or '').strip()
     if validators.validate_email(name) is True:
         user = Users.query.filter_by(email=name).first()
@@ -98,16 +113,16 @@ def non_admin_login_from_other_browser():
     )
 
 
+def too_many_logins_response():
+    response = jsonify({'success': False, 'errors': ['Too many requests']})
+    response.status_code = 429
+    return response
+
+
 def refused_login_response():
-    # This runs before the login view's @ratelimit, so apply the same limit
-    # here; otherwise refused attempts would be free of it.
-    key = f"rl:{get_ip()}:auth.login"
-    current = int(cache.get(key) or 0)
-    if current >= LOGIN_LIMIT:
-        response = jsonify({'success': False, 'errors': ['Too many requests']})
-        response.status_code = 429
-        return response
-    cache.set(key, current + 1, timeout=LOGIN_INTERVAL)
+    # Count the refused attempt like the login view would have.
+    key = login_rate_limit_key()
+    cache.set(key, int(cache.get(key) or 0) + 1, timeout=LOGIN_INTERVAL)
     return render_template('errors/403.html', error=EXAM_BROWSER_MESSAGE), 403
 
 
@@ -224,8 +239,12 @@ def load(app):
     def require_exam_browser():
         if not exam_browser_required():
             return
-        if non_admin_login_from_other_browser():
-            return refused_login_response()
+        if login_from_other_browser():
+            # Over the limit, answer before looking the account up.
+            if login_over_limit():
+                return too_many_logins_response()
+            if non_admin_login():
+                return refused_login_response()
         if exam_browser_exempt():
             return
         if is_admin() or is_exam_browser(request.user_agent.string):
