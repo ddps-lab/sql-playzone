@@ -442,7 +442,8 @@ def register():
 
 
 @auth.route("/login", methods=["POST", "GET"])
-@ratelimit(method="POST", limit=10, interval=5)
+# Students log in with the form at exam start from a shared NAT address.
+@ratelimit(method="POST", limit=30, interval=5)
 def login():
     errors = get_errors()
     if request.method == "POST":
@@ -717,7 +718,9 @@ def google_login():
 
 
 @auth.route("/google/callback")
-@ratelimit(method="GET", limit=10, interval=60)
+# A lecture hall shares one NAT address, so the per-IP limit must cover a
+# whole class signing up at once.
+@ratelimit(method="GET", limit=60, interval=60)
 def google_callback():
     code = request.args.get("code")
     state = request.args.get("state")
@@ -840,6 +843,9 @@ def google_callback():
                     pass
                 
                 login_user(user)
+                # Lets the onboarding plugin tell a Google-authenticated
+                # session from a later form login (login_user issues a new nonce).
+                session["google_login_nonce"] = session["nonce"]
                 log("logins", "[{date}] {ip} - {name} logged in via Google OAuth", name=user.name)
                 
                 return redirect(url_for("challenges.listing" if not (get_config("user_mode") == TEAMS_MODE and user.team_id is None) else "teams.private"))

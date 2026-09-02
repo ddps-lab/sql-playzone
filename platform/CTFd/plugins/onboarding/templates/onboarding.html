@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import render_extra_fields %}
+
+{% block content %}
+  <div class="jumbotron">
+    <div class="container">
+      <h1>
+        {% if pending %}
+          {% trans %}Set Up Your Account{% endtrans %}
+        {% else %}
+          {% trans %}Set a New Password{% endtrans %}
+        {% endif %}
+      </h1>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="row">
+      <div class="col-md-6 offset-md-3">
+        {% include "components/errors.html" %}
+
+        <p>
+          {% if pending %}
+            {% trans %}Your HYU Google account is confirmed. Choose a user name and a password now. From then on, log in with them instead of Google.{% endtrans %}
+          {% else %}
+            {% trans %}You signed in with Google, so you can set a new password here without entering the current one.{% endtrans %}
+            <a href="{{ url_for('challenges.listing') }}">{% trans %}Skip for now and go to the challenges.{% endtrans %}</a>
+          {% endif %}
+        </p>
+
+        <form method="post" accept-charset="utf-8" role="form">
+          <div class="mb-3">
+            <b>{{ form.name.label(class="form-label") }}</b>
+            {{ form.name(class="form-control", value=name, autocomplete="username") }}
+            <small class="form-text text-muted">
+              {{ form.name.description }}
+            </small>
+          </div>
+
+          <div class="mb-3">
+            <b><label class="form-label">{% trans %}Email{% endtrans %}</label></b>
+            <input class="form-control" type="email" value="{{ email }}" disabled>
+            <small class="form-text text-muted">
+              {% trans %}Taken from your Google account. It also works as your login name.{% endtrans %}
+            </small>
+          </div>
+
+          <div class="mb-3">
+            <b>{{ form.password.label(class="form-label") }}</b>
+            {{ form.password(class="form-control", autocomplete="new-password") }}
+            <small class="form-text text-muted">
+              {{ form.password.description }}
+            </small>
+          </div>
+
+          {{ render_extra_fields(form.extra) }}
+
+          {{ form.nonce() }}
+
+          <div class="row pt-3">
+            <div class="col-6 col-md-4 offset-6 offset-md-8">
+              {{ form.submit(class="btn btn-block btn-primary w-100") }}
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock %}
