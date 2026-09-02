@@ -263,8 +263,11 @@ resource "aws_autoscaling_group" "asg" {
   max_size         = var.asg_max_size
   desired_capacity = var.asg_desired_capacity
 
-  health_check_type         = "ELB"
-  health_check_grace_period = 180
+  health_check_type = "ELB"
+  # First boot waits for MySQL initialisation and the judge healthcheck before
+  # CTFd starts. A spot instance took 3m50s from launch to ALB healthy on
+  # 2026-09-02, so the grace period keeps a margin above that.
+  health_check_grace_period = 300
 
   mixed_instances_policy {
     launch_template {
@@ -273,12 +276,13 @@ resource "aws_autoscaling_group" "asg" {
         version            = tostring(aws_launch_template.arm_launch_template.latest_version)
       }
 
-      # First override - will be used for on-demand base capacity
+      # On-demand launches try the overrides in this order; spot launches pick
+      # by price and capacity.
       override {
         instance_type = var.ondemand_instance_type
       }
 
-      # Additional overrides - will be used for spot instances
+      # Fallback instance types when the first one is unavailable
       override {
         instance_type = "t4g.medium"
         launch_template_specification {
@@ -297,7 +301,7 @@ resource "aws_autoscaling_group" "asg" {
 
     instances_distribution {
       on_demand_base_capacity                  = var.on_demand_base_capacity
-      on_demand_percentage_above_base_capacity = var.on_demand_percentage_above_base # Scaling 시 on-demand 비율 (0이면 전부 spot)
+      on_demand_percentage_above_base_capacity = var.on_demand_percentage_above_base # Scaling 시 on-demand 비율 (0이면 전부 spot, 100이면 전부 on-demand)
       spot_allocation_strategy                 = "price-capacity-optimized"
     }
   }
@@ -337,11 +341,17 @@ resource "aws_autoscaling_group" "asg" {
 
     preferences {
       auto_rollback          = true
-      instance_warmup        = 180
+      instance_warmup        = 300 # Same first-boot budget as health_check_grace_period
       min_healthy_percentage = 100
     }
 
     triggers = ["tag"]
+  }
+
+  lifecycle {
+    # Exam scheduled actions and target tracking change these at runtime.
+    # Ignoring them keeps an apply during an exam window from shrinking the group.
+    ignore_changes = [desired_capacity, min_size]
   }
 }
 
@@ -381,4 +391,60 @@ resource "aws_autoscaling_policy" "request_count_tracking" {
     # 어떤게 좋을지 알아봐야 할듯함.
     target_value = 300.0 # 인스턴스당 300 요청 유지
   }
+}
+
+# Scheduled pre-scaling for exams and quizzes
+#
+# Target tracking needs 3-5 minutes to add an instance, which is too slow for
+# the burst at the start of an exam. Each window raises the minimum and desired
+# capacity before the exam and restores the minimum afterwards; target tracking
+# then scales in as load drops. Windows are declared in KST (UTC+9) and
+# scheduled actions require UTC.
+locals {
+  exam_windows = {
+    for window in var.exam_windows : window.name => {
+      capacity   = window.capacity
+      start_time = timeadd("${window.start}Z", "-9h")
+      end_time   = timeadd("${window.end}Z", "-9h")
+    }
+  }
+
+  # A scheduled action cannot start in the past, so windows whose start or end
+  # has already passed are dropped at plan time. Remove stale entries from the
+  # variable file once an exam is over.
+  exam_scale_out = {
+    for name, window in local.exam_windows : name => window
+    if timecmp(window.start_time, plantimestamp()) > 0
+  }
+  exam_scale_in = {
+    for name, window in local.exam_windows : name => window
+    if timecmp(window.end_time, plantimestamp()) > 0
+  }
+}
+
+resource "aws_autoscaling_schedule" "exam_scale_out" {
+  for_each = local.exam_scale_out
+
+  scheduled_action_name  = "${var.prefix}-exam-${each.key}-start"
+  autoscaling_group_name = aws_autoscaling_group.asg.name
+  start_time             = each.value.start_time
+
+  min_size         = each.value.capacity
+  max_size         = max(var.asg_max_size, each.value.capacity)
+  desired_capacity = each.value.capacity
+}
+
+resource "aws_autoscaling_schedule" "exam_scale_in" {
+  for_each = local.exam_scale_in
+
+  scheduled_action_name  = "${var.prefix}-exam-${each.key}-end"
+  autoscaling_group_name = aws_autoscaling_group.asg.name
+  start_time             = each.value.end_time
+
+  # Only the floor is restored; -1 leaves the desired capacity alone so that
+  # target tracking scales in gradually instead of terminating every extra
+  # instance at once.
+  min_size         = var.asg_min_size
+  max_size         = var.asg_max_size
+  desired_capacity = -1
 }

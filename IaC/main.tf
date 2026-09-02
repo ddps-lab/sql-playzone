@@ -67,6 +67,7 @@ module "ec2" {
   asg_min_size                    = var.asg_min_size
   asg_max_size                    = var.asg_max_size
   asg_desired_capacity            = var.asg_desired_capacity
+  exam_windows                    = var.exam_windows
   key_name                        = var.ssh_key_name
   ondemand_instance_type          = var.ondemand_server_instance_class
   region                          = var.region
