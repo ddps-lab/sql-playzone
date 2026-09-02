@@ -122,6 +122,7 @@ def test_google_account_without_password_is_sent_to_onboarding():
         # live password feedback uses the server's minimum length
         assert b'data-password-min-length="8"' in r.data
         assert b'id="password-rules"' in r.data
+        assert r.data.count(b"data-terms-checkbox") == 1
         assert STUDENT_ID_FIELD.encode() in r.data
         # the terms are shown inline, rendered from markdown, with a consent checkbox
         assert "<h1>SQL PlayZone 이용 약관".encode() in r.data

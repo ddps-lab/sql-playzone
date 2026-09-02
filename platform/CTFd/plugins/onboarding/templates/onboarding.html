@@ -91,7 +91,7 @@
               {% endif %}
               {% for field in form.extra if field.label.text == terms_field_name %}
                 <div class="form-check">
-                  {{ field(class="form-check-input") }}
+                  {{ field(class="form-check-input", **{"data-terms-checkbox": "1"}) }}
                   <label class="form-check-label" for="{{ field.id }}">{{ field.description }}</label>
                 </div>
               {% endfor %}
@@ -120,7 +120,7 @@
       if (!form) return;
       var password = form.elements.namedItem("password");
       var confirm = form.elements.namedItem("password_confirm");
-      var terms = form.querySelector('input[type="checkbox"]');
+      var terms = form.querySelector("[data-terms-checkbox]");
       var submit = form.querySelector('input[type="submit"], button[type="submit"]');
       var minLength = parseInt(form.dataset.passwordMinLength, 10) || 8;
       var rules = {
@@ -137,11 +137,13 @@
       function check() {
         var ready = true;
         if (password && confirm) {
-          var value = password.value;
-          var touched = value.length > 0 || confirm.value.length > 0;
+          // the server strips both fields before checking them
+          var value = password.value.trim();
+          var again = confirm.value.trim();
+          var touched = value.length > 0 || again.length > 0;
           var okLength = value.length >= minLength;
           var okMix = /\p{L}/u.test(value) && /\p{N}/u.test(value);
-          var okMatch = confirm.value.length > 0 && confirm.value === value;
+          var okMatch = again.length > 0 && again === value;
           mark(rules.length, okLength, touched);
           mark(rules.mix, okMix, touched);
           mark(rules.match, okMatch, touched);
