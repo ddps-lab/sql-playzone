@@ -42,17 +42,7 @@
               </div>
 
               <div class="row pt-3">
-                <div class="col-6 col-md-8">
-                  <a class="align-middle" href="{{ url_for('auth.reset_password') }}">
-                    {% trans %}Forgot your password?{% endtrans %}
-                  </a>
-                  {% if get_app_config('GOOGLE_CLIENT_ID') %}
-                    <br>
-                    <small class="text-muted">
-                      {% trans %}HYU accounts can also log in with Google below and set a new password.{% endtrans %}
-                    </small>
-                  {% endif %}
-                </div>
+                <div class="col-6 col-md-8"></div>
 
                 <div class="col-6 col-md-4">
                   {{ form.submit(class="btn btn-block btn-primary w-100") }}
@@ -75,10 +65,10 @@
             <hr>
 
             <p class="text-center text-muted mb-2">
-              {% trans %}First time here? Create your account with your HYU Google account. You will choose a user name and a password right after.{% endtrans %}
+              {% trans %}First time here, or forgot your password? Use your HYU Google account. A new account picks a user name and password right after; an existing account sets a new password.{% endtrans %}
             </p>
             <a class="btn btn-outline-secondary btn-lg btn-block w-100" href="{{ url_for('auth.google_login') }}">
-              <i class="fab fa-google"></i> Continue with HYU Google Account
+              <i class="fab fa-google"></i> Sign up or reset password with HYU Google
             </a>
           {% endif %}
         </div>

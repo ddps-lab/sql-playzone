@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 import requests
 
-from CTFd.models import Users
+from CTFd.models import Users, db
 from tests.helpers import create_ctfd, destroy_ctfd
 
 
@@ -75,4 +75,20 @@ def test_google_callback_admits_verified_course_accounts():
         user = Users.query.filter_by(email="Student@hanyang.ac.kr").first()
         assert user.oauth_id == "google_1"
         assert user.password is None
+    destroy_ctfd(app)
+
+
+def test_google_callback_finds_the_account_by_google_id_after_an_email_edit():
+    app = create_google_ctfd()
+    with app.app_context():
+        user = Users(name="edited", email="edited@hanyang.ac.kr", oauth_id="google_1")
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+        client = app.test_client()
+        r = google_callback(client, google_userinfo("Student@hanyang.ac.kr"))
+        assert r.status_code == 302
+        with client.session_transaction() as sess:
+            assert sess["id"] == user_id
+        assert Users.query.filter(Users.type != "admin").count() == 1
     destroy_ctfd(app)
