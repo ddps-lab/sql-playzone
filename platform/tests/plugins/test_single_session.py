@@ -131,3 +131,16 @@ def test_a_login_after_logout_is_not_flagged_as_concurrent():
             log_file.seek(before)
             assert "while another session is active" not in log_file.read()
     destroy_ctfd(app)
+
+
+def test_logging_out_of_the_newer_session_does_not_revive_the_older_one():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        onboarded_student(app)
+        first = login_as_user(app, name="student", password="password")
+        second = login_as_user(app, name="student", password="password")
+        assert second.get("/logout").status_code == 302
+        r = first.get("/scoreboard")
+        assert r.status_code == 302
+        assert "/login" in r.location
+    destroy_ctfd(app)

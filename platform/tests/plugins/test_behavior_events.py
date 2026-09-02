@@ -109,6 +109,8 @@ def test_client_events_are_validated_and_stamped_with_the_real_user(
             "user_id": 999,
             "user_name": "somebody-else",
             "challenge_id": challenge_id,
+            "challenge_name": "forged name",
+            "already_solved": True,
             "typed_text": "",
             "pasted_text": "",
             "query_text": "",
@@ -144,6 +146,9 @@ def test_client_events_are_validated_and_stamped_with_the_real_user(
         assert lines[0]["source"] == "client"
         assert "received_at" in lines[0]
         assert lines[0]["session_id"] == "abc"
+        # challenge metadata comes from the database, not the page
+        assert lines[0]["challenge_name"] == CHALLENGE["name"]
+        assert lines[0]["already_solved"] is False
 
         # batch-level limits
         r = client.post("/api/v1/challenges/behavior", json={"events": []})

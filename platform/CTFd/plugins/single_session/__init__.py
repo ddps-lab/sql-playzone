@@ -72,9 +72,12 @@ def mark_session_seen():
 
 
 def forget_session():
-    """On logout: no session of this account is active any more."""
+    """On logout: no session of this account is active any more.
+
+    Only the activity marker goes. The active nonce stays so that an older
+    session cookie that was superseded remains signed out.
+    """
     cache.delete(seen_key(session["id"]))
-    cache.delete(f"user_{session['id']}_active_nonce")
 
 
 def browser():

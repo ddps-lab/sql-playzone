@@ -1443,11 +1443,15 @@ def behavior_event_problem(event, challenge_ids):
     return None
 
 
-def canonical_behavior_event(event, user):
+def canonical_behavior_event(event, user, challenge_names, solved_ids):
+    """The event with every identity and challenge field set by the server."""
     canonical = dict(event)
+    challenge_id = int(event["challenge_id"])
     canonical["user_id"] = user.id
     canonical["user_name"] = user.name
-    canonical["challenge_id"] = int(event["challenge_id"])
+    canonical["challenge_id"] = challenge_id
+    canonical["challenge_name"] = challenge_names[challenge_id]
+    canonical["already_solved"] = challenge_id in solved_ids
     canonical["received_at"] = datetime.now(timezone.utc).isoformat()
     canonical["source"] = "client"
     return canonical
@@ -1474,16 +1478,22 @@ class BehaviorLog(Resource):
             }, 400
 
         user = get_current_user_attrs()
-        challenge_ids = {
-            row.id for row in Challenges.query.with_entities(Challenges.id).all()
+        challenge_names = {
+            row.id: row.name
+            for row in Challenges.query.with_entities(
+                Challenges.id, Challenges.name
+            ).all()
         }
+        solved_ids = get_solve_ids_for_user_id(user_id=user.id)
         accepted, dropped = [], []
         for index, event in enumerate(events):
-            problem = behavior_event_problem(event, challenge_ids)
+            problem = behavior_event_problem(event, set(challenge_names))
             if problem:
                 dropped.append({"index": index, "reason": problem})
             else:
-                accepted.append(canonical_behavior_event(event, user))
+                accepted.append(
+                    canonical_behavior_event(event, user, challenge_names, solved_ids)
+                )
 
         try:
             write_behavior_events(accepted)
