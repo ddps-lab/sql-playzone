@@ -92,14 +92,16 @@ def terms_field():
 
 
 def terms_missing(user_id):
-    """True while the consent field exists and this account has no entry for it."""
+    """True while the consent field exists and this account has not said yes.
+
+    An entry that exists but holds False (an import, an admin edit) is not
+    consent, so the value is checked rather than the row's existence.
+    """
     field = terms_field()
     if field is None:
         return False
-    return (
-        UserFieldEntries.query.filter_by(field_id=field.id, user_id=user_id).first()
-        is None
-    )
+    entry = UserFieldEntries.query.filter_by(field_id=field.id, user_id=user_id).first()
+    return entry is None or entry.value is not True
 
 
 def ensure_terms(app):

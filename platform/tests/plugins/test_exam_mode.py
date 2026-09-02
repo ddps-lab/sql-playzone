@@ -111,6 +111,11 @@ def test_admins_and_the_login_page_are_not_restricted():
         assert (
             anonymous.get("/login", headers={"User-Agent": CHROME}).status_code == 200
         )
+        # password recovery must work from a normal browser too
+        assert (
+            anonymous.get("/reset_password", headers={"User-Agent": CHROME}).status_code
+            == 200
+        )
         assert (
             anonymous.get("/healthcheck", headers={"User-Agent": ""}).status_code == 200
         )

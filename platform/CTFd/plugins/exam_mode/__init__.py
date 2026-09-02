@@ -14,11 +14,14 @@ EXAM_BROWSER_MESSAGE = (
     'During the exam this site is only available through the exam browser (Trustlock). '
     '시험 중에는 시험 전용 브라우저(Trustlock)에서만 접속할 수 있습니다.'
 )
-# Requests that must keep working from any browser: admins log in from a
-# normal browser, and the load balancer health check has no User-Agent.
+# Requests that must keep working from any browser: admins log in (or
+# recover their password) from a normal browser, and the load balancer
+# health check has no User-Agent.
 EXAM_BROWSER_EXEMPT_ENDPOINTS = {
     'auth.login',
     'auth.logout',
+    'auth.reset_password',
+    'auth.confirm',
     'views.themes',
     'views.themes_beta',
     'views.files',

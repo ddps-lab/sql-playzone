@@ -337,6 +337,12 @@ def test_existing_accounts_are_asked_for_consent_once():
                 field_id=field_id(STUDENT_ID_FIELD), user_id=user_id, value="2024000001"
             )
         )
+        # an imported "no" is not consent either
+        db.session.add(
+            UserFieldEntries(
+                field_id=field_id(TERMS_FIELD), user_id=user_id, value=False
+            )
+        )
         db.session.commit()
         client = login_as_user(app, name="veteran", password="password")
 
