@@ -124,7 +124,7 @@ def test_client_events_are_validated_and_stamped_with_the_real_user(
             },
             {**base, "event_type": "execute"},  # only the server records execute
             {**base, "event_type": "submit", "challenge_id": 424242},
-            {**base, "event_type": "focus", "typed_text": "x" * 20000},
+            {**base, "event_type": "focus", "typed_text": "x" * 8001},
             "not an object",
         ]
         r = client.post("/api/v1/challenges/behavior", json={"events": events})
@@ -161,6 +161,18 @@ def test_client_events_are_validated_and_stamped_with_the_real_user(
         )
         assert r.status_code == 400
         assert len(behavior_lines(tmp_path)) == 1
+
+        # a full batch of the largest valid events is accepted, never 413
+        big = {
+            **base,
+            "event_type": "paste",
+            "pasted_text": "\uac00" * 8000,
+            "query_text": "\uac00" * 8000,
+            "typed_text": "\uac00" * 8000,
+        }
+        r = client.post("/api/v1/challenges/behavior", json={"events": [big] * 50})
+        assert r.status_code == 200
+        assert r.get_json()["data"]["logged"] == 50
 
         # anonymous requests are refused
         assert (

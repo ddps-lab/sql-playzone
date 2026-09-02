@@ -1376,9 +1376,14 @@ BEHAVIOR_EVENT_TYPES = {
     "submit",
 }
 BEHAVIOR_MAX_EVENTS = 50
-BEHAVIOR_MAX_BODY_BYTES = 256 * 1024
-BEHAVIOR_MAX_TEXT_CHARS = 16000
+BEHAVIOR_MAX_TEXT_CHARS = 8000
 BEHAVIOR_TEXT_FIELDS = ("typed_text", "pasted_text", "query_text")
+# The page's tracker retries a rejected batch forever, so a batch of valid
+# events must always fit: text fields at 6 bytes per character (JSON may
+# escape one as \uXXXX) plus room for the other fields, times the event cap.
+BEHAVIOR_MAX_BODY_BYTES = BEHAVIOR_MAX_EVENTS * (
+    len(BEHAVIOR_TEXT_FIELDS) * BEHAVIOR_MAX_TEXT_CHARS * 6 + 2048
+)
 
 
 def behavior_log_path():
