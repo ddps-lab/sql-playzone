@@ -166,9 +166,9 @@ def test_client_events_are_validated_and_stamped_with_the_real_user(
         big = {
             **base,
             "event_type": "paste",
-            "pasted_text": "\uac00" * 8000,
-            "query_text": "\uac00" * 8000,
-            "typed_text": "\uac00" * 8000,
+            "pasted_text": "\U0001F600" * 8000,  # emoji: two \uXXXX escapes each
+            "query_text": "\U0001F600" * 8000,
+            "typed_text": "\U0001F600" * 8000,
         }
         r = client.post("/api/v1/challenges/behavior", json={"events": [big] * 50})
         assert r.status_code == 200
