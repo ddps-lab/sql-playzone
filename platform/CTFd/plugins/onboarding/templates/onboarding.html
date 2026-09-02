@@ -27,8 +27,7 @@
           {% elif mode == "terms" %}
             {% trans %}Please read and agree to the Terms of Service before continuing.{% endtrans %}
           {% else %}
-            {% trans %}You signed in with Google, so you can set a new password here without entering the current one.{% endtrans %}
-            <a href="{{ url_for('challenges.listing') }}">{% trans %}Skip for now and go to the challenges.{% endtrans %}</a>
+            {% trans %}You signed in with Google. Set a new password to continue; from now on, log in with it.{% endtrans %}
           {% endif %}
         </p>
 
@@ -55,6 +54,14 @@
               {{ form.password(class="form-control", autocomplete="new-password") }}
               <small class="form-text text-muted">
                 {{ form.password.description }}
+              </small>
+            </div>
+
+            <div class="mb-3">
+              <b>{{ form.password_confirm.label(class="form-label") }}</b>
+              {{ form.password_confirm(class="form-control", autocomplete="new-password") }}
+              <small class="form-text text-muted">
+                {{ form.password_confirm.description }}
               </small>
             </div>
           {% endif %}

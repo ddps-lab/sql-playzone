@@ -31,10 +31,10 @@ from CTFd.utils.user import authed, get_current_user, get_current_user_attrs
 # key. A later form login issues a new nonce, so the marker only matches the
 # session that Google actually authenticated.
 GOOGLE_LOGIN_SESSION_KEY = "google_login_nonce"
-# Set once the page has been offered to a Google-authenticated session, so a
-# student who already has a password sees it once per Google login, not on
-# every visit to the challenge list.
-ONBOARDING_OFFERED_SESSION_KEY = "onboarding_offered_nonce"
+# Set once this page has been completed in a Google-authenticated session.
+# Until then such a session cannot go anywhere else: signing in with Google
+# again means "set a new password", and it must not be skipped.
+ONBOARDING_DONE_SESSION_KEY = "onboarding_done_nonce"
 GOOGLE_OAUTH_ID_PREFIX = "google_"
 
 # Requests that must keep working while onboarding is pending.
@@ -48,9 +48,6 @@ EXEMPT_ENDPOINTS = {
     "static",
 }
 
-# Where auth.google_callback lands a user after login (users and teams mode).
-LANDING_ENDPOINTS = {"challenges.listing", "teams.private"}
-
 # Consent to the terms is recorded as a required, non-editable boolean user
 # field: the same CTFd mechanism the student_fields plugin uses for the
 # student ID, so it shows up in the admin user view and exports.
@@ -60,11 +57,29 @@ TERMS_TEXT_PATH = Path(__file__).with_name("terms.md")
 
 NAME_MAX_LENGTH = 128
 PASSWORD_MAX_LENGTH = 128
+# A minimal password rule: long enough and not a bare number or bare word.
+# CTFd's own password_min_length config is raised to this floor so the
+# settings page enforces the same length.
+PASSWORD_MIN_LENGTH = 8
 
 
 def logged_in_with_google():
     marker = session.get(GOOGLE_LOGIN_SESSION_KEY)
     return marker is not None and marker == session.get("nonce")
+
+
+def onboarding_done_in_session():
+    return session.get(ONBOARDING_DONE_SESSION_KEY) == session.get("nonce")
+
+
+def password_min_length():
+    return max(PASSWORD_MIN_LENGTH, int(get_config("password_min_length", default=0)))
+
+
+def ensure_password_policy(app):
+    with app.app_context():
+        if get_config("password_min_length") is None:
+            set_config("password_min_length", PASSWORD_MIN_LENGTH)
 
 
 def onboarding_pending(user_id):
@@ -116,12 +131,10 @@ def terms_html():
 
 
 def OnboardingForm(user_id, *args, **kwargs):
-    password_min_length = int(get_config("password_min_length", default=0))
-    password_description = _l("Password used to log into your account")
-    if password_min_length:
-        password_description += _l(
-            f" (Must be at least {password_min_length} characters)"
-        )
+    password_description = _l(
+        f"Password used to log into your account. At least {password_min_length()} "
+        "characters with both a letter and a digit."
+    )
 
     class _OnboardingForm(BaseForm):
         name = StringField(
@@ -133,6 +146,11 @@ def OnboardingForm(user_id, *args, **kwargs):
         password = PasswordField(
             _l("Password"),
             description=password_description,
+            validators=[InputRequired()],
+        )
+        password_confirm = PasswordField(
+            _l("Confirm Password"),
+            description=_l("Type the same password again."),
             validators=[InputRequired()],
         )
         submit = SubmitField(_l("Submit"))
@@ -150,7 +168,26 @@ def OnboardingForm(user_id, *args, **kwargs):
     return _OnboardingForm(*args, **kwargs)
 
 
-def validate_submission(user, name, password, credentials, fields):
+def validate_password(password, password_confirm):
+    errors = []
+    if len(password) == 0:
+        errors.append(_l("Pick a longer password"))
+    elif len(password) < password_min_length():
+        errors.append(
+            _l(f"Password must be at least {password_min_length()} characters")
+        )
+    elif len(password) > PASSWORD_MAX_LENGTH:
+        errors.append(_l("Pick a shorter password"))
+    elif not (
+        any(c.isalpha() for c in password) and any(c.isdigit() for c in password)
+    ):
+        errors.append(_l("Password must contain both a letter and a digit"))
+    if password_confirm != password:
+        errors.append(_l("Passwords do not match"))
+    return errors
+
+
+def validate_submission(user, name, password, password_confirm, credentials, fields):
     """Same rules as auth.register, applied to an existing account.
 
     ``credentials`` says whether a user name and password are being set;
@@ -174,15 +211,7 @@ def validate_submission(user, name, password, credentials, fields):
         ):
             errors.append(_l("Name changes are disabled"))
 
-        password_min_length = int(get_config("password_min_length", default=0))
-        if len(password) == 0:
-            errors.append(_l("Pick a longer password"))
-        elif password_min_length and len(password) < password_min_length:
-            errors.append(
-                _l(f"Password must be at least {password_min_length} characters")
-            )
-        elif len(password) > PASSWORD_MAX_LENGTH:
-            errors.append(_l("Pick a shorter password"))
+        errors.extend(validate_password(password, password_confirm))
 
     entries = {}
     for field in fields:
@@ -221,6 +250,7 @@ def complete_onboarding(user, name, password, entries, credentials):
 
 def load(app):
     ensure_terms(app)
+    ensure_password_policy(app)
 
     blueprint = Blueprint(
         "onboarding", __name__, template_folder="templates", url_prefix="/onboarding"
@@ -242,7 +272,6 @@ def load(app):
             # Accounts that already have a password change it in Settings,
             # which asks for the current password first.
             return redirect(url_for("views.settings"))
-        session[ONBOARDING_OFFERED_SESSION_KEY] = session.get("nonce")
 
         # What this visit asks for: everything on the first visit, only the
         # terms when an existing account never accepted them, and a new
@@ -263,11 +292,13 @@ def load(app):
         if request.method == "POST":
             name = request.form.get("name", "").strip()
             password = request.form.get("password", "").strip()
+            password_confirm = request.form.get("password_confirm", "").strip()
             errors, entries = validate_submission(
-                user, name, password, credentials, fields
+                user, name, password, password_confirm, credentials, fields
             )
             if not errors:
                 complete_onboarding(user, name, password, entries, credentials)
+                session[ONBOARDING_DONE_SESSION_KEY] = session.get("nonce")
                 field = terms_field()
                 actions = []
                 if mode == "setup":
@@ -314,12 +345,7 @@ def load(app):
         # which cannot show a non-editable field.
         if terms_missing(user.id):
             return redirect(url_for("onboarding.index"))
-        # Google login is the way to set a new password, so show the page
-        # once when such a session first reaches its landing page.
-        if (
-            request.endpoint in LANDING_ENDPOINTS
-            and logged_in_with_google()
-            and session.get(ONBOARDING_OFFERED_SESSION_KEY) != session.get("nonce")
-        ):
-            session[ONBOARDING_OFFERED_SESSION_KEY] = session.get("nonce")
+        # Signing in with Google again is the way to set a new password; the
+        # session stays on this page until that is done.
+        if logged_in_with_google() and not onboarding_done_in_session():
             return redirect(url_for("onboarding.index"))

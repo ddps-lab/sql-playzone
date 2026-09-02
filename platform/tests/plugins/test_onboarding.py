@@ -4,7 +4,7 @@
 
 from CTFd.cache import cache
 from CTFd.models import UserFieldEntries, UserFields, Users, db
-from CTFd.utils import set_config
+from CTFd.utils import get_config, set_config
 from CTFd.utils.crypto import verify_password
 from CTFd.utils.security.csrf import generate_nonce
 from CTFd.utils.security.signing import hmac
@@ -78,6 +78,7 @@ def onboarding_data(client, **overrides):
         "nonce": nonce,
     }
     data.update(overrides)
+    data.setdefault("password_confirm", data["password"])
     return data
 
 
@@ -165,7 +166,16 @@ def test_onboarding_rejects_bad_names_passwords_and_missing_student_id():
                 b"Your user name cannot be an email address",
             ),
             ({"name": ""}, b"Pick a longer user name"),
-            ({"password": "short"}, b"Password must be at least 8 characters"),
+            ({"password": "short1"}, b"Password must be at least 8 characters"),
+            (
+                {"password": "12345678"},
+                b"Password must contain both a letter and a digit",
+            ),
+            (
+                {"password": "password"},
+                b"Password must contain both a letter and a digit",
+            ),
+            ({"password_confirm": "hunter22?"}, b"Passwords do not match"),
             (
                 {f"fields[{field_id(STUDENT_ID_FIELD)}]": ""},
                 b"Please provide all required fields",
@@ -222,21 +232,22 @@ def test_google_login_allows_a_new_password_without_the_current_one():
         client = login_as_user(app, name="forgot", password="old-password")
         r = client.post(
             "/onboarding/",
-            data=onboarding_data(client, name="forgot", password="new-password"),
+            data=onboarding_data(client, name="forgot", password="new-pass-2026"),
         )
         assert r.status_code == 302
         assert r.location.endswith("/settings")
         assert verify_password("old-password", stored_password(user_id))
 
-        # a session that Google authenticated is offered the page once, then skips
+        # a session that Google authenticated must set a new password first
         client = start_session(app, user_id, via_google=True)
-        r = client.get("/challenges")
-        assert r.status_code == 302
-        assert r.location.endswith("/onboarding/")
-        assert client.get("/challenges").status_code == 200
+        for path in ("/challenges", "/challenges", "/settings", "/api/v1/users/me"):
+            r = client.get(path)
+            assert r.status_code == 302, path
+            assert r.location.endswith("/onboarding/"), path
         r = client.get("/onboarding/")
         assert r.status_code == 200
-        assert b"Skip for now" in r.data
+        assert b"Set a New Password" in r.data
+        assert b"Skip for now" not in r.data
         assert STUDENT_ID_FIELD.encode() not in r.data
 
         # a password reset leaves custom fields alone, even ones the settings
@@ -250,14 +261,16 @@ def test_google_login_allows_a_new_password_without_the_current_one():
             "/onboarding/",
             data={
                 "name": "forgot",
-                "password": "new-password",
+                "password": "new-pass-2026",
+                "password_confirm": "new-pass-2026",
                 f"fields[{cohort.id}]": "B",
                 "nonce": nonce,
             },
         )
         assert r.status_code == 302
         assert r.location.endswith("/challenges")
-        assert verify_password("new-password", stored_password(user_id))
+        assert verify_password("new-pass-2026", stored_password(user_id))
+        assert client.get("/challenges").status_code == 200
         assert client.get("/api/v1/users/me").status_code == 200
         entry = UserFieldEntries.query.filter_by(
             user_id=user_id, field_id=cohort.id
@@ -270,7 +283,7 @@ def test_google_login_allows_a_new_password_without_the_current_one():
     destroy_ctfd(app)
 
 
-def test_google_login_is_offered_the_page_in_teams_mode_too():
+def test_google_login_requires_a_new_password_in_teams_mode_too():
     app = create_ctfd(enable_plugins=True, user_mode="teams")
     with app.app_context():
         user_id = create_google_user(
@@ -285,6 +298,12 @@ def test_google_login_is_offered_the_page_in_teams_mode_too():
         r = client.get("/team")
         assert r.status_code == 302
         assert r.location.endswith("/onboarding/")
+        assert client.get("/team").status_code == 302
+        r = client.post(
+            "/onboarding/",
+            data=onboarding_data(client, name="teamless", password="new-pass-2026"),
+        )
+        assert r.status_code == 302
         assert client.get("/team").status_code == 200
     destroy_ctfd(app)
 
@@ -298,6 +317,8 @@ def test_terms_are_seeded_and_linked_from_the_footer():
         assert "실행(Test/Execute)한 SQL".encode() in r.data
         field = UserFields.query.filter_by(name=TERMS_FIELD).first()
         assert (field.required, field.editable, field.public) == (True, False, False)
+        # the settings page enforces the same minimum length
+        assert int(get_config("password_min_length")) == 8
 
         html = client.get("/login").data
         assert b'href="/tos"' in html
