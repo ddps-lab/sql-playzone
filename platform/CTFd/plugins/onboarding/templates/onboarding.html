@@ -5,8 +5,10 @@
   <div class="jumbotron">
     <div class="container">
       <h1>
-        {% if pending %}
+        {% if mode == "setup" %}
           {% trans %}Set Up Your Account{% endtrans %}
+        {% elif mode == "terms" %}
+          {% trans %}Terms of Service{% endtrans %}
         {% else %}
           {% trans %}Set a New Password{% endtrans %}
         {% endif %}
@@ -20,8 +22,10 @@
         {% include "components/errors.html" %}
 
         <p>
-          {% if pending %}
+          {% if mode == "setup" %}
             {% trans %}Your HYU Google account is confirmed. Choose a user name and a password now. From then on, log in with them instead of Google.{% endtrans %}
+          {% elif mode == "terms" %}
+            {% trans %}Please read and agree to the Terms of Service before continuing.{% endtrans %}
           {% else %}
             {% trans %}You signed in with Google, so you can set a new password here without entering the current one.{% endtrans %}
             <a href="{{ url_for('challenges.listing') }}">{% trans %}Skip for now and go to the challenges.{% endtrans %}</a>
@@ -29,33 +33,37 @@
         </p>
 
         <form method="post" accept-charset="utf-8" role="form">
-          <div class="mb-3">
-            <b>{{ form.name.label(class="form-label") }}</b>
-            {{ form.name(class="form-control", value=name, autocomplete="username") }}
-            <small class="form-text text-muted">
-              {{ form.name.description }}
-            </small>
-          </div>
+          {% if mode != "terms" %}
+            <div class="mb-3">
+              <b>{{ form.name.label(class="form-label") }}</b>
+              {{ form.name(class="form-control", value=name, autocomplete="username") }}
+              <small class="form-text text-muted">
+                {{ form.name.description }}
+              </small>
+            </div>
 
-          <div class="mb-3">
-            <b><label class="form-label">{% trans %}Email{% endtrans %}</label></b>
-            <input class="form-control" type="email" value="{{ email }}" disabled>
-            <small class="form-text text-muted">
-              {% trans %}Taken from your Google account. It also works as your login name.{% endtrans %}
-            </small>
-          </div>
+            <div class="mb-3">
+              <b><label class="form-label">{% trans %}Email{% endtrans %}</label></b>
+              <input class="form-control" type="email" value="{{ email }}" disabled>
+              <small class="form-text text-muted">
+                {% trans %}Taken from your Google account. It also works as your login name.{% endtrans %}
+              </small>
+            </div>
 
-          <div class="mb-3">
-            <b>{{ form.password.label(class="form-label") }}</b>
-            {{ form.password(class="form-control", autocomplete="new-password") }}
-            <small class="form-text text-muted">
-              {{ form.password.description }}
-            </small>
-          </div>
+            <div class="mb-3">
+              <b>{{ form.password.label(class="form-label") }}</b>
+              {{ form.password(class="form-control", autocomplete="new-password") }}
+              <small class="form-text text-muted">
+                {{ form.password.description }}
+              </small>
+            </div>
+          {% endif %}
 
-          {% if pending %}
+          {% if mode == "setup" %}
             {{ render_extra_fields(form.extra | rejectattr("label.text", "equalto", terms_field_name) | list) }}
+          {% endif %}
 
+          {% if mode != "reset" %}
             <div class="mb-3">
               <b><label class="form-label">{% trans %}Terms of Service{% endtrans %}</label></b>
               {% if terms %}

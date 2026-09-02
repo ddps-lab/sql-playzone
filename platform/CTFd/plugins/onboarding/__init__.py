@@ -1,15 +1,17 @@
 """Onboarding for accounts created through Google OAuth.
 
 Google login only admits course members. Before such an account can use the
-site its owner picks a user name and a password here, so later logins go
-through the normal login form instead of another Google round-trip. The gate
-is a request hook in the style of CTFd's own ``change_password`` hook.
+site its owner picks a user name and a password here and accepts the terms
+of service, so later logins go through the normal login form instead of
+another Google round-trip. The gate is a request hook in the style of CTFd's
+own ``change_password`` hook.
 """
 
 from pathlib import Path
 
 from flask import Blueprint, redirect, render_template, request, session, url_for
 from flask_babel import lazy_gettext as _l
+from markupsafe import Markup
 from wtforms import PasswordField, StringField
 from wtforms.validators import InputRequired
 
@@ -74,6 +76,17 @@ def terms_field():
     return UserFields.query.filter_by(name=TERMS_FIELD_NAME).first()
 
 
+def terms_missing(user_id):
+    """True while the consent field exists and this account has no entry for it."""
+    field = terms_field()
+    if field is None:
+        return False
+    return (
+        UserFieldEntries.query.filter_by(field_id=field.id, user_id=user_id).first()
+        is None
+    )
+
+
 def ensure_terms(app):
     """Seed the terms text and the consent field once; admins may edit both later."""
     with app.app_context():
@@ -98,7 +111,8 @@ def terms_html():
     text = get_config("tos_text")
     if get_config("tos_url") or not text:
         return None
-    return build_markdown(text)
+    # Trusted admin content, rendered the way views.tos renders it.
+    return Markup(build_markdown(text))
 
 
 def OnboardingForm(user_id, *args, **kwargs):
@@ -136,40 +150,42 @@ def OnboardingForm(user_id, *args, **kwargs):
     return _OnboardingForm(*args, **kwargs)
 
 
-def validate_submission(user, name, password, include_fields):
+def validate_submission(user, name, password, credentials, fields):
     """Same rules as auth.register, applied to an existing account.
 
-    Custom fields are collected only during the first onboarding. A later
-    password reset must not touch them: the settings API refuses edits to
-    fields marked non-editable, and this page should not offer a way around.
+    ``credentials`` says whether a user name and password are being set;
+    ``fields`` lists the custom user fields collected on this visit.
     """
     errors = []
 
-    if len(name) == 0:
-        errors.append(_l("Pick a longer user name"))
-    elif len(name) > NAME_MAX_LENGTH:
-        errors.append(_l("Pick a shorter user name"))
-    if validators.validate_email(name) is True:
-        errors.append(_l("Your user name cannot be an email address"))
-    if Users.query.filter(Users.name == name, Users.id != user.id).first():
-        errors.append(_l("That user name is already taken"))
-    if (
-        user.password is not None
-        and name != user.name
-        and get_config("prevent_name_change")
-    ):
-        errors.append(_l("Name changes are disabled"))
+    if credentials:
+        if len(name) == 0:
+            errors.append(_l("Pick a longer user name"))
+        elif len(name) > NAME_MAX_LENGTH:
+            errors.append(_l("Pick a shorter user name"))
+        if validators.validate_email(name) is True:
+            errors.append(_l("Your user name cannot be an email address"))
+        if Users.query.filter(Users.name == name, Users.id != user.id).first():
+            errors.append(_l("That user name is already taken"))
+        if (
+            user.password is not None
+            and name != user.name
+            and get_config("prevent_name_change")
+        ):
+            errors.append(_l("Name changes are disabled"))
 
-    password_min_length = int(get_config("password_min_length", default=0))
-    if len(password) == 0:
-        errors.append(_l("Pick a longer password"))
-    elif password_min_length and len(password) < password_min_length:
-        errors.append(_l(f"Password must be at least {password_min_length} characters"))
-    elif len(password) > PASSWORD_MAX_LENGTH:
-        errors.append(_l("Pick a shorter password"))
+        password_min_length = int(get_config("password_min_length", default=0))
+        if len(password) == 0:
+            errors.append(_l("Pick a longer password"))
+        elif password_min_length and len(password) < password_min_length:
+            errors.append(
+                _l(f"Password must be at least {password_min_length} characters")
+            )
+        elif len(password) > PASSWORD_MAX_LENGTH:
+            errors.append(_l("Pick a shorter password"))
 
     entries = {}
-    for field in UserFields.query.all() if include_fields else ():
+    for field in fields:
         value = request.form.get(f"fields[{field.id}]", "").strip()
         if field.required is True and value == "":
             if field.name == TERMS_FIELD_NAME:
@@ -182,9 +198,10 @@ def validate_submission(user, name, password, include_fields):
     return errors, entries
 
 
-def complete_onboarding(user, name, password, entries):
-    user.name = name
-    user.password = password  # hashed by the Users model validator
+def complete_onboarding(user, name, password, entries, credentials):
+    if credentials:
+        user.name = name
+        user.password = password  # hashed by the Users model validator
     for field_id, value in entries.items():
         entry = UserFieldEntries.query.filter_by(
             field_id=field_id, user_id=user.id
@@ -195,10 +212,11 @@ def complete_onboarding(user, name, password, entries):
         entry.value = value
     db.session.commit()
 
-    # The session hash is derived from the password; refresh it so the new
-    # password does not log the user out.
-    update_user(user)
-    clear_standings()
+    if credentials:
+        # The session hash is derived from the password; refresh it so the
+        # new password does not log the user out.
+        update_user(user)
+        clear_standings()
 
 
 def load(app):
@@ -213,12 +231,28 @@ def load(app):
     @ratelimit(method="POST", limit=10, interval=5)
     def index():
         user = get_current_user()
-        pending = user.password is None
-        if not pending and not logged_in_with_google():
+        needs_password = user.password is None
+        # Admins are exempt from required fields, as in require_complete_profile.
+        needs_terms = user.type != "admin" and terms_missing(user.id)
+        if not needs_password and not needs_terms and not logged_in_with_google():
             # Accounts that already have a password change it in Settings,
             # which asks for the current password first.
             return redirect(url_for("views.settings"))
         session[ONBOARDING_OFFERED_SESSION_KEY] = session.get("nonce")
+
+        # What this visit asks for: everything on the first visit, only the
+        # terms when an existing account never accepted them, and a new
+        # password when a Google-authenticated session comes back.
+        if needs_password:
+            mode = "setup"
+            fields = UserFields.query.all()
+        elif needs_terms:
+            mode = "terms"
+            fields = [terms_field()]
+        else:
+            mode = "reset"
+            fields = []
+        credentials = mode != "terms"
 
         errors = []
         name = user.name
@@ -226,18 +260,24 @@ def load(app):
             name = request.form.get("name", "").strip()
             password = request.form.get("password", "").strip()
             errors, entries = validate_submission(
-                user, name, password, include_fields=pending
+                user, name, password, credentials, fields
             )
             if not errors:
-                complete_onboarding(user, name, password, entries)
+                complete_onboarding(user, name, password, entries, credentials)
                 field = terms_field()
-                accepted = bool(field and entries.get(field.id))
+                actions = []
+                if mode == "setup":
+                    actions.append("completed onboarding")
+                elif mode == "reset":
+                    actions.append("set a new password")
+                if field and entries.get(field.id):
+                    actions.append("accepted the terms of service")
                 log(
                     "registrations",
-                    format="[{date}] {ip} - {name} completed onboarding with {email}{terms}",
+                    format="[{date}] {ip} - {name} ({email}) {actions}",
                     name=user.name,
                     email=user.email,
-                    terms=" and accepted the terms of service" if accepted else "",
+                    actions=" and ".join(actions),
                 )
                 db.session.close()
                 return redirect(url_for("challenges.listing"))
@@ -248,8 +288,8 @@ def load(app):
             errors=errors,
             name=name,
             email=user.email,
-            pending=pending,
-            terms=terms_html() if pending else None,
+            mode=mode,
+            terms=terms_html() if mode != "reset" else None,
             terms_field_name=TERMS_FIELD_NAME,
         )
 
@@ -262,9 +302,13 @@ def load(app):
         user = get_current_user_attrs()
         if user is None or user.type == "admin":
             return
-        if not str(user.oauth_id or "").startswith(GOOGLE_OAUTH_ID_PREFIX):
-            return
-        if onboarding_pending(user.id):
+        google_account = str(user.oauth_id or "").startswith(GOOGLE_OAUTH_ID_PREFIX)
+        if google_account and onboarding_pending(user.id):
+            return redirect(url_for("onboarding.index"))
+        # Nothing else works until the terms are accepted. CTFd's own
+        # required-field check would only send the account to Settings,
+        # which cannot show a non-editable field.
+        if terms_missing(user.id):
             return redirect(url_for("onboarding.index"))
         # Google login is the way to set a new password, so show the page
         # once when such a session first reaches its landing page.

@@ -100,8 +100,9 @@ def test_google_account_without_password_is_sent_to_onboarding():
         assert r.status_code == 200
         assert b"minsu@hanyang.ac.kr" in r.data
         assert STUDENT_ID_FIELD.encode() in r.data
-        # the terms are shown inline with a consent checkbox
-        assert "SQL PlayZone 이용 약관".encode() in r.data
+        # the terms are shown inline, rendered from markdown, with a consent checkbox
+        assert "<h1>SQL PlayZone 이용 약관".encode() in r.data
+        assert b"&lt;h1&gt;" not in r.data
         assert b"I have read and agree to the Terms of Service above." in r.data
 
         # logging out stays possible, and anonymous requests are untouched
@@ -192,7 +193,11 @@ def test_accounts_with_passwords_and_admins_are_not_gated():
         assert admin.get("/onboarding/").location.endswith("/settings")
 
         create_google_user(
-            app, name="done", email="done@hanyang.ac.kr", password="hunter22!"
+            app,
+            name="done",
+            email="done@hanyang.ac.kr",
+            password="hunter22!",
+            student_id="2025000003",
         )
         client = login_as_user(app, name="done", password="hunter22!")
         assert client.get("/api/v1/users/me").status_code == 200
@@ -273,6 +278,7 @@ def test_google_login_is_offered_the_page_in_teams_mode_too():
             name="teamless",
             email="teamless@hanyang.ac.kr",
             password="old-password",
+            student_id="2025000002",
         )
         client = start_session(app, user_id, via_google=True)
         # the callback lands teamless users on the team page, not the challenges
@@ -296,4 +302,53 @@ def test_terms_are_seeded_and_linked_from_the_footer():
         html = client.get("/login").data
         assert b'href="/tos"' in html
         assert b"<span data-copyright-year>2026</span>" in html
+    destroy_ctfd(app)
+
+
+def test_existing_accounts_are_asked_for_consent_once():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        # an account from before the consent field existed: password and
+        # student ID, but no terms entry
+        user_id = gen_user(app.db, name="veteran", email="veteran@examplectf.com").id
+        db.session.add(
+            UserFieldEntries(
+                field_id=field_id(STUDENT_ID_FIELD), user_id=user_id, value="2024000001"
+            )
+        )
+        db.session.commit()
+        client = login_as_user(app, name="veteran", password="password")
+
+        # nothing but logout works until the terms are accepted
+        for path in ("/challenges", "/settings", "/api/v1/users/me"):
+            r = client.get(path)
+            assert r.status_code == 302, path
+            assert r.location.endswith("/onboarding/"), path
+
+        r = client.get("/onboarding/")
+        assert r.status_code == 200
+        assert b"Please read and agree to the Terms of Service" in r.data
+        assert b'name="password"' not in r.data
+        assert STUDENT_ID_FIELD.encode() not in r.data
+
+        with client.session_transaction() as sess:
+            nonce = sess["nonce"]
+        r = client.post("/onboarding/", data={"nonce": nonce})
+        assert r.status_code == 200
+        assert b"Please agree to the Terms of Service to continue" in r.data
+
+        r = client.post(
+            "/onboarding/",
+            data={f"fields[{field_id(TERMS_FIELD)}]": "y", "nonce": nonce},
+        )
+        assert r.status_code == 302
+        assert r.location.endswith("/challenges")
+        consent = UserFieldEntries.query.filter_by(
+            user_id=user_id, field_id=field_id(TERMS_FIELD)
+        ).first()
+        assert consent.value is True
+        assert verify_password("password", stored_password(user_id))
+        assert client.get("/challenges").status_code == 200
+        assert client.get("/api/v1/users/me").status_code == 200
+        assert client.get("/onboarding/").location.endswith("/settings")
     destroy_ctfd(app)

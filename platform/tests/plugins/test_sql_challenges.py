@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """The SQL challenge plugin must not hand the answer key to students."""
+
+from CTFd.models import UserFieldEntries, UserFields, db
 from tests.helpers import create_ctfd, destroy_ctfd, gen_user, login_as_user
 
 CHALLENGE = {
@@ -29,9 +31,19 @@ def test_students_cannot_read_init_or_solution_sql():
 
         # The fork's registration form requires a student ID, so create the
         # student directly instead of using register_user().
-        gen_user(app.db, name="student", email="student@example.com", password="password")
+        student = gen_user(
+            app.db, name="student", email="student@example.com", password="password"
+        )
+        # the onboarding plugin blocks students until they accept the terms
+        terms = UserFields.query.filter_by(name="Terms of Service").first()
+        db.session.add(
+            UserFieldEntries(field_id=terms.id, user_id=student.id, value=True)
+        )
+        db.session.commit()
         student = login_as_user(app, name="student", password="password")
-        student_view = student.get(f"/api/v1/challenges/{challenge_id}").get_json()["data"]
+        student_view = student.get(f"/api/v1/challenges/{challenge_id}").get_json()[
+            "data"
+        ]
         assert student_view["name"] == CHALLENGE["name"]
         assert "solution_query" not in student_view
         assert "init_query" not in student_view
