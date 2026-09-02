@@ -164,3 +164,30 @@ def test_relogging_in_from_the_same_browser_is_not_flagged():
             log_file.seek(before)
             assert "while another session is active" not in log_file.read()
     destroy_ctfd(app)
+
+
+def test_token_forced_signout_does_not_flag_the_next_login():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        onboarded_student(app)
+        log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
+        browser_client = login_as_user(app, name="student", password="password")
+        # an API token request replaces the account's active nonce (core behavior)
+        token = generate_user_token(Users.query.filter_by(name="student").first())
+        headers = {
+            "Authorization": f"Token {token.value}",
+            "Content-Type": "application/json",
+        }
+        assert (
+            app.test_client().get("/api/v1/users/me", headers=headers).status_code
+            == 200
+        )
+        # the browser session is signed out on its next request
+        assert browser_client.get("/scoreboard").status_code == 302
+
+        before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+        login_as_user(app, name="student", password="password")
+        with open(log_path) as log_file:
+            log_file.seek(before)
+            assert "while another session is active" not in log_file.read()
+    destroy_ctfd(app)

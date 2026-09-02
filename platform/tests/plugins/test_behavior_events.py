@@ -150,6 +150,39 @@ def test_client_events_are_validated_and_stamped_with_the_real_user(
         assert lines[0]["challenge_name"] == CHALLENGE["name"]
         assert lines[0]["already_solved"] is False
 
+        # already_solved is judged at the event's own time: work buffered just
+        # before the first correct submission is still "before"
+        from datetime import timedelta
+
+        from tests.helpers import gen_solve
+
+        solve = gen_solve(app.db, user_id=student_id, challenge_id=challenge_id)
+        solved_at = solve.date
+        stamp = lambda when: when.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        r = client.post(
+            "/api/v1/challenges/behavior",
+            json={
+                "events": [
+                    {
+                        **base,
+                        "event_type": "paste",
+                        "timestamp": stamp(solved_at - timedelta(seconds=3)),
+                    },
+                    {
+                        **base,
+                        "event_type": "submit",
+                        "timestamp": stamp(solved_at + timedelta(seconds=3)),
+                    },
+                    {**base, "event_type": "focus", "timestamp": "garbage"},
+                ]
+            },
+        )
+        assert r.status_code == 200, r.get_json()
+        before, after, unknown = behavior_lines(tmp_path)[-3:]
+        assert before["already_solved"] is False
+        assert after["already_solved"] is True
+        assert unknown["already_solved"] is True  # unusable timestamp: judged now
+
         # batch-level limits
         r = client.post("/api/v1/challenges/behavior", json={"events": []})
         assert r.status_code == 400
@@ -163,7 +196,7 @@ def test_client_events_are_validated_and_stamped_with_the_real_user(
         )
         assert r.status_code == 200
         assert r.get_json()["data"]["logged"] == 51
-        assert len(behavior_lines(tmp_path)) == 52
+        assert len(behavior_lines(tmp_path)) == 4 + 51
 
         # a full batch of the largest valid events is accepted, never 413
         big = {

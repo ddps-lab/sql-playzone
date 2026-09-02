@@ -143,6 +143,10 @@ def load(app):
             name=user.name if user else session.get("id"),
             browser=browser(),
         )
+        # If this session was the last one seen (an API token replaced the
+        # nonce, not a newer browser), its activity marker must go too.
+        if cache.get(seen_key(session["id"])) == session.get("nonce"):
+            cache.delete(seen_key(session["id"]))
         logout_user()
         if is_api_request():
             abort(401)

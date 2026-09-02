@@ -1403,6 +1403,35 @@ def write_behavior_events(events):
             log_file.write(json.dumps(event) + "\n")
 
 
+def solved_before(user, challenge_id, when):
+    """Whether the account had solved the challenge before ``when`` (naive UTC).
+
+    Judged at the event's own time, not at flush time: the page buffers
+    events for a few seconds, so work done just before the first correct
+    submission must not be marked as after it.
+    """
+    account_id = user.team_id if config.is_teams_mode() else user.id
+    return (
+        Solves.query.filter(
+            Solves.account_id == account_id,
+            Solves.challenge_id == challenge_id,
+            Solves.date < when,
+        ).first()
+        is not None
+    )
+
+
+def event_time(value):
+    """The client's ISO timestamp as naive UTC, or now when it is unusable."""
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return datetime.utcnow()
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
 def record_execute_event(challenge, submission, status, message):
     """A Test run, recorded by the server so identity and result are trusted."""
     user = get_current_user_attrs()
@@ -1413,8 +1442,7 @@ def record_execute_event(challenge, submission, status, message):
         "user_name": user.name,
         "challenge_id": challenge.id,
         "challenge_name": challenge.name,
-        # account semantics: in teams mode a teammate's solve counts
-        "already_solved": challenge.id in get_solve_ids_for_user_id(user_id=user.id),
+        "already_solved": solved_before(user, challenge.id, datetime.utcnow()),
         "event_type": "execute",
         "typed_text": "",
         "typed_length": 0,
@@ -1453,7 +1481,7 @@ def behavior_event_problem(event, challenge_ids):
     return None
 
 
-def canonical_behavior_event(event, user, challenge_names, solved_ids):
+def canonical_behavior_event(event, user, challenge_names):
     """The event with every identity and challenge field set by the server."""
     canonical = dict(event)
     challenge_id = int(event["challenge_id"])
@@ -1461,7 +1489,9 @@ def canonical_behavior_event(event, user, challenge_names, solved_ids):
     canonical["user_name"] = user.name
     canonical["challenge_id"] = challenge_id
     canonical["challenge_name"] = challenge_names[challenge_id]
-    canonical["already_solved"] = challenge_id in solved_ids
+    canonical["already_solved"] = solved_before(
+        user, challenge_id, event_time(event.get("timestamp"))
+    )
     canonical["received_at"] = datetime.now(timezone.utc).isoformat()
     canonical["source"] = "client"
     return canonical
@@ -1489,16 +1519,13 @@ class BehaviorLog(Resource):
                 Challenges.id, Challenges.name
             ).all()
         }
-        solved_ids = get_solve_ids_for_user_id(user_id=user.id)
         accepted, dropped = [], []
         for index, event in enumerate(events):
             problem = behavior_event_problem(event, set(challenge_names))
             if problem:
                 dropped.append({"index": index, "reason": problem})
             else:
-                accepted.append(
-                    canonical_behavior_event(event, user, challenge_names, solved_ids)
-                )
+                accepted.append(canonical_behavior_event(event, user, challenge_names))
 
         try:
             write_behavior_events(accepted)
