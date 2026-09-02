@@ -75,13 +75,13 @@ sudo docker pull "$sql_judge_tag"
 sudo install -d -o ubuntu -g ubuntu /opt/sql-playzone/platform/conf/nginx
 sudo install -m 0644 "$source_directory/platform/docker-compose.production.yml" /opt/sql-playzone/platform/docker-compose.yml
 sudo install -m 0644 "$source_directory/platform/conf/nginx/http.conf" /opt/sql-playzone/platform/conf/nginx/http.conf
+sudo touch /opt/sql-playzone/platform/.env /opt/sql-playzone/platform/.env.judge
+sudo chown ubuntu:ubuntu /opt/sql-playzone/platform/.env /opt/sql-playzone/platform/.env.judge
+sudo chmod 0600 /opt/sql-playzone/platform/.env /opt/sql-playzone/platform/.env.judge
 # Keep every public runtime image in the AMI so instance boot does not depend on Docker Hub.
 sudo env CTFD_IMAGE="$ctfd_tag" SQL_JUDGE_IMAGE="$sql_judge_tag" \
-  docker compose -f /opt/sql-playzone/platform/docker-compose.yml pull permissions nginx
+  docker compose -f /opt/sql-playzone/platform/docker-compose.yml pull permissions nginx mysql-judge
 sudo install -d -o ubuntu -g ubuntu /opt/sql-playzone/platform/.data/CTFd/logs /opt/sql-playzone/platform/.data/CTFd/uploads
-sudo touch /opt/sql-playzone/platform/.env
-sudo chown ubuntu:ubuntu /opt/sql-playzone/platform/.env
-sudo chmod 0600 /opt/sql-playzone/platform/.env
 
 # Remove BuildKit's local cache and credentials while retaining the pulled runtime images.
 sudo docker buildx rm "$buildx_builder"

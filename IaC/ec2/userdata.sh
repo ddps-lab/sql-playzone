@@ -89,6 +89,7 @@ fi
 
 python3 - "$application_secret_file" "$rds_secret_file" << 'PY'
 import json
+import secrets
 import sys
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -123,8 +124,25 @@ lines = env_path.read_text().splitlines() if env_path.exists() else []
 lines = [line for line in lines if line.partition("=")[0] not in env_values]
 lines.extend(f"{key}={value}" for key, value in env_values.items())
 env_path.write_text("\n".join(lines) + "\n")
+
+judge_env_path = Path(".env.judge")
+judge_lines = judge_env_path.read_text().splitlines() if judge_env_path.exists() else []
+existing_judge_values = {}
+for line in judge_lines:
+    key, separator, value = line.partition("=")
+    if separator:
+        existing_judge_values[key] = value
+
+judge_env_values = {
+    "MYSQL_HOST": "mysql-judge",
+    "MYSQL_PORT": "3306",
+    "MYSQL_ROOT_PASSWORD": existing_judge_values.get("MYSQL_ROOT_PASSWORD") or secrets.token_hex(32),
+}
+judge_lines = [line for line in judge_lines if line.partition("=")[0] not in judge_env_values]
+judge_lines.extend(f"{key}={value}" for key, value in judge_env_values.items())
+judge_env_path.write_text("\n".join(judge_lines) + "\n")
 PY
-chmod 600 .env
+chmod 600 .env .env.judge
 
 rm -f "$application_secret_file" "$rds_secret_file"
 trap - EXIT

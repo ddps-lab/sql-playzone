@@ -1,1 +1,3 @@
 sql-judge-server
+*_test.go
+docker-compose.integration.yml

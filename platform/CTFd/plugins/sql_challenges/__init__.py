@@ -551,6 +551,10 @@ def is_port_open(host, port):
 def start_go_server():
     """Start the Go SQL judge server."""
     global go_server_process
+
+    if not os.environ.get('MYSQL_ROOT_PASSWORD'):
+        print("SQL Judge requires MYSQL_ROOT_PASSWORD and a reachable MySQL 8.4 server. Use Docker Compose or configure both before starting CTFd.")
+        return
     
     # Check if server is already running
     if is_port_open('localhost', 8080):
@@ -565,29 +569,18 @@ def start_go_server():
     if not os.path.exists(server_binary):
         print("SQL Judge server binary not found, attempting to build...")
         try:
-            # First, run go mod tidy to download dependencies and create go.sum
-            print("Running go mod tidy to download dependencies...")
-            mod_tidy = subprocess.run(
-                ['go', 'mod', 'tidy'],
+            # Download the versions locked by go.mod and go.sum without modifying them.
+            print("Downloading SQL Judge dependencies...")
+            mod_download = subprocess.run(
+                ['go', 'mod', 'download'],
                 cwd=plugin_dir,
                 capture_output=True,
                 text=True
             )
-            if mod_tidy.returncode != 0:
-                print(f"Failed to download dependencies: {mod_tidy.stderr}")
-                print("Trying go mod download as fallback...")
-                # Try go mod download as fallback
-                mod_download = subprocess.run(
-                    ['go', 'mod', 'download'],
-                    cwd=plugin_dir,
-                    capture_output=True,
-                    text=True
-                )
-                if mod_download.returncode != 0:
-                    print(f"Failed to download Go dependencies: {mod_download.stderr}")
-                    return
-            else:
-                print("Dependencies downloaded successfully")
+            if mod_download.returncode != 0:
+                print(f"Failed to download Go dependencies: {mod_download.stderr}")
+                return
+            print("Dependencies downloaded successfully")
             
             # Now build the server
             print("Building SQL Judge server...")

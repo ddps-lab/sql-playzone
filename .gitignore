@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+platform/CTFd/plugins/sql_challenges/sql-judge-server
+platform/.env.judge
