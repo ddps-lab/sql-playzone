@@ -1,0 +1,257 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""Google-registered accounts finish onboarding before they can use the site."""
+
+from CTFd.cache import cache
+from CTFd.models import UserFieldEntries, UserFields, Users, db
+from CTFd.utils import set_config
+from CTFd.utils.crypto import verify_password
+from CTFd.utils.security.csrf import generate_nonce
+from CTFd.utils.security.signing import hmac
+from tests.helpers import (
+    create_ctfd,
+    destroy_ctfd,
+    gen_field,
+    gen_user,
+    login_as_user,
+)
+
+STUDENT_ID_FIELD = "Student ID Number"  # created by the student_fields plugin
+
+
+def create_google_user(
+    app, name="김민수", email="minsu@hanyang.ac.kr", password=None, student_id=None
+):
+    with app.app_context():
+        user = Users(name=name, email=email, oauth_id=f"google_{email}", verified=True)
+        if password is not None:
+            user.password = password
+        db.session.add(user)
+        db.session.commit()
+        if student_id is not None:
+            field = UserFields.query.filter_by(name=STUDENT_ID_FIELD).first()
+            db.session.add(
+                UserFieldEntries(field_id=field.id, user_id=user.id, value=student_id)
+            )
+            db.session.commit()
+        return user.id
+
+
+def start_session(app, user_id, via_google=True):
+    """Open a session the way auth.google_callback does: no password involved."""
+    client = app.test_client()
+    with app.app_context():
+        password_hash = db.session.query(Users.password).filter_by(id=user_id).scalar()
+        nonce = generate_nonce()
+        cache.set(f"user_{user_id}_active_nonce", nonce, timeout=60)
+        with client.session_transaction() as sess:
+            sess["id"] = user_id
+            sess["nonce"] = nonce
+            sess["hash"] = hmac(password_hash)
+            if via_google:
+                sess["google_login_nonce"] = nonce
+    return client
+
+
+def onboarding_data(client, **overrides):
+    with client.session_transaction() as sess:
+        nonce = sess["nonce"]
+    field_id = UserFields.query.filter_by(name=STUDENT_ID_FIELD).first().id
+    data = {
+        "name": "playzone-minsu",
+        "password": "hunter22!",
+        f"fields[{field_id}]": "2025123456",
+        "nonce": nonce,
+    }
+    data.update(overrides)
+    return data
+
+
+def stored_password(user_id):
+    return db.session.query(Users.password).filter_by(id=user_id).scalar()
+
+
+def test_google_account_without_password_is_sent_to_onboarding():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        user_id = create_google_user(app)
+        client = start_session(app, user_id)
+
+        for path in ("/", "/challenges", "/settings", "/api/v1/users/me"):
+            r = client.get(path)
+            assert r.status_code == 302, path
+            assert r.location.endswith("/onboarding/"), path
+
+        r = client.get("/onboarding/")
+        assert r.status_code == 200
+        assert b"minsu@hanyang.ac.kr" in r.data
+        assert STUDENT_ID_FIELD.encode() in r.data
+
+        # logging out stays possible, and anonymous requests are untouched
+        assert client.get("/logout").status_code == 302
+        assert app.test_client().get("/login").status_code == 200
+    destroy_ctfd(app)
+
+
+def test_onboarding_sets_name_password_and_student_id_then_form_login_works():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        user_id = create_google_user(app)
+        client = start_session(app, user_id)
+
+        r = client.post("/onboarding/", data=onboarding_data(client))
+        assert r.status_code == 302
+        assert r.location.endswith("/challenges")
+
+        user = Users.query.filter_by(id=user_id).first()
+        assert user.name == "playzone-minsu"
+        assert verify_password("hunter22!", user.password)
+        field = UserFields.query.filter_by(name=STUDENT_ID_FIELD).first()
+        entry = UserFieldEntries.query.filter_by(
+            user_id=user_id, field_id=field.id
+        ).first()
+        assert entry.value == "2025123456"
+
+        # the session survives the password change and the gate is lifted
+        assert client.get("/challenges").status_code == 200
+        assert (
+            client.get("/api/v1/users/me").get_json()["data"]["name"]
+            == "playzone-minsu"
+        )
+        # this session is still Google-authenticated, so the page now offers a password change
+        assert b"Set a New Password" in client.get("/onboarding/").data
+
+        client.get("/logout")
+        client = login_as_user(app, name="playzone-minsu", password="hunter22!")
+        assert client.get("/api/v1/users/me").status_code == 200
+        client = login_as_user(app, name="minsu@hanyang.ac.kr", password="hunter22!")
+        assert client.get("/api/v1/users/me").status_code == 200
+    destroy_ctfd(app)
+
+
+def test_onboarding_rejects_bad_names_passwords_and_missing_student_id():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        set_config("password_min_length", 8)
+        gen_user(app.db, name="taken", email="taken@examplectf.com")
+        user_id = create_google_user(app)
+        client = start_session(app, user_id)
+        field_id = UserFields.query.filter_by(name=STUDENT_ID_FIELD).first().id
+
+        cases = [
+            ({"name": "taken"}, b"That user name is already taken"),
+            (
+                {"name": "someone@hanyang.ac.kr"},
+                b"Your user name cannot be an email address",
+            ),
+            ({"name": ""}, b"Pick a longer user name"),
+            ({"password": "short"}, b"Password must be at least 8 characters"),
+            ({f"fields[{field_id}]": ""}, b"Please provide all required fields"),
+        ]
+        for overrides, message in cases:
+            r = client.post("/onboarding/", data=onboarding_data(client, **overrides))
+            assert r.status_code == 200, overrides
+            assert message in r.data, overrides
+            assert stored_password(user_id) is None, overrides
+
+        assert client.get("/challenges").status_code == 302
+    destroy_ctfd(app)
+
+
+def test_accounts_with_passwords_and_admins_are_not_gated():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        admin = login_as_user(app, name="admin", password="password")
+        assert admin.get("/api/v1/users/me").status_code == 200
+        assert admin.get("/onboarding/").location.endswith("/settings")
+
+        create_google_user(
+            app, name="done", email="done@hanyang.ac.kr", password="hunter22!"
+        )
+        client = login_as_user(app, name="done", password="hunter22!")
+        assert client.get("/api/v1/users/me").status_code == 200
+        r = client.get("/onboarding/")
+        assert r.status_code == 302
+        assert r.location.endswith("/settings")
+    destroy_ctfd(app)
+
+
+def test_google_login_allows_a_new_password_without_the_current_one():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        user_id = create_google_user(
+            app,
+            name="forgot",
+            email="forgot@hanyang.ac.kr",
+            password="old-password",
+            student_id="2025000001",
+        )
+
+        # a form login is not enough: Settings asks for the current password
+        client = login_as_user(app, name="forgot", password="old-password")
+        r = client.post(
+            "/onboarding/",
+            data=onboarding_data(client, name="forgot", password="new-password"),
+        )
+        assert r.status_code == 302
+        assert r.location.endswith("/settings")
+        assert verify_password("old-password", stored_password(user_id))
+
+        # a session that Google authenticated is offered the page once, then skips
+        client = start_session(app, user_id, via_google=True)
+        r = client.get("/challenges")
+        assert r.status_code == 302
+        assert r.location.endswith("/onboarding/")
+        assert client.get("/challenges").status_code == 200
+        r = client.get("/onboarding/")
+        assert r.status_code == 200
+        assert b"Skip for now" in r.data
+        assert STUDENT_ID_FIELD.encode() not in r.data
+
+        # a password reset leaves custom fields alone, even ones the settings
+        # page would refuse to change
+        cohort = gen_field(app.db, name="Cohort", editable=False, required=True)
+        db.session.add(UserFieldEntries(field_id=cohort.id, user_id=user_id, value="A"))
+        db.session.commit()
+        with client.session_transaction() as sess:
+            nonce = sess["nonce"]
+        r = client.post(
+            "/onboarding/",
+            data={
+                "name": "forgot",
+                "password": "new-password",
+                f"fields[{cohort.id}]": "B",
+                "nonce": nonce,
+            },
+        )
+        assert r.status_code == 302
+        assert r.location.endswith("/challenges")
+        assert verify_password("new-password", stored_password(user_id))
+        assert client.get("/api/v1/users/me").status_code == 200
+        entry = UserFieldEntries.query.filter_by(
+            user_id=user_id, field_id=cohort.id
+        ).first()
+        assert entry.value == "A"
+
+        # the marker is tied to the nonce Google logged in with
+        client = start_session(app, user_id, via_google=False)
+        assert client.get("/onboarding/").status_code == 302
+    destroy_ctfd(app)
+
+
+def test_google_login_is_offered_the_page_in_teams_mode_too():
+    app = create_ctfd(enable_plugins=True, user_mode="teams")
+    with app.app_context():
+        user_id = create_google_user(
+            app,
+            name="teamless",
+            email="teamless@hanyang.ac.kr",
+            password="old-password",
+        )
+        client = start_session(app, user_id, via_google=True)
+        # the callback lands teamless users on the team page, not the challenges
+        r = client.get("/team")
+        assert r.status_code == 302
+        assert r.location.endswith("/onboarding/")
+        assert client.get("/team").status_code == 200
+    destroy_ctfd(app)

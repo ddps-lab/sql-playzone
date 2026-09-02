@@ -442,7 +442,8 @@ def register():
 
 
 @auth.route("/login", methods=["POST", "GET"])
-@ratelimit(method="POST", limit=10, interval=5)
+# Students log in with the form at exam start from a shared NAT address.
+@ratelimit(method="POST", limit=30, interval=5)
 def login():
     errors = get_errors()
     if request.method == "POST":
@@ -677,6 +678,25 @@ def oauth_redirect():
         return redirect(url_for("auth.login"))
 
 
+# Google accounts must belong to this Google Workspace domain. The hd
+# parameter sent to Google only pre-selects accounts; the callback enforces it.
+GOOGLE_HOSTED_DOMAIN = "hanyang.ac.kr"
+
+
+def google_account_allowed(user_data):
+    """Only verified Workspace members of the course domain.
+
+    A consumer Google account can carry a verified university email address,
+    so the email suffix alone is not proof of membership; the hd claim is.
+    """
+    email = str(user_data.get("email") or "").strip().lower()
+    return (
+        user_data.get("verified_email") is True
+        and str(user_data.get("hd") or "").lower() == GOOGLE_HOSTED_DOMAIN
+        and email.endswith("@" + GOOGLE_HOSTED_DOMAIN)
+    )
+
+
 @auth.route("/google/login")
 def google_login():
     google_client_id = get_app_config("GOOGLE_CLIENT_ID") or get_config("google_client_id")
@@ -710,14 +730,16 @@ def google_login():
         f"state={state}&"
         f"access_type=offline&"
         f"prompt=consent&"
-        f"hd=hanyang.ac.kr"
+        f"hd={GOOGLE_HOSTED_DOMAIN}"
     )
     
     return redirect(redirect_url)
 
 
 @auth.route("/google/callback")
-@ratelimit(method="GET", limit=10, interval=60)
+# A lecture hall shares one NAT address, so the per-IP limit must cover a
+# whole class signing up at once.
+@ratelimit(method="GET", limit=60, interval=60)
 def google_callback():
     code = request.args.get("code")
     state = request.args.get("state")
@@ -760,7 +782,20 @@ def google_callback():
             
             if userinfo_response.status_code == 200:
                 user_data = userinfo_response.json()
-                
+
+                if not google_account_allowed(user_data):
+                    log(
+                        "logins",
+                        "[{date}] {ip} - Google account {email} rejected: not a verified {domain} account",
+                        email=user_data.get("email"),
+                        domain=GOOGLE_HOSTED_DOMAIN,
+                    )
+                    error_for(
+                        endpoint="auth.login",
+                        message=f"Only verified {GOOGLE_HOSTED_DOMAIN} Google accounts can sign in.",
+                    )
+                    return redirect(url_for("auth.login"))
+
                 user_email = user_data.get("email")
                 raw_user_name = user_data.get("name", user_email.split("@")[0])
                 
@@ -840,6 +875,9 @@ def google_callback():
                     pass
                 
                 login_user(user)
+                # Lets the onboarding plugin tell a Google-authenticated
+                # session from a later form login (login_user issues a new nonce).
+                session["google_login_nonce"] = session["nonce"]
                 log("logins", "[{date}] {ip} - {name} logged in via Google OAuth", name=user.name)
                 
                 return redirect(url_for("challenges.listing" if not (get_config("user_mode") == TEAMS_MODE and user.team_id is None) else "teams.private"))
