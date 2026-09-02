@@ -65,7 +65,7 @@
               </small>
               <ul class="list-unstyled small mt-2 mb-0" id="password-rules">
                 <li id="rule-length" class="text-muted">{{ password_min_length }}–{{ password_max_length }} {% trans %}characters{% endtrans %}</li>
-                <li id="rule-mix" class="text-muted">{% trans %}Contains both a letter and a digit{% endtrans %}</li>
+                <li id="rule-mix" class="text-muted">{% trans %}Contains both an English letter (A-Z) and a digit (0-9){% endtrans %}</li>
                 <li id="rule-match" class="text-muted">{% trans %}Both password fields match{% endtrans %}</li>
               </ul>
             </div>
@@ -140,12 +140,12 @@
       function check() {
         var ready = true;
         if (password && confirm) {
-          // the server strips both fields before checking them
-          var value = password.value.trim();
-          var again = confirm.value.trim();
+          // the server strips ASCII whitespace from both fields before checking
+          var value = password.value.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "");
+          var again = confirm.value.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "");
           var touched = value.length > 0 || again.length > 0;
           var okLength = length(value) >= minLength && length(value) <= maxLength;
-          var okMix = /\p{L}/u.test(value) && /\p{Nd}/u.test(value);
+          var okMix = /[A-Za-z]/.test(value) && /[0-9]/.test(value);
           var okMatch = again.length > 0 && again === value;
           mark(rules.length, okLength, touched);
           mark(rules.mix, okMix, touched);
