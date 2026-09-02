@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 """A newer login signs the older session out on its very next request."""
 
+import os
+
 from CTFd.models import UserFieldEntries, UserFields, Users, db
 from CTFd.utils.security.auth import generate_user_token
 from tests.helpers import create_ctfd, destroy_ctfd, gen_user, login_as_user
@@ -79,4 +81,24 @@ def test_a_bare_authorization_header_does_not_bypass_the_check():
         r = first.get("/scoreboard", headers={"Authorization": "Token forged"})
         assert r.status_code == 302
         assert "/login" in r.location
+    destroy_ctfd(app)
+
+
+def test_concurrent_logins_leave_a_trace_in_the_logins_log():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        onboarded_student(app)
+        first = login_as_user(app, name="student", password="password")
+        # the logins logger writes to a file and does not propagate to caplog
+        log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
+        before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+
+        login_as_user(app, name="student", password="password")
+        assert first.get("/scoreboard").status_code == 302
+
+        with open(log_path) as log_file:
+            log_file.seek(before)
+            lines = log_file.read()
+        assert "student login attempt while another session is active" in lines
+        assert "student signed out: the account signed in from another browser" in lines
     destroy_ctfd(app)

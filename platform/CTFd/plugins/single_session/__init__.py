@@ -10,9 +10,12 @@ after a newer login. This hook runs the same check for every request.
 from flask import abort, redirect, request, session, url_for
 
 from CTFd.cache import cache
+from CTFd.models import Users
+from CTFd.utils import validators
 from CTFd.utils.helpers import error_for
+from CTFd.utils.logging import log
 from CTFd.utils.security.auth import logout_user
-from CTFd.utils.user import authed
+from CTFd.utils.user import authed, get_current_user_attrs
 
 # Requests that need no session check: leaving, static files, health probes.
 EXEMPT_ENDPOINTS = {
@@ -53,7 +56,36 @@ def session_is_current():
     return not active_nonce or session.get("nonce") == active_nonce
 
 
+def browser():
+    return (request.user_agent.string or "")[:120]
+
+
 def load(app):
+    @app.before_request
+    def note_login_while_another_session_is_active():
+        """DDPS-1303: leave a trace for the exam review, keyed by user and time.
+
+        The login itself is logged by CTFd; this line says that another
+        session was alive at that moment. The older session is signed out
+        on its next request, which is logged there.
+        """
+        if request.endpoint != "auth.login" or request.method != "POST":
+            return
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            return
+        if validators.validate_email(name) is True:
+            user = Users.query.filter_by(email=name).first()
+        else:
+            user = Users.query.filter_by(name=name).first()
+        if user and cache.get(f"user_{user.id}_active_nonce"):
+            log(
+                "logins",
+                "[{date}] {ip} - {name} login attempt while another session is active ({browser})",
+                name=user.name,
+                browser=browser(),
+            )
+
     @app.before_request
     def enforce_single_session():
         if request.endpoint in EXEMPT_ENDPOINTS or not authed():
@@ -65,6 +97,13 @@ def load(app):
             return
         if session_is_current():
             return
+        user = get_current_user_attrs()
+        log(
+            "logins",
+            "[{date}] {ip} - {name} signed out: the account signed in from another browser ({browser})",
+            name=user.name if user else session.get("id"),
+            browser=browser(),
+        )
         logout_user()
         if is_api_request():
             abort(401)

@@ -1,9 +1,12 @@
+import json
 import math
-from datetime import datetime, timedelta
+import os
+from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from typing import List  # noqa: I001
 import pytz
 
-from flask import abort, render_template, request, session, url_for
+from flask import abort, current_app, render_template, request, session, url_for
 from flask_restx import Namespace, Resource
 from sqlalchemy.sql import and_
 
@@ -708,6 +711,13 @@ class ChallengeAttempt(Resource):
                     status = response.status
                     message = response.message
 
+                record_execute_event(
+                    challenge=challenge,
+                    submission=str(request_data.get("submission", "")),
+                    status=status,
+                    message=message,
+                )
+
                 return {
                     "success": True,
                     "data": {
@@ -1350,49 +1360,143 @@ class ChallengeRatings(Resource):
         }
 
 
+# --- SQL challenge behavior log ---------------------------------------------
+# Events from the challenge page (typing, paste, focus, submit) and, since
+# DDPS-962, execute events recorded by the server share one JSON-lines file
+# that the CloudWatch agent ships. Identity and challenge fields are set by
+# the server; the client's values are never trusted.
+BEHAVIOR_EVENT_TYPES = {
+    "word_typed",
+    "paste",
+    "focus",
+    "blur",
+    "tab_hide",
+    "tab_show",
+    "reset",
+    "submit",
+}
+BEHAVIOR_MAX_EVENTS = 50
+BEHAVIOR_MAX_BODY_BYTES = 256 * 1024
+BEHAVIOR_MAX_TEXT_CHARS = 16000
+BEHAVIOR_TEXT_FIELDS = ("typed_text", "pasted_text", "query_text")
+
+
+def behavior_log_path():
+    folder = os.environ.get("LOG_FOLDER") or current_app.config["LOG_FOLDER"]
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    return Path(folder) / "sql_challenge_behavior.log"
+
+
+def write_behavior_events(events):
+    with open(behavior_log_path(), "a") as log_file:
+        for event in events:
+            log_file.write(json.dumps(event) + "\n")
+
+
+def record_execute_event(challenge, submission, status, message):
+    """A Test run, recorded by the server so identity and result are trusted."""
+    user = get_current_user_attrs()
+    event = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "session_id": None,
+        "user_id": user.id,
+        "user_name": user.name,
+        "challenge_id": challenge.id,
+        "challenge_name": challenge.name,
+        "already_solved": Solves.query.filter_by(
+            user_id=user.id, challenge_id=challenge.id
+        ).first()
+        is not None,
+        "event_type": "execute",
+        "typed_text": "",
+        "typed_length": 0,
+        "pasted_text": "",
+        "pasted_length": 0,
+        "query_text": submission,
+        "query_length": len(submission),
+        "submit_status": status,
+        "message": str(message or "")[:200],
+        "source": "server",
+    }
+    try:
+        write_behavior_events([event])
+    except OSError as error:
+        current_app.logger.error(f"Could not record execute event: {error}")
+
+
+def behavior_event_problem(event, challenge_ids):
+    """Why a client event is not acceptable, or None."""
+    if not isinstance(event, dict):
+        return "not an object"
+    if event.get("event_type") not in BEHAVIOR_EVENT_TYPES:
+        return "unknown event_type"
+    try:
+        challenge_id = int(event.get("challenge_id"))
+    except (TypeError, ValueError):
+        return "invalid challenge_id"
+    if challenge_id not in challenge_ids:
+        return "unknown challenge"
+    for field in BEHAVIOR_TEXT_FIELDS:
+        value = event.get(field, "")
+        if not isinstance(value, str):
+            return f"{field} is not text"
+        if len(value) > BEHAVIOR_MAX_TEXT_CHARS:
+            return f"{field} too long"
+    return None
+
+
+def canonical_behavior_event(event, user):
+    canonical = dict(event)
+    canonical["user_id"] = user.id
+    canonical["user_name"] = user.name
+    canonical["challenge_id"] = int(event["challenge_id"])
+    canonical["received_at"] = datetime.now(timezone.utc).isoformat()
+    canonical["source"] = "client"
+    return canonical
+
+
 @challenges_namespace.route("/behavior", methods=["POST"])
 class BehaviorLog(Resource):
     @authed_only
     def post(self):
-        """Log user behavior events for SQL challenges"""
-        import os
-        import json
-        from datetime import datetime, timezone
-        from pathlib import Path
-        import traceback
+        """Store challenge-page behavior events; the server sets who and which challenge."""
+        if (
+            request.content_length is not None
+            and request.content_length > BEHAVIOR_MAX_BODY_BYTES
+        ):
+            return {"success": False, "errors": ["Request body too large"]}, 413
+        data = request.get_json(silent=True)
+        events = data.get("events") if isinstance(data, dict) else None
+        if not isinstance(events, list) or not events:
+            return {"success": False, "errors": ["No events provided"]}, 400
+        if len(events) > BEHAVIOR_MAX_EVENTS:
+            return {
+                "success": False,
+                "errors": [f"At most {BEHAVIOR_MAX_EVENTS} events per request"],
+            }, 400
+
+        user = get_current_user_attrs()
+        challenge_ids = {
+            row.id for row in Challenges.query.with_entities(Challenges.id).all()
+        }
+        accepted, dropped = [], []
+        for index, event in enumerate(events):
+            problem = behavior_event_problem(event, challenge_ids)
+            if problem:
+                dropped.append({"index": index, "reason": problem})
+            else:
+                accepted.append(canonical_behavior_event(event, user))
 
         try:
-            data = request.get_json()
-        except Exception as e:
-            print(f"Error parsing JSON: {e}")
-            return {"success": False, "errors": f"Invalid JSON: {str(e)}"}, 400
-        events = data.get("events", [])
+            write_behavior_events(accepted)
+        except OSError as error:
+            current_app.logger.error(f"Could not write behavior events: {error}")
+            return {"success": False, "errors": ["Could not write events"]}, 500
 
-        if not events:
-            return {"success": False, "errors": "No events provided"}, 400
-
-        # Get log folder from environment variable
-        log_folder = os.environ.get("LOG_FOLDER", "/var/log/CTFd")
-        Path(log_folder).mkdir(parents=True, exist_ok=True)
-
-        # Create log file name with current date
-        log_file = f"sql_challenge_behavior.log"
-        log_path = Path(log_folder) / log_file
-
-        try:
-            # Write each event as a JSON line
-            with open(log_path, "a") as f:
-                for event in events:
-                    f.write(json.dumps(event) + "\n")
-
-            return {"success": True, "message": f"Logged {len(events)} events"}
-
-        except Exception as e:
-            import traceback
-            error_msg = f"Error logging events: {e}"
-            print(error_msg)
-            print(f"Traceback: {traceback.format_exc()}")
-            return {"success": False, "errors": error_msg}, 500
+        return {
+            "success": True,
+            "data": {"logged": len(accepted), "dropped": dropped},
+        }
 
 
 @challenges_namespace.route("/<challenge_id>/solution")
