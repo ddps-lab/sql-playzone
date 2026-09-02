@@ -237,3 +237,21 @@ def test_google_login_allows_a_new_password_without_the_current_one():
         client = start_session(app, user_id, via_google=False)
         assert client.get("/onboarding/").status_code == 302
     destroy_ctfd(app)
+
+
+def test_google_login_is_offered_the_page_in_teams_mode_too():
+    app = create_ctfd(enable_plugins=True, user_mode="teams")
+    with app.app_context():
+        user_id = create_google_user(
+            app,
+            name="teamless",
+            email="teamless@hanyang.ac.kr",
+            password="old-password",
+        )
+        client = start_session(app, user_id, via_google=True)
+        # the callback lands teamless users on the team page, not the challenges
+        r = client.get("/team")
+        assert r.status_code == 302
+        assert r.location.endswith("/onboarding/")
+        assert client.get("/team").status_code == 200
+    destroy_ctfd(app)

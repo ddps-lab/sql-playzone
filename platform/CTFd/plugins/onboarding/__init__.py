@@ -43,6 +43,9 @@ EXEMPT_ENDPOINTS = {
     "static",
 }
 
+# Where auth.google_callback lands a user after login (users and teams mode).
+LANDING_ENDPOINTS = {"challenges.listing", "teams.private"}
+
 NAME_MAX_LENGTH = 128
 PASSWORD_MAX_LENGTH = 128
 
@@ -213,9 +216,9 @@ def load(app):
         if onboarding_pending(user.id):
             return redirect(url_for("onboarding.index"))
         # Google login is the way to set a new password, so show the page
-        # once when such a session first reaches the challenge list.
+        # once when such a session first reaches its landing page.
         if (
-            request.endpoint == "challenges.listing"
+            request.endpoint in LANDING_ENDPOINTS
             and logged_in_with_google()
             and session.get(ONBOARDING_OFFERED_SESSION_KEY) != session.get("nonce")
         ):
