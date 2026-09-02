@@ -85,6 +85,8 @@ module "ec2" {
   rds_master_secret_arn           = module.rds.master_user_secret_arn
   rds_endpoint                    = module.rds.rds_endpoint
   elasticache_serverless_endpoint = module.elasticache.elasticache_serverless_endpoint[0].address
+  upload_bucket_name              = aws_s3_bucket.uploads.bucket
+  upload_bucket_arn               = aws_s3_bucket.uploads.arn
 
   depends_on = [module.vpc, module.rds]
 }

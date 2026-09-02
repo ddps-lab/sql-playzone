@@ -96,6 +96,20 @@ resource "aws_iam_policy" "ecr_read_policy" {
           "arn:aws:secretsmanager:${var.region}:${var.aws_account_id}:secret:${var.application_secret_name}-*",
           var.rds_master_secret_arn
         ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = "s3:ListBucket"
+        Resource = var.upload_bucket_arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
+        Resource = "${var.upload_bucket_arn}/*"
       }
     ]
   })
@@ -231,6 +245,7 @@ resource "aws_launch_template" "arm_launch_template" {
     RDS_MASTER_SECRET_ARN      = var.rds_master_secret_arn
     RDS_ENDPOINT               = var.rds_endpoint
     ELASTICACHE_ENDPOINT       = var.elasticache_serverless_endpoint
+    UPLOAD_BUCKET_NAME         = var.upload_bucket_name
   }))
 
   tag_specifications {

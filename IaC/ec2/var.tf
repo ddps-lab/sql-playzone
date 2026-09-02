@@ -35,3 +35,5 @@ variable "application_secret_name" { type = string }
 variable "rds_master_secret_arn" { type = string }
 variable "rds_endpoint" { type = string }
 variable "elasticache_serverless_endpoint" { type = string }
+variable "upload_bucket_name" { type = string }
+variable "upload_bucket_arn" { type = string }
