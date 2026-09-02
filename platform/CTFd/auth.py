@@ -442,8 +442,9 @@ def register():
 
 
 @auth.route("/login", methods=["POST", "GET"])
-# Students log in with the form at exam start from a shared NAT address.
-@ratelimit(method="POST", limit=30, interval=5)
+# A whole lecture hall logs in with the form at exam start from one NAT
+# address, so the per-address limit must cover the class.
+@ratelimit(method="POST", limit=120, interval=5)
 def login():
     errors = get_errors()
     if request.method == "POST":

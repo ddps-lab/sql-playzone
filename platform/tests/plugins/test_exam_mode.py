@@ -70,6 +70,38 @@ def test_admin_toggles_the_exam_browser_requirement_without_touching_bans():
         assert get_config("exam_browser_required") is False
         assert get_config("exam_browser_marker") == "Trustlockbrowser"
         assert Users.query.filter_by(banned=True).count() == 1
+
+        # the same form switches the one-session rule
+        r = admin.post(
+            "/admin/exam_mode/browser",
+            data={"single_session_required": "on", "nonce": nonce},
+        )
+        assert r.status_code == 302
+        assert get_config("single_session_required") is True
+        assert get_config("exam_browser_required") is False
+    destroy_ctfd(app)
+
+
+def test_admin_pages_carry_the_exam_rules_banner_script():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        admin = login_as_user(app, name="admin", password="password")
+        html = admin.get("/admin/statistics").data
+        assert b"/plugins/exam_mode/assets/admin_banner.js" in html
+        r = admin.get("/plugins/exam_mode/assets/admin_banner.js")
+        assert r.status_code == 200
+        assert b"exam_browser_required" in r.data
+    destroy_ctfd(app)
+
+
+def test_the_google_button_is_hidden_while_the_exam_browser_rule_is_on():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        app.config["GOOGLE_CLIENT_ID"] = "client"
+        button = b"Sign up or reset password with HYU Google"
+        assert button in app.test_client().get("/login").data
+        set_config("exam_browser_required", "true")
+        assert button not in app.test_client().get("/login").data
     destroy_ctfd(app)
 
 
@@ -207,7 +239,7 @@ def test_students_cannot_log_in_from_another_browser_during_the_exam():
         from CTFd.cache import cache
 
         cache.delete("rl:127.0.0.1:auth.login")
-        statuses = {login(CHROME, "student")[0] for _ in range(31)}
+        statuses = {login(CHROME, "student")[0] for _ in range(121)}
         assert statuses == {403, 429}
         assert login(CHROME, "student")[0] == 429
     destroy_ctfd(app)

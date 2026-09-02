@@ -9,6 +9,12 @@ from CTFd.utils.security.auth import generate_user_token
 from tests.helpers import create_ctfd, destroy_ctfd, gen_user, login_as_user
 
 
+def enable_single_session():
+    from CTFd.utils import set_config
+
+    set_config("single_session_required", "true")
+
+
 def onboarded_student(app):
     student = gen_user(app.db, name="student", email="student@examplectf.com")
     for name, value in (
@@ -25,6 +31,7 @@ def onboarded_student(app):
 def test_older_session_is_signed_out_on_any_page():
     app = create_ctfd(enable_plugins=True)
     with app.app_context():
+        enable_single_session()
         onboarded_student(app)
         first = login_as_user(app, name="student", password="password")
         # the scoreboard never loads the full user, so only a request-wide
@@ -46,6 +53,7 @@ def test_older_session_is_signed_out_on_any_page():
 def test_older_session_gets_401_on_the_api():
     app = create_ctfd(enable_plugins=True)
     with app.app_context():
+        enable_single_session()
         onboarded_student(app)
         first = login_as_user(app, name="student", password="password")
         second = login_as_user(app, name="student", password="password")
@@ -59,6 +67,7 @@ def test_older_session_gets_401_on_the_api():
 def test_api_token_requests_are_not_subject_to_the_browser_session_check():
     app = create_ctfd(enable_plugins=True)
     with app.app_context():
+        enable_single_session()
         onboarded_student(app)
         token = generate_user_token(Users.query.filter_by(name="student").first())
         headers = {
@@ -75,6 +84,7 @@ def test_api_token_requests_are_not_subject_to_the_browser_session_check():
 def test_a_bare_authorization_header_does_not_bypass_the_check():
     app = create_ctfd(enable_plugins=True)
     with app.app_context():
+        enable_single_session()
         onboarded_student(app)
         first = login_as_user(app, name="student", password="password")
         login_as_user(app, name="student", password="password")
@@ -87,6 +97,7 @@ def test_a_bare_authorization_header_does_not_bypass_the_check():
 def test_logging_out_of_the_newer_session_does_not_revive_the_older_one():
     app = create_ctfd(enable_plugins=True)
     with app.app_context():
+        enable_single_session()
         onboarded_student(app)
         first = login_as_user(app, name="student", password="password")
         second = login_as_user(app, name="student", password="password")
@@ -107,7 +118,9 @@ def new_login_lines(app, log_path, before):
     with open(log_path) as log_file:
         log_file.seek(before)
         lines = [
-            line for line in log_file.read().splitlines() if "logged in via" in line
+            line
+            for line in log_file.read().splitlines()
+            if "session started via" in line
         ]
     return sorted(set(lines), key=lines.index)
 
@@ -131,7 +144,7 @@ def test_every_login_is_logged_with_its_browser_and_the_previous_login():
         lines = new_login_lines(app, log_path, before)
         assert len(lines) == 1
         assert (
-            "student logged in via form (Mozilla/5.0 (Macintosh) Chrome/124.0 Safari/537.36); first login on record"
+            "student session started via form (Mozilla/5.0 (Macintosh) Chrome/124.0 Safari/537.36); first session on record"
             in lines[0]
         )
 
@@ -148,7 +161,7 @@ def test_every_login_is_logged_with_its_browser_and_the_previous_login():
         lines = new_login_lines(app, log_path, before)
         assert len(lines) == 2
         assert (
-            "student logged in via form (Mozilla/5.0 (X11; Linux x86_64) Firefox/128.0); previous login 0 min ago from 127.0.0.1 (Mozilla/5.0 (Macintosh) Chrome/124.0 Safari/537.36)"
+            "student session started via form (Mozilla/5.0 (X11; Linux x86_64) Firefox/128.0); previous session 0 min ago from 127.0.0.1 (Mozilla/5.0 (Macintosh) Chrome/124.0 Safari/537.36)"
             in lines[1]
         )
 
@@ -200,6 +213,7 @@ def test_a_refused_login_is_not_logged_as_a_login():
 def test_admins_may_be_signed_in_from_several_places():
     app = create_ctfd(enable_plugins=True)
     with app.app_context():
+        enable_single_session()
         first = login_as_user(app, name="admin", password="password")
         second = login_as_user(app, name="admin", password="password")
         # neither session is signed out, on pages or on the API
@@ -218,4 +232,17 @@ def test_admins_may_be_signed_in_from_several_places():
             == 200
         )
         assert first.get("/challenges").status_code == 200
+    destroy_ctfd(app)
+
+
+def test_students_keep_both_sessions_while_the_switch_is_off():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        onboarded_student(app)
+        first = login_as_user(app, name="student", password="password")
+        second = login_as_user(app, name="student", password="password")
+        assert first.get("/scoreboard").status_code == 200
+        assert first.get("/challenges").status_code == 200
+        assert first.get("/api/v1/users/me").status_code == 200
+        assert second.get("/challenges").status_code == 200
     destroy_ctfd(app)

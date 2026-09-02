@@ -1,7 +1,11 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
 from CTFd.models import db, Users, UserFieldEntries, UserFields, Configs, Files
 from CTFd.utils.decorators import admins_only
-from CTFd.plugins import register_admin_plugin_menu_bar
+from CTFd.plugins import (
+    register_admin_plugin_menu_bar,
+    register_admin_plugin_script,
+    register_plugin_assets_directory,
+)
 from CTFd.utils import set_config, get_config, get_app_config, validators
 from CTFd.utils.user import is_admin, get_ip
 from CTFd.cache import cache
@@ -33,6 +37,10 @@ EXAM_BROWSER_EXEMPT_ENDPOINTS = {
 }
 
 
+def single_session_required():
+    return get_config(SINGLE_SESSION_CONFIG) is True
+
+
 def exam_browser_required():
     # get_config turns the stored 'true'/'false' strings into booleans
     return get_config('exam_browser_required') is True
@@ -48,8 +56,12 @@ def is_exam_browser(user_agent):
 
 # The login view's own limit (auth.login: 30 POSTs per 5 seconds per address).
 # Refused logins share its cache key so they count against the same limit.
-LOGIN_LIMIT = 30
+LOGIN_LIMIT = 120
 LOGIN_INTERVAL = 5
+
+# One session per student account. Off outside exams so students may move
+# between devices; the single_session plugin enforces it while on.
+SINGLE_SESSION_CONFIG = 'single_session_required'
 
 
 def non_admin_login_from_other_browser():
@@ -130,6 +142,7 @@ def load(app):
             exam_mode_allowed_ids=allowed_ids,
             exam_browser_required=exam_browser_required(),
             exam_browser_marker=exam_browser_marker(),
+            single_session_required=single_session_required(),
         )
 
     @exam_mode.route('/browser', methods=['POST'])
@@ -141,6 +154,8 @@ def load(app):
         marker = request.form.get('exam_browser_marker', '').strip() or DEFAULT_EXAM_BROWSER_MARKER
         set_config('exam_browser_required', 'true' if required else 'false')
         set_config('exam_browser_marker', marker)
+        single = request.form.get('single_session_required') == 'on'
+        set_config(SINGLE_SESSION_CONFIG, 'true' if single else 'false')
         return redirect(url_for('exam_mode.index'))
 
     @exam_mode.route('/update', methods=['POST'])
@@ -193,6 +208,10 @@ def load(app):
         return redirect(url_for('exam_mode.index'))
 
     app.register_blueprint(exam_mode)
+
+    # A banner on every admin page while an exam rule is on.
+    register_plugin_assets_directory(app, base_path='/plugins/exam_mode/assets/')
+    register_admin_plugin_script('/plugins/exam_mode/assets/admin_banner.js')
 
     @app.before_request
     def require_exam_browser():

@@ -5,7 +5,8 @@ the cache, and the fork's ``get_current_user()`` signs out any other
 session it sees. That check only runs on pages that load the full user,
 so an older session could still open the scoreboard or a challenge page
 after a newer login. The request hook here runs the same check for
-every request.
+every request. Both apply only while the "one session per student"
+switch on the Exam Mode page is on, and never to admins.
 
 Because only one session is ever alive, the sequence of logins is the
 complete record of who held an account and when. Each login is logged
@@ -18,6 +19,7 @@ import time
 from flask import abort, g, redirect, request, session, url_for
 
 from CTFd.cache import cache
+from CTFd.utils import get_config
 from CTFd.utils.helpers import error_for
 from CTFd.utils.logging import log
 from CTFd.utils.security.auth import logout_user
@@ -37,6 +39,8 @@ LOGIN_ENDPOINTS = {
     "auth.oauth_redirect": "mlc",
 }
 LAST_LOGIN_TTL = 30 * 24 * 3600
+# Set from the Exam Mode admin page (exam_mode plugin).
+SINGLE_SESSION_CONFIG = "single_session_required"
 SIGNED_OUT_MESSAGE = (
     "This account signed in from another browser, so this session was signed out. "
     "다른 브라우저에서 로그인되어 이 세션은 로그아웃되었습니다."
@@ -63,6 +67,10 @@ def is_api_request():
     return request.is_json or str(request.endpoint or "").startswith("api.")
 
 
+def single_session_required():
+    return get_config(SINGLE_SESSION_CONFIG) is True
+
+
 def session_is_current():
     active_nonce = cache.get(f"user_{session['id']}_active_nonce")
     return not active_nonce or session.get("nonce") == active_nonce
@@ -77,7 +85,11 @@ def last_login_key(user_id):
 
 
 def record_login(via):
-    """One line per login: browser and the previous login of the account."""
+    """One line per login: browser and the previous login of the account.
+
+    CTFd writes its own "logged in" line as well; this one reads
+    "session started" so a review counts one kind of line only.
+    """
     user = get_current_user_attrs()
     if user is None:
         return
@@ -86,8 +98,8 @@ def record_login(via):
     if previous:
         log(
             "logins",
-            "[{date}] {ip} - {name} logged in via {via} ({browser}); "
-            "previous login {minutes} min ago from {previous_ip} ({previous_browser})",
+            "[{date}] {ip} - {name} session started via {via} ({browser}); "
+            "previous session {minutes} min ago from {previous_ip} ({previous_browser})",
             name=user.name,
             via=via,
             browser=browser(),
@@ -98,7 +110,7 @@ def record_login(via):
     else:
         log(
             "logins",
-            "[{date}] {ip} - {name} logged in via {via} ({browser}); first login on record",
+            "[{date}] {ip} - {name} session started via {via} ({browser}); first session on record",
             name=user.name,
             via=via,
             browser=browser(),
@@ -135,6 +147,8 @@ def load(app):
     @app.before_request
     def enforce_single_session():
         if request.endpoint in EXEMPT_ENDPOINTS or not authed():
+            return
+        if not single_session_required():
             return
         # An API token logs in per request (CTFd's tokens hook), so token
         # requests have no browser session to compare and are left alone.
