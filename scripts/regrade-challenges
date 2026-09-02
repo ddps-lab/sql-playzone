@@ -25,6 +25,7 @@ import argparse
 import concurrent.futures
 import json
 import math
+import re
 import sys
 import time
 import urllib.error
@@ -45,6 +46,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=15.0, help="HTTP timeout per request in seconds")
     parser.add_argument("--report", type=Path, help="Write the full JSON report to this path")
     parser.add_argument("--only", help="Comma-separated challenge ids to run")
+    parser.add_argument("--review", action="store_true", help="Add authoring review findings (ordering, ties, numeric format, slowness) to the summary and report")
+    parser.add_argument("--slow-ms", type=int, default=1500, help="Flag a challenge whose judge request exceeds this many milliseconds (default 1500)")
     return parser.parse_args()
 
 
@@ -162,10 +165,86 @@ def compare(judge: dict, baseline: dict) -> dict:
     return {"diff": "numeric_format" if formatting_only else "value", "first": first}
 
 
+ORDER_BY_PATTERN = re.compile(r"\bORDER\s+BY\s+(.+?)(?:\s+LIMIT\b|\s*;\s*$|$)", re.IGNORECASE | re.DOTALL)
+NUMERIC_SENSITIVE_PATTERN = re.compile(r"\bAVG\s*\(|(?<![*/])/(?![*/])|\bSUM\s*\(|\bSTD|\bVARIANCE|\bPERCENT", re.IGNORECASE)
+ROUND_PATTERN = re.compile(r"\b(ROUND|TRUNCATE|FORMAT|CAST|CONVERT|FLOOR|CEIL)\s*\(", re.IGNORECASE)
+
+
+def order_by_columns(solution: str) -> list[str] | None:
+    """Return the plain column names or aliases used in ORDER BY, or None when there is no ORDER BY.
+
+    Expressions such as ABS(a - b) are dropped, so the tie check is a lower bound."""
+    match = ORDER_BY_PATTERN.search(solution.strip())
+    if not match:
+        return None
+    columns = []
+    for term in match.group(1).split(","):
+        term = re.sub(r"\s+(ASC|DESC)\s*$", "", term.strip(), flags=re.IGNORECASE).strip("` ")
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_$]*(\.[A-Za-z_][A-Za-z0-9_$]*)?", term):
+            columns.append(term.split(".")[-1])
+        elif re.fullmatch(r"\d+", term):
+            columns.append(term)  # positional ORDER BY 1
+    return columns
+
+
+def tie_rows(columns: list[str], result_columns: list[str], rows: list[list[str]]) -> int | None:
+    """Count rows whose ORDER BY key values repeat. None when a key is not a result column."""
+    indexes = []
+    lowered = [c.lower() for c in result_columns]
+    for column in columns:
+        if column.isdigit():
+            position = int(column) - 1
+            if position < 0 or position >= len(result_columns):
+                return None
+            indexes.append(position)
+        elif column.lower() in lowered:
+            indexes.append(lowered.index(column.lower()))
+        else:
+            return None
+    if not indexes:
+        return None
+    seen = {}
+    for row in rows:
+        key = tuple(row[i] for i in indexes)
+        seen[key] = seen.get(key, 0) + 1
+    return sum(count for count in seen.values() if count > 1)
+
+
+def review_findings(challenge: dict, judge: dict, slow_ms: int) -> list[str]:
+    """Authoring findings for one challenge, worded for the person who will fix the problem."""
+    findings = []
+    solution = challenge.get("solution_query") or ""
+    if judge.get("status") != "ok":
+        findings.append(f"실행 실패({judge.get('status')}): {judge.get('error', '')[:140]}")
+        return findings
+    columns = order_by_columns(solution)
+    rows = judge.get("rows") or []
+    if columns is None:
+        if len(rows) > 1:
+            findings.append("ORDER BY가 없어 행 순서가 실행 계획에 따라 달라질 수 있음")
+    elif len(rows) > 1:
+        ties = tie_rows(columns, judge.get("columns") or [], rows)
+        if ties is None:
+            findings.append("ORDER BY에 결과 열이 아닌 식이 있어 동률 여부를 자동 확인하지 못함; 직접 확인 필요")
+        elif ties:
+            findings.append(f"정렬 키 값이 같은 행 {ties}개: 유일한 열(기본 키 등)을 ORDER BY 마지막에 추가")
+    if NUMERIC_SENSITIVE_PATTERN.search(solution) and not ROUND_PATTERN.search(solution):
+        findings.append("AVG·나눗셈·SUM 결과가 ROUND 없이 그대로 비교됨: 지문에 소수 자릿수를 명시하거나 정답에 ROUND 적용")
+    if not rows:
+        findings.append("정답 결과가 0행: 의도한 것인지 확인")
+    if judge.get("row_count", 0) >= 500:
+        findings.append(f"결과 {judge.get('row_count')}행: 1,000행 한도에 가까움")
+    if judge.get("elapsed_ms", 0) > slow_ms:
+        findings.append(f"요청 {judge.get('elapsed_ms')}ms: 실행당 2.5초 한도에 가까움, 정답 쿼리 최적화 검토")
+    return findings
+
+
 def run(challenges: list[dict], arguments: argparse.Namespace) -> list[dict]:
     def one(challenge: dict) -> dict:
         entry = {"id": challenge["id"], "name": challenge["name"], "category": challenge["category"]}
         entry["judge"] = call_judge(arguments.judge_url, challenge, arguments.timeout)
+        if arguments.review:
+            entry["review"] = review_findings(challenge, entry["judge"], arguments.slow_ms)
         if arguments.baseline_url:
             entry["baseline"] = call_judge(arguments.baseline_url, challenge, arguments.timeout)
             entry["comparison"] = compare(entry["judge"], entry["baseline"])
@@ -193,6 +272,14 @@ def summarize(entries: list[dict], baseline: bool) -> int:
         if baseline and entry["comparison"].get("first"):
             first = entry["comparison"]["first"]
             print(f"{'':>5}   first diff row {first['row']} col {first['column']}: judge={first['judge']!r} baseline={first['baseline']!r}")
+    reviewed = [entry for entry in entries if entry.get("review")]
+    if any("review" in entry for entry in entries):
+        print(f"\n== 검토 결과: 확인이 필요한 문제 {len(reviewed)} / {len(entries)} ==")
+        for entry in reviewed:
+            print(f"  #{entry['id']} {entry['name'][:50]}")
+            for finding in entry["review"]:
+                print(f"      - {finding}")
+        failures += sum(1 for entry in reviewed if entry["judge"]["status"] != "ok")
     statuses = {}
     for entry in entries:
         statuses[entry["judge"]["status"]] = statuses.get(entry["judge"]["status"], 0) + 1

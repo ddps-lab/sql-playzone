@@ -66,6 +66,8 @@ scripts/test-sql-judge
 
 Read [AUTHORING.md](AUTHORING.md) (Korean) before writing a challenge. It explains what the judge accepts in init SQL, how results are compared, and which words are blocked.
 
+To check a whole challenge set before publishing, follow [REVIEW.md](REVIEW.md): `scripts/export-challenges` pulls the definitions from a CTFd through the admin API and `scripts/review-challenges` grades them on a disposable judge and reports authoring problems.
+
 Init scripts exported from a local MySQL can keep their `DROP SCHEMA`, `CREATE SCHEMA` and `USE` statements: the judge maps that schema name onto the execution's temporary database and skips those statements, so `kbo.PLAYER` in init or in a submission resolves to the temporary database. `SET` statements in the init script, such as `SET SQL_MODE='TRADITIONAL'`, stay in effect for the graded statement exactly as they would in one local MySQL session. Leading comment lines, including `-----` separators that MySQL itself rejects, are removed from each statement. Table names are case-insensitive (`lower_case_table_names=1`, the Windows and macOS default), so `Salaries` and `salaries` refer to the same table. This setting is fixed when the MySQL data directory is initialized; an existing `mysql-judge-data` volume must be removed before changing it.
 
 1. Go to Admin Panel → Challenges → Create Challenge
