@@ -209,3 +209,33 @@ func TestInitSchemaStatementsMapOntoTemporaryDatabase(t *testing.T) {
 		t.Fatalf("comment-only chunk should be empty, got %q", got)
 	}
 }
+
+func TestSchemaAliasRewriteSkipsLiteralsAndAcceptsQuotedNames(t *testing.T) {
+	for statement, want := range map[string]string{
+		"USE `kbo-data`": "kbo-data",
+		"CREATE SCHEMA IF NOT EXISTS `my schema`": "my schema",
+		"DROP DATABASE IF EXISTS `회사`":            "회사",
+		"USE 회사":                                  "회사",
+	} {
+		if got, ok := schemaStatementName(statement); !ok || got != want {
+			t.Fatalf("schemaStatementName(%q) = %q, %v; want %q", statement, got, ok, want)
+		}
+	}
+	cases := []struct{ in, want string }{
+		{"SELECT * FROM company.EMP WHERE email = 'a@company.com'", "SELECT * FROM `ctfd_tmp_x`.EMP WHERE email = 'a@company.com'"},
+		{`SELECT "company.x", 'it''s company.y', 'a\'company.z' FROM company.T`, "SELECT \"company.x\", 'it''s company.y', 'a\\'company.z' FROM `ctfd_tmp_x`.T"},
+		{"SELECT 1 -- company.T\nFROM company.T # company.U\n/* company.V */", "SELECT 1 -- company.T\nFROM `ctfd_tmp_x`.T # company.U\n/* company.V */"},
+		{"/*!40000 ALTER TABLE company.T DISABLE KEYS */", "/*!40000 ALTER TABLE `ctfd_tmp_x`.T DISABLE KEYS */"},
+		{"SELECT 2--1 FROM company.T", "SELECT 2--1 FROM `ctfd_tmp_x`.T"},
+		{"SELECT 'unterminated FROM company.T", "SELECT 'unterminated FROM company.T"},
+	}
+	for _, c := range cases {
+		if got := rewriteSchemaAliases(c.in, []string{"company"}, "ctfd_tmp_x"); got != c.want {
+			t.Fatalf("rewrite(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	got := rewriteSchemaAliases("SELECT * FROM `kbo-data`.PLAYER p JOIN `kbo-data`.`TEAM X` t ON t.id = p.team_id", []string{"kbo-data"}, "ctfd_tmp_x")
+	if got != "SELECT * FROM `ctfd_tmp_x`.PLAYER p JOIN `ctfd_tmp_x`.`TEAM X` t ON t.id = p.team_id" {
+		t.Fatalf("quoted alias rewrite = %q", got)
+	}
+}
