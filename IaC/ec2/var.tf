@@ -10,6 +10,14 @@ variable "on_demand_percentage_above_base" { type = number }
 variable "asg_min_size" { type = number }
 variable "asg_max_size" { type = number }
 variable "asg_desired_capacity" { type = number }
+variable "exam_windows" {
+  type = list(object({
+    name     = string
+    start    = string
+    end      = string
+    capacity = number
+  }))
+}
 variable "key_name" { type = string }
 variable "ondemand_instance_type" { type = string }
 variable "region" { type = string }

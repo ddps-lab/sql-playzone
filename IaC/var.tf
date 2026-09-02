@@ -144,9 +144,14 @@ variable "on_demand_base_capacity" {
 }
 
 variable "on_demand_percentage_above_base" {
-  description = "Percentage of on-demand instances above base capacity"
+  description = "Percentage of on-demand instances above base capacity. 100 keeps every scaled-out instance on-demand so exam capacity cannot be reclaimed as spot; 0 restores spot scale-out."
   type        = number
-  default     = 0
+  default     = 100
+
+  validation {
+    condition     = var.on_demand_percentage_above_base >= 0 && var.on_demand_percentage_above_base <= 100
+    error_message = "on_demand_percentage_above_base must be between 0 and 100."
+  }
 }
 
 variable "asg_min_size" {
@@ -165,4 +170,46 @@ variable "asg_desired_capacity" {
   description = "Desired capacity of Auto Scaling Group"
   type        = number
   default     = 1
+}
+
+variable "exam_windows" {
+  description = "Pre-scaling windows for exams and quizzes. The group is raised to capacity at start and its minimum is restored at end. Times are KST without a zone suffix, e.g. 2026-10-20T08:30:00. Windows that have already passed are ignored and should be removed."
+  type = list(object({
+    name     = string
+    start    = string
+    end      = string
+    capacity = number
+  }))
+  default = []
+
+  validation {
+    condition = alltrue([
+      for window in var.exam_windows :
+      can(regex("^[a-z0-9][a-z0-9-]{0,30}$", window.name))
+    ])
+    error_message = "exam_windows[*].name must be 1-31 lowercase letters, digits, or hyphens."
+  }
+
+  validation {
+    condition     = length(distinct(var.exam_windows[*].name)) == length(var.exam_windows)
+    error_message = "exam_windows[*].name must be unique."
+  }
+
+  validation {
+    condition = alltrue([
+      for window in var.exam_windows :
+      can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$", window.start))
+      && can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$", window.end))
+      && try(timecmp("${window.start}Z", "${window.end}Z") < 0, false)
+    ])
+    error_message = "exam_windows[*].start and end must be KST timestamps like 2026-10-20T08:30:00 with end after start."
+  }
+
+  validation {
+    condition = alltrue([
+      for window in var.exam_windows :
+      window.capacity >= 1 && floor(window.capacity) == window.capacity
+    ])
+    error_message = "exam_windows[*].capacity must be a whole number of at least 1."
+  }
 }

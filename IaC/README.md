@@ -8,7 +8,7 @@
 - **RDS**: MariaDB 데이터베이스 (프라이빗 서브넷)
 - **EC2**: Auto Scaling Group with ALB
   - On-demand 인스턴스 1개 (기본)
-  - Spot 인스턴스로 스케일 아웃
+  - Auto Scaling으로 스케일 아웃 (기본 On-demand, 선택적으로 Spot)
 - **Route53**: 도메인 연결 (sql-playground.ddps.cloud)
 
 ## 사전 준비
@@ -96,9 +96,25 @@ RDS를 삭제하려면:
 ## 운영 관리
 
 ### Auto Scaling 설정
-- 기본: 1개 On-demand 인스턴스
-- 스케일 아웃: Spot 인스턴스 (최대 10개)
-- 메트릭: ALB Request Count Per Target (300 requests)
+- 기본: On-demand 1개 (`asg_min_size`, `asg_desired_capacity`)
+- 스케일 아웃: 최대 10개 (`asg_max_size`). `on_demand_percentage_above_base`가 100(기본)이면 추가 인스턴스도 On-demand이고, 0으로 두면 Spot으로 늘어납니다.
+- 메트릭: ALB Request Count Per Target (분당 300 requests)
+- `health_check_grace_period`와 instance refresh의 `instance_warmup`은 300초입니다. 첫 부팅이 MySQL 초기화와 judge healthcheck를 기다리므로, ALB healthy까지 3분 50초가 걸린 실측(2026-09-02, spot t4g.small)에 여유를 둔 값입니다.
+- `desired_capacity`와 `min_size`는 생성 이후 Terraform이 되돌리지 않습니다(`ignore_changes`). 스케일링과 예약 작업이 바꾼 값을 시험 중 apply가 원래대로 줄이지 않게 하기 위한 것이며, 두 값을 바꾸려면 콘솔이나 CLI로 직접 조정합니다.
+
+### 시험·퀴즈 사전 스케일
+target tracking은 인스턴스를 추가하는 데 3~5분이 걸려 시험 시작 직후 burst를 따라가지 못합니다. `exam_windows`에 창을 선언하면 시작 시각에 최소·목표 용량을 `capacity`로 올리고, 종료 시각에 최소 용량만 되돌립니다. 이후 부하가 줄면 target tracking이 서서히 줄입니다.
+
+```hcl
+exam_windows = [
+  { name = "midterm", start = "2026-10-20T08:30:00", end = "2026-10-20T11:30:00", capacity = 8 },
+]
+```
+
+- 시각은 KST이며 시간대 접미사를 붙이지 않습니다. 시작은 시험 30분 전, 종료는 시험이 끝나고 30분 뒤로 잡습니다.
+- 창을 추가하거나 고친 뒤 plan을 검토하고 apply해야 예약이 등록됩니다. 등록된 예약은 콘솔의 Auto Scaling group > Automatic scaling > Scheduled actions에서 확인합니다.
+- 지난 창은 plan에서 자동으로 제외되므로 시험이 끝나면 항목을 지웁니다.
+- 인스턴스당 채점 상한은 초당 5~8건이며 지난 학기 시험은 8대로 운영했습니다.
 
 ### 인스턴스 타입 변경
 `var.tf`에서 수정:
@@ -118,7 +134,7 @@ variable "database_instance_class" {
 ## 비용 최적화
 
 1. **개발 환경**: EC2만 destroy하고 RDS는 유지
-2. **프로덕션**: On-demand 1개 + Spot으로 스케일링
+2. **프로덕션**: 평소 On-demand 1개. 스케일 아웃 인스턴스도 기본 On-demand이며(t4g.small 기준 시간당 약 $0.02), Spot으로 바꾸려면 `on_demand_percentage_above_base = 0`으로 둡니다.
 3. **RDS 백업**: 7일 자동 백업 설정
 
 ## 보안 고려사항
