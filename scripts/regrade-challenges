@@ -24,12 +24,12 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
-import math
 import re
 import sys
 import time
 import urllib.error
 import urllib.request
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 
 
@@ -133,11 +133,30 @@ def classify_error(message: str) -> str:
 
 
 def numeric_equal(left: str, right: str) -> bool:
-    """Equal as numbers, allowing for DECIMAL vs float text precision (72220.1111 vs 72220.11111111111)."""
+    """Equal as numbers, or equal once the more precise value is rounded to the other's decimal places.
+
+    This tolerates DECIMAL-versus-float text (72220.1111 vs 72220.11111111111,
+    8510700.00 vs 8510700, 4017733 vs 4.017733e+06) without accepting materially
+    different numbers: values with no fractional digits must match exactly.
+    """
     try:
-        return math.isclose(float(left), float(right), rel_tol=1e-6, abs_tol=1e-9)
-    except ValueError:
+        left_value, right_value = Decimal(left.strip()), Decimal(right.strip())
+    except (InvalidOperation, AttributeError, ValueError):
         return False
+    if not (left_value.is_finite() and right_value.is_finite()):
+        return False
+    if left_value == right_value:
+        return True
+    places = min(decimal_places(left_value), decimal_places(right_value))
+    if places == 0:
+        return False
+    quantum = Decimal(1).scaleb(-places)
+    return left_value.quantize(quantum, ROUND_HALF_UP) == right_value.quantize(quantum, ROUND_HALF_UP)
+
+
+def decimal_places(value: Decimal) -> int:
+    exponent = value.normalize().as_tuple().exponent
+    return max(0, -exponent) if isinstance(exponent, int) else 0
 
 
 def compare(judge: dict, baseline: dict) -> dict:
