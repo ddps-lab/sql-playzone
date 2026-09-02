@@ -377,7 +377,10 @@ def load(app):
             )
             if not errors:
                 complete_onboarding(user, name, password, entries, credentials)
-                session[ONBOARDING_DONE_SESSION_KEY] = session.get("nonce")
+                if credentials:
+                    # A Google session that only gave consent still owes the
+                    # password reset; the hook brings it back here for that.
+                    session[ONBOARDING_DONE_SESSION_KEY] = session.get("nonce")
                 actions = []
                 if mode == "setup":
                     actions.append("completed onboarding")

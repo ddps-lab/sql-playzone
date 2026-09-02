@@ -517,3 +517,41 @@ def test_an_older_text_field_with_the_same_name_is_normalized():
         client = login_as_user(app, name="김민수", password="hunter22!")
         assert client.get("/api/v1/users/me").status_code == 200
     destroy_ctfd(app)
+
+
+def test_google_session_without_consent_does_consent_then_password_reset():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        # an account from before the consent field: password, no consent
+        user_id = create_google_user(
+            app, name="upgraded", email="up@hanyang.ac.kr", password="old-pass-1"
+        )
+        client = start_session(app, user_id, via_google=True)
+        r = client.get("/onboarding/")
+        assert b"Please read and agree to the Terms of Service" in r.data
+        with client.session_transaction() as sess:
+            nonce = sess["nonce"]
+        r = client.post(
+            "/onboarding/",
+            data={f"fields[{field_id(TERMS_FIELD)}]": "y", "nonce": nonce},
+        )
+        assert r.status_code == 302
+
+        # consent alone does not end the Google session's onboarding
+        r = client.get("/challenges")
+        assert r.status_code == 302
+        assert r.location.endswith("/onboarding/")
+        assert b"Set a New Password" in client.get("/onboarding/").data
+        assert verify_password("old-pass-1", stored_password(user_id))
+
+        r = client.post(
+            "/onboarding/",
+            data=onboarding_data(client, name="upgraded", password="new-pass-2026"),
+        )
+        assert r.status_code == 302
+        assert verify_password("new-pass-2026", stored_password(user_id))
+        assert (
+            client.get("/challenges").status_code == 302
+        )  # no student ID yet: CTFd sends to settings
+        assert client.get("/challenges").location.endswith("/settings")
+    destroy_ctfd(app)
