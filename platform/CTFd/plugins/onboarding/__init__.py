@@ -19,7 +19,7 @@ from CTFd.cache import clear_standings
 from CTFd.forms import BaseForm
 from CTFd.forms.fields import SubmitField
 from CTFd.forms.users import attach_custom_user_fields, build_custom_user_fields
-from CTFd.models import UserFieldEntries, UserFields, Users, db
+from CTFd.models import Files, UserFieldEntries, UserFields, Users, db
 from CTFd.utils import get_config, set_config, validators
 from CTFd.utils.config.pages import build_markdown
 from CTFd.utils.decorators import authed_only, ratelimit
@@ -43,7 +43,6 @@ EXEMPT_ENDPOINTS = {
     "auth.logout",
     "views.themes",
     "views.themes_beta",
-    "views.files",
     "views.healthcheck",
     "static",
 }
@@ -61,6 +60,18 @@ PASSWORD_MAX_LENGTH = 128
 # CTFd's own password_min_length config is raised to this floor so the
 # settings page enforces the same length.
 PASSWORD_MIN_LENGTH = 8
+
+
+def request_is_exempt():
+    if request.endpoint in EXEMPT_ENDPOINTS:
+        return True
+    if request.endpoint == "views.files":
+        # Uploaded files serve both site assets (logo, banner, page images),
+        # which this page needs, and challenge attachments, which stay
+        # gated like every other challenge request.
+        upload = Files.query.filter_by(location=request.view_args.get("path")).first()
+        return upload is None or upload.type != "challenge"
+    return False
 
 
 def logged_in_with_google():
@@ -359,7 +370,7 @@ def load(app):
 
     @app.before_request
     def require_onboarding():
-        if request.endpoint in EXEMPT_ENDPOINTS:
+        if request_is_exempt():
             return
         # Keep the password floor in force for every password-writing flow,
         # including CTFd's own reset page right after a live import.

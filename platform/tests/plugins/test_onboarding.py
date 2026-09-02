@@ -11,7 +11,9 @@ from CTFd.utils.security.signing import hmac
 from tests.helpers import (
     create_ctfd,
     destroy_ctfd,
+    gen_challenge,
     gen_field,
+    gen_file,
     gen_user,
     login_as_user,
 )
@@ -92,10 +94,20 @@ def test_google_account_without_password_is_sent_to_onboarding():
         user_id = create_google_user(app)
         client = start_session(app, user_id)
 
-        for path in ("/", "/challenges", "/settings", "/api/v1/users/me"):
+        challenge = gen_challenge(app.db)
+        gen_file(app.db, location="attachments/answers.txt", challenge_id=challenge.id)
+        gen_file(app.db, location="branding/logo.png")  # a site asset
+        for path in (
+            "/",
+            "/challenges",
+            "/settings",
+            "/api/v1/users/me",
+            "/files/attachments/answers.txt",
+        ):
             r = client.get(path)
             assert r.status_code == 302, path
             assert r.location.endswith("/onboarding/"), path
+        assert client.get("/files/branding/logo.png").status_code != 302
 
         r = client.get("/onboarding/")
         assert r.status_code == 200
