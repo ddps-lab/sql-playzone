@@ -7,6 +7,7 @@ another Google round-trip. The gate is a request hook in the style of CTFd's
 own ``change_password`` hook.
 """
 
+import unicodedata
 from pathlib import Path
 
 from flask import (
@@ -291,7 +292,9 @@ def validate_password(password, password_confirm):
     elif len(password) > PASSWORD_MAX_LENGTH:
         errors.append(_l("Pick a shorter password"))
     elif not (
-        any(c.isalpha() for c in password) and any(c.isdigit() for c in password)
+        any(c.isalpha() for c in password)
+        # decimal digits only (Unicode Nd), matching the page's live check
+        and any(unicodedata.category(c) == "Nd" for c in password)
     ):
         errors.append(_l("Password must contain both a letter and a digit"))
     if password_confirm != password:

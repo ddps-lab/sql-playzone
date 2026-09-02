@@ -145,7 +145,7 @@
           var again = confirm.value.trim();
           var touched = value.length > 0 || again.length > 0;
           var okLength = length(value) >= minLength && length(value) <= maxLength;
-          var okMix = /\p{L}/u.test(value) && /\p{N}/u.test(value);
+          var okMix = /\p{L}/u.test(value) && /\p{Nd}/u.test(value);
           var okMatch = again.length > 0 && again === value;
           mark(rules.length, okLength, touched);
           mark(rules.mix, okMix, touched);
