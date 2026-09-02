@@ -810,8 +810,12 @@ def google_callback():
                 
                 google_id = user_data.get("id")
                 
-                # Check if user exists
-                user = Users.query.filter_by(email=user_email).first()
+                # Find the account by its Google identity first, then by
+                # email, so an account whose email was edited still matches.
+                user = (
+                    Users.query.filter_by(oauth_id=f"google_{google_id}").first()
+                    or Users.query.filter_by(email=user_email).first()
+                )
                 
                 if user is None:
                     # Check user count limit

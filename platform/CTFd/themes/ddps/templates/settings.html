@@ -48,7 +48,10 @@
 
                 <div class="mb-3">
                   <b>{{ form.email.label(class="form-label") }}</b>
-                  {{ form.email(class="form-control", value=email) }}
+                  {{ form.email(class="form-control", value=email, disabled=True) }}
+                  <small class="form-text text-muted">
+                    {% trans %}Your email address comes from your HYU Google account and cannot be changed here.{% endtrans %}
+                  </small>
                 </div>
 
                 <hr>

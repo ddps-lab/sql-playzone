@@ -9,7 +9,15 @@ own ``change_password`` hook.
 
 from pathlib import Path
 
-from flask import Blueprint, redirect, render_template, request, session, url_for
+from flask import (
+    Blueprint,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_babel import lazy_gettext as _l
 from markupsafe import Markup
 from wtforms import PasswordField, StringField
@@ -57,6 +65,12 @@ TERMS_TEXT_PATH = Path(__file__).with_name("terms.md")
 # What a checked boolean field submits (WTForms sends "y"); anything else,
 # including "false" or "0" from a hand-made request, is not consent.
 AFFIRMATIVE_VALUES = {"y", "yes", "true", "on", "1"}
+
+# The email address is the link to the Google account and the login name;
+# students cannot change it (admins can, in the admin panel).
+EMAIL_LOCKED_MESSAGE = (
+    "Your email address comes from your HYU Google account and cannot be changed here."
+)
 
 NAME_MAX_LENGTH = 128
 PASSWORD_MAX_LENGTH = 128
@@ -337,7 +351,8 @@ def load(app):
 
     @blueprint.route("/", methods=["GET", "POST"])
     @authed_only
-    @ratelimit(method="POST", limit=10, interval=5)
+    # A whole class may onboard at once from one NAT address.
+    @ratelimit(method="POST", limit=30, interval=5)
     def index():
         user = get_current_user()
         # Only Google-created accounts set up local credentials here; other
@@ -423,6 +438,15 @@ def load(app):
         user = get_current_user_attrs()
         if user is None or user.type == "admin":
             return
+        if request.endpoint == "api.users_user_private" and request.method == "PATCH":
+            data = request.get_json(silent=True) or {}
+            submitted = str(data.get("email") or "").strip().lower()
+            if "email" in data and submitted != str(user.email or "").lower():
+                response = jsonify(
+                    {"success": False, "errors": {"email": [EMAIL_LOCKED_MESSAGE]}}
+                )
+                response.status_code = 400
+                return response
         google_account = str(user.oauth_id or "").startswith(GOOGLE_OAUTH_ID_PREFIX)
         if google_account and onboarding_pending(user.id):
             return redirect(url_for("onboarding.index"))

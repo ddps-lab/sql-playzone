@@ -342,9 +342,13 @@ def test_terms_are_seeded_and_linked_from_the_footer():
         # the settings page enforces the same minimum length
         assert int(get_config("password_min_length")) == 8
 
+        app.config["GOOGLE_CLIENT_ID"] = "client"  # render the Google section
         html = client.get("/login").data
         assert b'href="/tos"' in html
         assert b"<span data-copyright-year>2026</span>" in html
+        # no email reset: Google is the sign-up and the reset path
+        assert b"/reset_password" not in html
+        assert b"Sign up or reset password with HYU Google" in html
     destroy_ctfd(app)
 
 
@@ -554,4 +558,33 @@ def test_google_session_without_consent_does_consent_then_password_reset():
             client.get("/challenges").status_code == 302
         )  # no student ID yet: CTFd sends to settings
         assert client.get("/challenges").location.endswith("/settings")
+    destroy_ctfd(app)
+
+
+def test_students_cannot_change_their_email_but_admins_can():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        create_google_user(
+            app,
+            name="fixed",
+            email="fixed@hanyang.ac.kr",
+            password="hunter22!",
+            student_id="2025000007",
+        )
+        client = login_as_user(app, name="fixed", password="hunter22!")
+        r = client.patch("/api/v1/users/me", json={"email": "other@hanyang.ac.kr"})
+        assert r.status_code == 400
+        assert "email" in r.get_json()["errors"]
+        r = client.patch(
+            "/api/v1/users/me", json={"email": "fixed@hanyang.ac.kr", "name": "fixed2"}
+        )
+        assert r.status_code == 200
+        assert (
+            Users.query.filter_by(name="fixed2").first().email == "fixed@hanyang.ac.kr"
+        )
+        assert b"cannot be changed here" in client.get("/settings").data
+
+        admin = login_as_user(app, name="admin", password="password")
+        r = admin.patch("/api/v1/users/me", json={"email": "admin2@examplectf.com"})
+        assert r.status_code == 200
     destroy_ctfd(app)
