@@ -678,6 +678,18 @@ def oauth_redirect():
         return redirect(url_for("auth.login"))
 
 
+# Google accounts must belong to this Google Workspace domain. The hd
+# parameter sent to Google only pre-selects accounts; the callback enforces it.
+GOOGLE_HOSTED_DOMAIN = "hanyang.ac.kr"
+
+
+def google_account_allowed(user_data):
+    email = str(user_data.get("email") or "").strip().lower()
+    return user_data.get("verified_email") is True and email.endswith(
+        "@" + GOOGLE_HOSTED_DOMAIN
+    )
+
+
 @auth.route("/google/login")
 def google_login():
     google_client_id = get_app_config("GOOGLE_CLIENT_ID") or get_config("google_client_id")
@@ -711,7 +723,7 @@ def google_login():
         f"state={state}&"
         f"access_type=offline&"
         f"prompt=consent&"
-        f"hd=hanyang.ac.kr"
+        f"hd={GOOGLE_HOSTED_DOMAIN}"
     )
     
     return redirect(redirect_url)
@@ -763,7 +775,20 @@ def google_callback():
             
             if userinfo_response.status_code == 200:
                 user_data = userinfo_response.json()
-                
+
+                if not google_account_allowed(user_data):
+                    log(
+                        "logins",
+                        "[{date}] {ip} - Google account {email} rejected: not a verified {domain} account",
+                        email=user_data.get("email"),
+                        domain=GOOGLE_HOSTED_DOMAIN,
+                    )
+                    error_for(
+                        endpoint="auth.login",
+                        message=f"Only verified {GOOGLE_HOSTED_DOMAIN} Google accounts can sign in.",
+                    )
+                    return redirect(url_for("auth.login"))
+
                 user_email = user_data.get("email")
                 raw_user_name = user_data.get("name", user_email.split("@")[0])
                 
