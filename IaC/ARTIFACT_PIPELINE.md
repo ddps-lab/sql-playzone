@@ -6,7 +6,7 @@
 
 - Foundation Terraform은 학기 단위 ECR repository와 Packer builder IAM을 관리합니다.
 - `build-release`, `set-channel-release`, `prune-artifacts`, `retire-channel` 명령은 SSM release parameter와 channel pointer를 관리합니다.
-- Runtime Terraform은 SSM parameter를 읽고 manifest에 지정된 AMI와 ECR digest를 배포합니다.
+- Runtime Terraform은 SSM parameter를 읽고 manifest에 지정된 AMI와 ECR digest를 배포합니다. CTFd 업로드용 S3 bucket도 runtime state가 관리하며, persistent 배포에서는 destroy 전에 비워야 합니다.
 - Application과 RDS 자격 증명은 EC2가 부팅할 때 Secrets Manager에서 읽습니다.
 
 Foundation, dev runtime, production runtime은 서로 다른 Terraform state와 `TF_DATA_DIR`를 사용합니다. backend 설정 파일과 state 위치는 저장소에 커밋하지 않습니다.
@@ -21,7 +21,7 @@ Foundation, dev runtime, production runtime은 서로 다른 Terraform state와 
 
 ## Dev 검증 순서
 
-1. Private backend 설정으로 `IaC/foundation`을 초기화하고 plan을 검토한 뒤 apply합니다.
+1. Private backend 설정으로 `IaC/foundation`을 초기화하고 plan을 검토한 뒤 apply합니다. 이전 구성(`module.ami`)으로 배포한 환경이 같은 `artifact_prefix`를 쓰고 있으면 같은 이름의 ECR repository가 이미 있어 apply가 `RepositoryAlreadyExists`로 실패합니다. 그 경우 새 학기 prefix를 쓰거나(`sql-2026-s2`는 새 prefix로 시작했습니다), 기존 repository를 `terraform import`로 foundation state에 들여온 뒤 옛 runtime state에서 `terraform state rm`으로 제외하고 나서 옛 runtime을 제거합니다. 옛 runtime을 먼저 destroy하면 repository와 이미지가 함께 삭제됩니다.
 2. Builder 도구나 Ubuntu base를 갱신할 때에는 release 빌드에 앞서 builder base AMI를 다시 만듭니다. 일반적인 release 빌드마다 실행할 필요는 없습니다.
 
    ```bash

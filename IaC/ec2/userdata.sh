@@ -105,7 +105,11 @@ env_values = {
         "@${RDS_ENDPOINT}/ctfd"
     ),
     "SECRET_KEY": application_secret["CTFD_SECRET_KEY"],
-    "UPLOAD_FOLDER": "/var/uploads",
+    # Uploads go to S3 through the instance role so they survive instance
+    # replacement and are shared by every instance in the ASG.
+    "UPLOAD_PROVIDER": "s3",
+    "AWS_S3_BUCKET": "${UPLOAD_BUCKET_NAME}",
+    "AWS_S3_REGION": "${REGION}",
     "REDIS_URL": "rediss://${ELASTICACHE_ENDPOINT}:6379",
     "WORKERS": "1",
     "LOG_FOLDER": "/var/log/CTFd",
@@ -121,7 +125,8 @@ env_values = {
 
 env_path = Path(".env")
 lines = env_path.read_text().splitlines() if env_path.exists() else []
-lines = [line for line in lines if line.partition("=")[0] not in env_values]
+stale_keys = {"UPLOAD_FOLDER"}
+lines = [line for line in lines if line.partition("=")[0] not in env_values | stale_keys]
 lines.extend(f"{key}={value}" for key, value in env_values.items())
 env_path.write_text("\n".join(lines) + "\n")
 

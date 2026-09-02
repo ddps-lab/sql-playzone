@@ -9,6 +9,7 @@
 - **EC2**: Auto Scaling Group with ALB
   - On-demand 인스턴스 1개 (기본)
   - Auto Scaling으로 스케일 아웃 (기본 On-demand, 선택적으로 Spot)
+- **S3**: CTFd 업로드 파일(문제 첨부 등)은 배포별 버킷에 저장. 인스턴스가 release마다 교체되고 여러 대가 동시에 뜨므로 인스턴스 디스크에는 두지 않음
 - **Route53**: 도메인 연결 (sql-playground.ddps.cloud)
 
 ## 사전 준비
@@ -144,6 +145,7 @@ variable "database_instance_class" {
 - EC2는 ALB를 통해서만 접근 가능
 - SSH 접근 비활성화 (프로덕션)
 - 모든 EBS 볼륨 암호화
+- 업로드 버킷은 public access 차단과 SSE-S3 적용, 인스턴스 role만 객체 읽기·쓰기 가능. persistent 배포에서는 `terraform destroy` 전에 버킷을 비워야 함
 
 ## 문제 해결
 
