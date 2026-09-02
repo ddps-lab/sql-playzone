@@ -121,6 +121,7 @@ def test_google_account_without_password_is_sent_to_onboarding():
         assert b"minsu@hanyang.ac.kr" in r.data
         # live password feedback uses the server's minimum length
         assert b'data-password-min-length="8"' in r.data
+        assert b'data-password-max-length="128"' in r.data
         assert b'id="password-rules"' in r.data
         assert r.data.count(b'data-terms-checkbox="1"') == 1
         assert STUDENT_ID_FIELD.encode() in r.data

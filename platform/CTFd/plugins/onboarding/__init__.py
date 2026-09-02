@@ -444,6 +444,7 @@ def load(app):
             terms=terms_html() if mode != "reset" else None,
             terms_field_name=TERMS_FIELD_NAME,
             password_min_length=password_min_length(),
+            password_max_length=PASSWORD_MAX_LENGTH,
         )
 
     app.register_blueprint(blueprint)

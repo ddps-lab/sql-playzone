@@ -31,7 +31,7 @@
           {% endif %}
         </p>
 
-        <form method="post" accept-charset="utf-8" role="form" id="onboarding-form" data-password-min-length="{{ password_min_length }}">
+        <form method="post" accept-charset="utf-8" role="form" id="onboarding-form" data-password-min-length="{{ password_min_length }}" data-password-max-length="{{ password_max_length }}">
           {% if mode != "terms" %}
             <div class="mb-3">
               <b>{{ form.name.label(class="form-label") }}</b>
@@ -123,6 +123,9 @@
       var terms = form.querySelector("[data-terms-checkbox]");
       var submit = form.querySelector('input[type="submit"], button[type="submit"]');
       var minLength = parseInt(form.dataset.passwordMinLength, 10) || 8;
+      var maxLength = parseInt(form.dataset.passwordMaxLength, 10) || 128;
+      // Count characters the way the server does (code points, not UTF-16 units).
+      function length(text) { return Array.from(text).length; }
       var rules = {
         length: document.getElementById("rule-length"),
         mix: document.getElementById("rule-mix"),
@@ -141,7 +144,7 @@
           var value = password.value.trim();
           var again = confirm.value.trim();
           var touched = value.length > 0 || again.length > 0;
-          var okLength = value.length >= minLength;
+          var okLength = length(value) >= minLength && length(value) <= maxLength;
           var okMix = /\p{L}/u.test(value) && /\p{N}/u.test(value);
           var okMatch = again.length > 0 && again === value;
           mark(rules.length, okLength, touched);
