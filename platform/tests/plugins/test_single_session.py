@@ -144,3 +144,23 @@ def test_logging_out_of_the_newer_session_does_not_revive_the_older_one():
         assert r.status_code == 302
         assert "/login" in r.location
     destroy_ctfd(app)
+
+
+def test_relogging_in_from_the_same_browser_is_not_flagged():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        onboarded_student(app)
+        log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
+        client = login_as_user(app, name="student", password="password")
+        before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+        # a stale login tab submits the form again from the same session
+        with client.session_transaction() as sess:
+            nonce = sess["nonce"]
+        r = client.post(
+            "/login", data={"name": "student", "password": "password", "nonce": nonce}
+        )
+        assert r.status_code == 302
+        with open(log_path) as log_file:
+            log_file.seek(before)
+            assert "while another session is active" not in log_file.read()
+    destroy_ctfd(app)

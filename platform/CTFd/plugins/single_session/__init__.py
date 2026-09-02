@@ -102,7 +102,10 @@ def load(app):
             user = Users.query.filter_by(email=name).first()
         else:
             user = Users.query.filter_by(name=name).first()
-        if user and cache.get(seen_key(user.id)):
+        # The requesting browser's own session (a stale login tab) is not
+        # another session.
+        seen = cache.get(seen_key(user.id)) if user else None
+        if seen and seen != session.get("nonce"):
             log(
                 "logins",
                 "[{date}] {ip} - {name} login attempt while another session is active ({browser})",
