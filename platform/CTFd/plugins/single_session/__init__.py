@@ -28,6 +28,11 @@ SIGNED_OUT_MESSAGE = (
 )
 
 
+def is_api_request():
+    # The API blueprint, not the URL prefix: APPLICATION_ROOT may be set.
+    return request.is_json or str(request.endpoint or "").startswith("api.")
+
+
 def session_is_current():
     active_nonce = cache.get(f"user_{session['id']}_active_nonce")
     return not active_nonce or session.get("nonce") == active_nonce
@@ -38,10 +43,14 @@ def load(app):
     def enforce_single_session():
         if request.endpoint in EXEMPT_ENDPOINTS or not authed():
             return
+        # An API token logs in per request (CTFd's tokens hook), so token
+        # requests have no browser session to compare and are left alone.
+        if request.headers.get("Authorization"):
+            return
         if session_is_current():
             return
         logout_user()
-        if request.is_json or request.path.startswith("/api/"):
+        if is_api_request():
             abort(401)
         error_for(endpoint="auth.login", message=SIGNED_OUT_MESSAGE)
         return redirect(url_for("auth.login", next=request.full_path))

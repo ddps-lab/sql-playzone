@@ -153,7 +153,8 @@ def load(app):
             return
         if is_admin() or is_exam_browser(request.user_agent.string):
             return
-        if request.is_json or request.path.startswith('/api/'):
+        # The API blueprint, not the URL prefix: APPLICATION_ROOT may be set.
+        if request.is_json or str(request.endpoint or '').startswith('api.'):
             response = jsonify({'success': False, 'errors': [EXAM_BROWSER_MESSAGE]})
             response.status_code = 403
             return response
