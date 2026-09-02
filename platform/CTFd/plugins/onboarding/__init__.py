@@ -54,6 +54,10 @@ TERMS_FIELD_NAME = "Terms of Service"
 TERMS_FIELD_DESCRIPTION = "I have read and agree to the Terms of Service above."
 TERMS_TEXT_PATH = Path(__file__).with_name("terms.md")
 
+# What a checked boolean field submits (WTForms sends "y"); anything else,
+# including "false" or "0" from a hand-made request, is not consent.
+AFFIRMATIVE_VALUES = {"y", "yes", "true", "on", "1"}
+
 NAME_MAX_LENGTH = 128
 PASSWORD_MAX_LENGTH = 128
 # A minimal password rule: long enough and not a bare number or bare word.
@@ -112,19 +116,36 @@ def terms_field():
 
     Created lazily as well as at startup: a CTFd import replaces the
     fields table while the app keeps running, and without the field every
-    imported account would pass the consent gate.
+    imported account would pass the consent gate. Workers starting at the
+    same time may each create one, so duplicates are folded into the first.
     """
-    field = UserFields.query.filter_by(name=TERMS_FIELD_NAME).first()
-    if field is None:
-        field = UserFields(
-            name=TERMS_FIELD_NAME,
-            description=TERMS_FIELD_DESCRIPTION,
-            field_type="boolean",
-            required=True,
-            public=False,
-            editable=False,
+    fields = (
+        UserFields.query.filter_by(name=TERMS_FIELD_NAME).order_by(UserFields.id).all()
+    )
+    if not fields:
+        db.session.add(
+            UserFields(
+                name=TERMS_FIELD_NAME,
+                description=TERMS_FIELD_DESCRIPTION,
+                field_type="boolean",
+                required=True,
+                public=False,
+                editable=False,
+            )
         )
-        db.session.add(field)
+        db.session.commit()
+        fields = (
+            UserFields.query.filter_by(name=TERMS_FIELD_NAME)
+            .order_by(UserFields.id)
+            .all()
+        )
+    field = fields[0]
+    for duplicate in fields[1:]:
+        UserFieldEntries.query.filter_by(field_id=duplicate.id).update(
+            {"field_id": field.id}
+        )
+        db.session.delete(duplicate)
+    if len(fields) > 1:
         db.session.commit()
     return field
 
@@ -255,13 +276,15 @@ def validate_submission(user, name, password, password_confirm, credentials, fie
     entries = {}
     for field in fields:
         value = request.form.get(f"fields[{field.id}]", "").strip()
-        if field.required is True and value == "":
+        if field.field_type == "boolean":
+            value = value.lower() in AFFIRMATIVE_VALUES
+        if field.required is True and value in ("", False):
             if field.name == TERMS_FIELD_NAME:
                 errors.append(_l("Please agree to the Terms of Service to continue"))
             else:
                 errors.append(_l("Please provide all required fields"))
             break
-        entries[field.id] = bool(value) if field.field_type == "boolean" else value
+        entries[field.id] = value
 
     return errors, entries
 

@@ -196,8 +196,18 @@ def test_onboarding_rejects_bad_names_passwords_and_missing_student_id():
                 {f"fields[{field_id(TERMS_FIELD)}]": ""},
                 b"Please agree to the Terms of Service to continue",
             ),
+            (
+                {f"fields[{field_id(TERMS_FIELD)}]": "false"},
+                b"Please agree to the Terms of Service to continue",
+            ),
+            (
+                {f"fields[{field_id(TERMS_FIELD)}]": "0"},
+                b"Please agree to the Terms of Service to continue",
+            ),
         ]
         for overrides, message in cases:
+            # more attempts than the page's per-IP rate limit allows in 5 seconds
+            cache.delete("rl:127.0.0.1:onboarding.index")
             r = client.post("/onboarding/", data=onboarding_data(client, **overrides))
             assert r.status_code == 200, overrides
             assert message in r.data, overrides
@@ -451,4 +461,29 @@ def test_consent_field_and_terms_come_back_after_an_import():
         r = client.get("/challenges")
         assert r.status_code == 302
         assert r.location.endswith("/onboarding/")
+    destroy_ctfd(app)
+
+
+def test_duplicate_consent_fields_are_folded_into_the_first():
+    from CTFd.plugins.onboarding import terms_field
+
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        first_id = field_id(TERMS_FIELD)
+        # a second worker created the field at the same time
+        duplicate_id = gen_field(
+            app.db, name=TERMS_FIELD, field_type="boolean", editable=False, public=False
+        ).id
+        user_id = create_google_user(app, password="hunter22!", student_id="2025000005")
+        UserFieldEntries.query.filter_by(user_id=user_id, field_id=first_id).delete()
+        db.session.add(
+            UserFieldEntries(field_id=duplicate_id, user_id=user_id, value=True)
+        )
+        db.session.commit()
+
+        assert terms_field().id == first_id
+        assert UserFields.query.filter_by(name=TERMS_FIELD).count() == 1
+        # the entry recorded against the duplicate now counts for the kept field
+        client = login_as_user(app, name="김민수", password="hunter22!")
+        assert client.get("/api/v1/users/me").status_code == 200
     destroy_ctfd(app)
