@@ -421,6 +421,10 @@ def test_consent_field_and_terms_come_back_after_an_import():
         set_config("tos_text", "")
         set_config("password_min_length", 4)
 
+        # any request restores the password floor, before onboarding is visited
+        assert app.test_client().get("/login").status_code == 200
+        assert int(get_config("password_min_length")) == 8
+
         user_id = create_google_user(app)
         client = start_session(app, user_id)
         r = client.get("/onboarding/")
@@ -428,7 +432,6 @@ def test_consent_field_and_terms_come_back_after_an_import():
         assert "<h1>SQL PlayZone 이용 약관".encode() in r.data
         assert UserFields.query.filter_by(name=TERMS_FIELD).count() == 1
         assert b"At least 8 characters" in r.data
-        assert int(get_config("password_min_length")) == 8
 
         # the gate is back for accounts that never accepted the terms
         gen_user(app.db, name="veteran", email="veteran@examplectf.com")

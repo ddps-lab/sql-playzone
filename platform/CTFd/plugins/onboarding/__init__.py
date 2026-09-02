@@ -359,7 +359,12 @@ def load(app):
 
     @app.before_request
     def require_onboarding():
-        if request.endpoint in EXEMPT_ENDPOINTS or not authed():
+        if request.endpoint in EXEMPT_ENDPOINTS:
+            return
+        # Keep the password floor in force for every password-writing flow,
+        # including CTFd's own reset page right after a live import.
+        password_min_length()
+        if not authed():
             return
         user = get_current_user_attrs()
         if user is None or user.type == "admin":
