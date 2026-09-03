@@ -34,7 +34,7 @@ from CTFd.utils import get_config, set_config, validators
 from CTFd.utils.config.pages import build_markdown
 from CTFd.utils.decorators import authed_only, ratelimit
 from CTFd.utils.logging import log
-from CTFd.utils.security.auth import update_user
+from CTFd.utils.security.auth import logout_user, update_user
 from CTFd.utils.user import authed, get_current_user, get_current_user_attrs
 
 # auth.google_callback stores the session nonce it logged in with under this
@@ -489,6 +489,9 @@ def load(app):
         if request.endpoint == "api.tokens_token_list" and request.method == "POST":
             return tokens_refused_response()
         if authenticated_by_token():
+            # CTFd's tokens hook has already opened a session for this
+            # request; drop it so the cookie does not outlive the refusal.
+            logout_user()
             return tokens_refused_response()
         if request.endpoint == "api.users_user_private" and request.method == "PATCH":
             data = request.get_json(silent=True) or {}

@@ -264,9 +264,14 @@ def test_api_tokens_are_for_admins_only():
             "Authorization": f"Token {token.value}",
             "Content-Type": "application/json",
         }
-        r = app.test_client().get("/api/v1/users/me", headers=headers)
+        token_client = app.test_client()
+        r = token_client.get("/api/v1/users/me", headers=headers)
         assert r.status_code == 403
-        # the session itself keeps working
+        # ... and leaves no session cookie behind for a later request
+        with token_client.session_transaction() as sess:
+            assert "id" not in sess
+        assert token_client.get("/api/v1/users/me").status_code != 200
+        # the student's own browser session keeps working
         assert client.get("/api/v1/users/me").status_code == 200
 
         admin = login_as_user(app, name="admin", password="password")
