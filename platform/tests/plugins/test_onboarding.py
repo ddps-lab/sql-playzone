@@ -257,8 +257,13 @@ def test_api_tokens_are_for_admins_only():
         assert r.get_json()["errors"] == [
             "API tokens are available to administrators only."
         ]
-        # ... and one that exists (created before this rule) does not sign in
+        # ... and one that exists (created before this rule) does not sign in,
+        # nor disturb the browser session under the one-session rule
+        set_config("single_session_required", "true")
         student = Users.query.filter_by(name="done").first()
+        student_id = student.id
+        with client.session_transaction() as sess:
+            browser_nonce = sess["nonce"]
         token = generate_user_token(student)
         headers = {
             "Authorization": f"Token {token.value}",
@@ -278,6 +283,7 @@ def test_api_tokens_are_for_admins_only():
             with token_client.session_transaction() as sess:
                 assert "id" not in sess, path
         # the student's own browser session keeps working
+        assert cache.get(f"user_{student_id}_active_nonce") == browser_nonce
         assert client.get("/api/v1/users/me").status_code == 200
 
         admin = login_as_user(app, name="admin", password="password")

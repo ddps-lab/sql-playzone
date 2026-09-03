@@ -26,6 +26,7 @@ from wtforms import PasswordField, StringField
 from wtforms.validators import InputRequired
 
 from CTFd.cache import clear_config, clear_standings
+from CTFd.exceptions import UserNotFoundException, UserTokenExpiredException
 from CTFd.forms import BaseForm
 from CTFd.forms.fields import SubmitField
 from CTFd.forms.users import attach_custom_user_fields, build_custom_user_fields
@@ -34,7 +35,7 @@ from CTFd.utils import get_config, set_config, validators
 from CTFd.utils.config.pages import build_markdown
 from CTFd.utils.decorators import authed_only, ratelimit
 from CTFd.utils.logging import log
-from CTFd.utils.security.auth import logout_user, update_user
+from CTFd.utils.security.auth import lookup_user_token, update_user
 from CTFd.utils.user import authed, get_current_user, get_current_user_attrs
 
 # auth.google_callback stores the session nonce it logged in with under this
@@ -472,16 +473,29 @@ def load(app):
 
     app.register_blueprint(blueprint)
 
+    def refuse_student_tokens():
+        """A student token must not sign in at all.
+
+        CTFd's tokens hook calls login_user(), which replaces the account's
+        active nonce and would sign the student's browser out under the
+        one-session rule. So this runs before that hook (it is inserted at
+        the front of the before_request list) and answers 403 without a
+        login. Unknown or expired tokens are left to CTFd's hook.
+        """
+        if not authenticated_by_token():
+            return
+        try:
+            _token_type, token = request.headers["Authorization"].split(" ", 1)
+            user = lookup_user_token(token)
+        except (UserNotFoundException, UserTokenExpiredException, ValueError):
+            return
+        if user.type != "admin":
+            return tokens_refused_response()
+
+    app.before_request_funcs.setdefault(None, []).insert(0, refuse_student_tokens)
+
     @app.before_request
     def require_onboarding():
-        # A student token must not open a session anywhere, exempt endpoints
-        # included, so this comes first: CTFd's tokens hook has already
-        # signed the request in by now.
-        if authenticated_by_token() and authed():
-            token_user = get_current_user_attrs()
-            if token_user is not None and token_user.type != "admin":
-                logout_user()
-                return tokens_refused_response()
         if request_is_exempt():
             return
         # Keep the password floor in force for every password-writing flow,
