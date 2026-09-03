@@ -21,6 +21,13 @@ class UploadsStorageTests(unittest.TestCase):
         self.assertIn('stale_keys = {"UPLOAD_FOLDER"}', user_data)
         self.assertNotIn("AWS_ACCESS_KEY_ID", user_data)
 
+    def test_download_links_are_signed_for_the_regional_host(self):
+        # boto3's default addressing presigns the global host, which S3
+        # redirects for a bucket outside us-east-1; the redirected request
+        # fails the signature check, so downloads must sign the regional host.
+        user_data = USER_DATA.read_text()
+        self.assertRegex(user_data, r'"AWS_S3_ADDRESSING_STYLE":\s*"virtual"')
+
     def test_instance_role_can_only_touch_the_upload_bucket(self):
         ec2 = EC2.read_text()
         self.assertRegex(ec2, r'Action\s*=\s*"s3:ListBucket"\s*\n\s*Resource\s*=\s*var\.upload_bucket_arn')
