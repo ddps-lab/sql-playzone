@@ -7,6 +7,7 @@ another Google round-trip. The gate is a request hook in the style of CTFd's
 own ``change_password`` hook.
 """
 
+import re
 from pathlib import Path
 
 from flask import (
@@ -80,6 +81,9 @@ SITE_ASSET_FILE_TYPES = ("standard", "page")
 NAME_MAX_LENGTH = 128
 PASSWORD_MAX_LENGTH = 128
 # A minimal password rule: long enough and not a bare number or bare word.
+# Letters and digits are ASCII on purpose: the page's live check must agree
+# with the server exactly, independent of Unicode database versions.
+ASCII_WHITESPACE = " \t\r\n"
 # CTFd's own password_min_length config is raised to this floor so the
 # settings page enforces the same length.
 PASSWORD_MIN_LENGTH = 8
@@ -245,7 +249,7 @@ def terms_html():
 def OnboardingForm(user_id, *args, **kwargs):
     password_description = _l(
         f"Password used to log into your account. At least {password_min_length()} "
-        "characters with both a letter and a digit."
+        "characters with both an English letter (A-Z) and a digit (0-9)."
     )
 
     class _OnboardingForm(BaseForm):
@@ -290,9 +294,7 @@ def validate_password(password, password_confirm):
         )
     elif len(password) > PASSWORD_MAX_LENGTH:
         errors.append(_l("Pick a shorter password"))
-    elif not (
-        any(c.isalpha() for c in password) and any(c.isdigit() for c in password)
-    ):
+    elif not (re.search("[A-Za-z]", password) and re.search("[0-9]", password)):
         errors.append(_l("Password must contain both a letter and a digit"))
     if password_confirm != password:
         errors.append(_l("Passwords do not match"))
@@ -406,8 +408,10 @@ def load(app):
         name = user.name
         if request.method == "POST":
             name = request.form.get("name", "").strip()
-            password = request.form.get("password", "").strip()
-            password_confirm = request.form.get("password_confirm", "").strip()
+            password = request.form.get("password", "").strip(ASCII_WHITESPACE)
+            password_confirm = request.form.get("password_confirm", "").strip(
+                ASCII_WHITESPACE
+            )
             errors, entries = validate_submission(
                 user, name, password, password_confirm, credentials, fields
             )
@@ -443,6 +447,8 @@ def load(app):
             mode=mode,
             terms=terms_html() if mode != "reset" else None,
             terms_field_name=TERMS_FIELD_NAME,
+            password_min_length=password_min_length(),
+            password_max_length=PASSWORD_MAX_LENGTH,
         )
 
     app.register_blueprint(blueprint)

@@ -119,6 +119,11 @@ def test_google_account_without_password_is_sent_to_onboarding():
         r = client.get("/onboarding/")
         assert r.status_code == 200
         assert b"minsu@hanyang.ac.kr" in r.data
+        # live password feedback uses the server's minimum length
+        assert b'data-password-min-length="8"' in r.data
+        assert b'data-password-max-length="128"' in r.data
+        assert b'id="password-rules"' in r.data
+        assert r.data.count(b'data-terms-checkbox="1"') == 1
         assert STUDENT_ID_FIELD.encode() in r.data
         # the terms are shown inline, rendered from markdown, with a consent checkbox
         assert "<h1>SQL PlayZone 이용 약관".encode() in r.data
@@ -192,6 +197,16 @@ def test_onboarding_rejects_bad_names_passwords_and_missing_student_id():
             ),
             (
                 {"password": "password"},
+                b"Password must contain both a letter and a digit",
+            ),
+            (
+                # letters and digits are ASCII: a Roman numeral is not a digit
+                {"password": "abcdefg\u2167"},
+                b"Password must contain both a letter and a digit",
+            ),
+            (
+                # and Hangul is not an English letter
+                {"password": "가나다라1234"},
                 b"Password must contain both a letter and a digit",
             ),
             ({"password_confirm": "hunter22?"}, b"Passwords do not match"),
@@ -389,6 +404,7 @@ def test_existing_accounts_are_asked_for_consent_once():
         assert r.status_code == 200
         assert b"Please read and agree to the Terms of Service" in r.data
         assert b'name="password"' not in r.data
+        assert b'id="password-rules"' not in r.data
         assert STUDENT_ID_FIELD.encode() not in r.data
 
         with client.session_transaction() as sess:
@@ -464,7 +480,7 @@ def test_consent_field_and_terms_come_back_after_an_import():
         assert r.status_code == 200
         assert "<h1>SQL PlayZone 이용 약관".encode() in r.data
         assert UserFields.query.filter_by(name=TERMS_FIELD).count() == 1
-        assert b"At least 8 characters" in r.data
+        assert "8–128 characters".encode() in r.data
 
         # the gate is back for accounts that never accepted the terms
         gen_user(app.db, name="veteran", email="veteran@examplectf.com")
