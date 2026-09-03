@@ -271,6 +271,12 @@ def test_api_tokens_are_for_admins_only():
         with token_client.session_transaction() as sess:
             assert "id" not in sess
         assert token_client.get("/api/v1/users/me").status_code != 200
+        # the same holds on endpoints the onboarding gate otherwise exempts
+        for path in ("/healthcheck", "/onboarding/"):
+            token_client = app.test_client()
+            assert token_client.get(path, headers=headers).status_code == 403
+            with token_client.session_transaction() as sess:
+                assert "id" not in sess, path
         # the student's own browser session keeps working
         assert client.get("/api/v1/users/me").status_code == 200
 

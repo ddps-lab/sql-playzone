@@ -474,6 +474,14 @@ def load(app):
 
     @app.before_request
     def require_onboarding():
+        # A student token must not open a session anywhere, exempt endpoints
+        # included, so this comes first: CTFd's tokens hook has already
+        # signed the request in by now.
+        if authenticated_by_token() and authed():
+            token_user = get_current_user_attrs()
+            if token_user is not None and token_user.type != "admin":
+                logout_user()
+                return tokens_refused_response()
         if request_is_exempt():
             return
         # Keep the password floor in force for every password-writing flow,
@@ -487,11 +495,6 @@ def load(app):
         # API tokens are for admin scripts: a student can neither create one
         # nor sign in with one (the settings page hides the tab as well).
         if request.endpoint == "api.tokens_token_list" and request.method == "POST":
-            return tokens_refused_response()
-        if authenticated_by_token():
-            # CTFd's tokens hook has already opened a session for this
-            # request; drop it so the cookie does not outlive the refusal.
-            logout_user()
             return tokens_refused_response()
         if request.endpoint == "api.users_user_private" and request.method == "PATCH":
             data = request.get_json(silent=True) or {}
