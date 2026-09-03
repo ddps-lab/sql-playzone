@@ -68,8 +68,8 @@ def test_api_token_requests_are_not_subject_to_the_browser_session_check():
     app = create_ctfd(enable_plugins=True)
     with app.app_context():
         enable_single_session()
-        onboarded_student(app)
-        token = generate_user_token(Users.query.filter_by(name="student").first())
+        # tokens are for admins (the onboarding plugin refuses student tokens)
+        token = generate_user_token(Users.query.filter_by(name="admin").first())
         headers = {
             "Authorization": f"Token {token.value}",
             "Content-Type": "application/json",
@@ -173,8 +173,8 @@ def test_every_login_is_logged_with_its_browser_and_the_previous_login():
         )
         assert len(new_login_lines(app, log_path, before)) == 2
 
-        # API token requests are not logins of a browser session
-        token = generate_user_token(Users.query.filter_by(name="student").first())
+        # API token requests (admins only) are not logins of a browser session
+        token = generate_user_token(Users.query.filter_by(name="admin").first())
         headers = {
             "Authorization": f"Token {token.value}",
             "Content-Type": "application/json",
