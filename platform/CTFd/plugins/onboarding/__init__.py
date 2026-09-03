@@ -73,6 +73,25 @@ AFFIRMATIVE_VALUES = {"y", "yes", "true", "on", "1"}
 EMAIL_LOCKED_MESSAGE = (
     "Your email address comes from your HYU Google account and cannot be changed here."
 )
+TOKENS_ADMIN_ONLY_MESSAGE = "API tokens are available to administrators only."
+
+
+def authenticated_by_token():
+    """The condition under which CTFd's tokens hook signs a request in."""
+    if not request.headers.get("Authorization"):
+        return False
+    return request.is_json or (
+        request.endpoint == "api.files_files_list"
+        and request.method == "POST"
+        and request.mimetype == "multipart/form-data"
+    )
+
+
+def tokens_refused_response():
+    response = jsonify({"success": False, "errors": [TOKENS_ADMIN_ONLY_MESSAGE]})
+    response.status_code = 403
+    return response
+
 
 # Uploaded files any page may need: logo, banner, page images. Challenge and
 # solution attachments are not among them.
@@ -465,6 +484,12 @@ def load(app):
         user = get_current_user_attrs()
         if user is None or user.type == "admin":
             return
+        # API tokens are for admin scripts: a student can neither create one
+        # nor sign in with one (the settings page hides the tab as well).
+        if request.endpoint == "api.tokens_token_list" and request.method == "POST":
+            return tokens_refused_response()
+        if authenticated_by_token():
+            return tokens_refused_response()
         if request.endpoint == "api.users_user_private" and request.method == "PATCH":
             data = request.get_json(silent=True) or {}
             submitted = str(data.get("email") or "").strip().lower()

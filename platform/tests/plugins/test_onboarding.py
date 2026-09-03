@@ -6,6 +6,7 @@ from CTFd.cache import cache
 from CTFd.models import SolutionFiles, UserFieldEntries, UserFields, Users, db
 from CTFd.utils import get_config, set_config
 from CTFd.utils.crypto import verify_password
+from CTFd.utils.security.auth import generate_user_token
 from CTFd.utils.security.csrf import generate_nonce
 from CTFd.utils.security.signing import hmac
 from tests.helpers import (
@@ -236,6 +237,46 @@ def test_onboarding_rejects_bad_names_passwords_and_missing_student_id():
             assert stored_password(user_id) is None, overrides
 
         assert client.get("/challenges").status_code == 302
+    destroy_ctfd(app)
+
+
+def test_api_tokens_are_for_admins_only():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        create_google_user(
+            app,
+            name="done",
+            email="done@hanyang.ac.kr",
+            password="hunter22!",
+            student_id="2025000003",
+        )
+        client = login_as_user(app, name="done", password="hunter22!")
+        # a student cannot create a token ...
+        r = client.post("/api/v1/tokens", json={})
+        assert r.status_code == 403
+        assert r.get_json()["errors"] == [
+            "API tokens are available to administrators only."
+        ]
+        # ... and one that exists (created before this rule) does not sign in
+        student = Users.query.filter_by(name="done").first()
+        token = generate_user_token(student)
+        headers = {
+            "Authorization": f"Token {token.value}",
+            "Content-Type": "application/json",
+        }
+        r = app.test_client().get("/api/v1/users/me", headers=headers)
+        assert r.status_code == 403
+        # the session itself keeps working
+        assert client.get("/api/v1/users/me").status_code == 200
+
+        admin = login_as_user(app, name="admin", password="password")
+        assert admin.post("/api/v1/tokens", json={}).status_code == 200
+        admin_token = generate_user_token(Users.query.filter_by(name="admin").first())
+        headers["Authorization"] = f"Token {admin_token.value}"
+        assert (
+            app.test_client().get("/api/v1/users/me", headers=headers).status_code
+            == 200
+        )
     destroy_ctfd(app)
 
 
