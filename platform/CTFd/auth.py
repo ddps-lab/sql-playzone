@@ -592,7 +592,8 @@ def oauth_redirect():
             }
             api_data = requests.get(url=user_url, headers=headers, timeout=5).json()
 
-            user_id = api_data["id"]
+            # oauth_id is a string column (Google accounts store "google_<id>")
+            user_id = str(api_data["id"])
             user_name = api_data["name"]
             user_email = api_data["email"]
 
@@ -626,7 +627,7 @@ def oauth_redirect():
                     return redirect(url_for("auth.login"))
 
             if get_config("user_mode") == TEAMS_MODE and user.team_id is None:
-                team_id = api_data["team"]["id"]
+                team_id = str(api_data["team"]["id"])
                 team_name = api_data["team"]["name"]
 
                 team = Teams.query.filter_by(oauth_id=team_id).first()

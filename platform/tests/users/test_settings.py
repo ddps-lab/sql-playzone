@@ -33,8 +33,13 @@ def test_user_set_profile():
 
         r = client.get("/settings")
         resp = r.get_data(as_text=True)
-        for _k, v in data.items():
-            assert v in resp
+        # the ddps settings page shows name, email and affiliation; website and
+        # country are kept by the API but have no field on the page
+        for k in ("name", "email", "affiliation"):
+            assert data[k] in resp
+        me = client.get("/api/v1/users/me").get_json()["data"]
+        assert me["website"] == data["website"]
+        assert me["country"] == data["country"]
 
         data = {
             "name": "user",
