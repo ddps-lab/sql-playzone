@@ -147,6 +147,7 @@ variable "database_instance_class" {
 - SSH 접근 비활성화 (프로덕션)
 - 모든 EBS 볼륨 암호화
 - 업로드 버킷은 public access 차단과 SSE-S3 적용, 인스턴스 role만 객체 읽기·쓰기 가능. persistent 배포에서는 `terraform destroy` 전에 버킷을 비워야 함
+- 첨부 파일 다운로드 링크는 S3 presigned URL이며 리전 호스트(`<bucket>.s3.<region>.amazonaws.com`)로 서명함(`AWS_S3_ADDRESSING_STYLE=virtual`). 기본값(auto)은 글로벌 호스트로 서명하는데, us-east-1 밖의 버킷은 S3가 리전 호스트로 리다이렉트하므로 서명이 어긋나 다운로드가 403이 됨
 
 ## 문제 해결
 

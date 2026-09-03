@@ -110,6 +110,13 @@ env_values = {
     "UPLOAD_PROVIDER": "s3",
     "AWS_S3_BUCKET": "${UPLOAD_BUCKET_NAME}",
     "AWS_S3_REGION": "${REGION}",
+    # Download links are presigned URLs. With boto3's default addressing they
+    # point at the global host (bucket.s3.amazonaws.com), which S3 answers
+    # with a redirect to the regional host for a bucket outside us-east-1;
+    # the redirected request no longer matches the signature, so every
+    # attachment download fails with 403. Virtual addressing signs the
+    # regional host directly.
+    "AWS_S3_ADDRESSING_STYLE": "virtual",
     "REDIS_URL": "rediss://${ELASTICACHE_ENDPOINT}:6379",
     "WORKERS": "1",
     "LOG_FOLDER": "/var/log/CTFd",
