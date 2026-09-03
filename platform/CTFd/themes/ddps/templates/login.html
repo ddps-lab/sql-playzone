@@ -26,7 +26,7 @@
 
     <div class="container">
       <div class="row">
-        <div class="col-md-8 col offset-md-2 col-lg-6 offset-lg-3">
+        <div class="col-md-8 col offset-md-2 col-lg-6 offset-lg-3 mb-5">
           {% include "components/errors.html" %}
 
           {% with form = Forms.auth.LoginForm() %}
@@ -41,12 +41,8 @@
                 {{ form.password(class="form-control", value=password, autocomplete="current-password") }}
               </div>
 
-              <div class="row pt-3">
-                <div class="col-6 col-md-8"></div>
-
-                <div class="col-6 col-md-4">
-                  {{ form.submit(class="btn btn-block btn-primary w-100") }}
-                </div>
+              <div class="pt-3">
+                {{ form.submit(class="btn btn-primary w-100") }}
               </div>
 
               {{ form.nonce() }}

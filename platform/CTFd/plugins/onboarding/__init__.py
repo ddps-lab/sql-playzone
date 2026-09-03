@@ -26,6 +26,7 @@ from wtforms import PasswordField, StringField
 from wtforms.validators import InputRequired
 
 from CTFd.cache import clear_config, clear_standings
+from CTFd.exceptions import UserNotFoundException, UserTokenExpiredException
 from CTFd.forms import BaseForm
 from CTFd.forms.fields import SubmitField
 from CTFd.forms.users import attach_custom_user_fields, build_custom_user_fields
@@ -34,7 +35,7 @@ from CTFd.utils import get_config, set_config, validators
 from CTFd.utils.config.pages import build_markdown
 from CTFd.utils.decorators import authed_only, ratelimit
 from CTFd.utils.logging import log
-from CTFd.utils.security.auth import update_user
+from CTFd.utils.security.auth import lookup_user_token, update_user
 from CTFd.utils.user import authed, get_current_user, get_current_user_attrs
 
 # auth.google_callback stores the session nonce it logged in with under this
@@ -73,6 +74,25 @@ AFFIRMATIVE_VALUES = {"y", "yes", "true", "on", "1"}
 EMAIL_LOCKED_MESSAGE = (
     "Your email address comes from your HYU Google account and cannot be changed here."
 )
+TOKENS_ADMIN_ONLY_MESSAGE = "API tokens are available to administrators only."
+
+
+def authenticated_by_token():
+    """The condition under which CTFd's tokens hook signs a request in."""
+    if not request.headers.get("Authorization"):
+        return False
+    return request.is_json or (
+        request.endpoint == "api.files_files_list"
+        and request.method == "POST"
+        and request.mimetype == "multipart/form-data"
+    )
+
+
+def tokens_refused_response():
+    response = jsonify({"success": False, "errors": [TOKENS_ADMIN_ONLY_MESSAGE]})
+    response.status_code = 403
+    return response
+
 
 # Uploaded files any page may need: logo, banner, page images. Challenge and
 # solution attachments are not among them.
@@ -453,6 +473,27 @@ def load(app):
 
     app.register_blueprint(blueprint)
 
+    def refuse_student_tokens():
+        """A student token must not sign in at all.
+
+        CTFd's tokens hook calls login_user(), which replaces the account's
+        active nonce and would sign the student's browser out under the
+        one-session rule. So this runs before that hook (it is inserted at
+        the front of the before_request list) and answers 403 without a
+        login. Unknown or expired tokens are left to CTFd's hook.
+        """
+        if not authenticated_by_token():
+            return
+        try:
+            _token_type, token = request.headers["Authorization"].split(" ", 1)
+            user = lookup_user_token(token)
+        except (UserNotFoundException, UserTokenExpiredException, ValueError):
+            return
+        if user.type != "admin":
+            return tokens_refused_response()
+
+    app.before_request_funcs.setdefault(None, []).insert(0, refuse_student_tokens)
+
     @app.before_request
     def require_onboarding():
         if request_is_exempt():
@@ -465,6 +506,10 @@ def load(app):
         user = get_current_user_attrs()
         if user is None or user.type == "admin":
             return
+        # API tokens are for admin scripts: a student can neither create one
+        # nor sign in with one (the settings page hides the tab as well).
+        if request.endpoint == "api.tokens_token_list" and request.method == "POST":
+            return tokens_refused_response()
         if request.endpoint == "api.users_user_private" and request.method == "PATCH":
             data = request.get_json(silent=True) or {}
             submitted = str(data.get("email") or "").strip().lower()
