@@ -688,43 +688,10 @@ class ChallengeAttempt(Resource):
 
         challenge_id = request_data.get("challenge_id")
 
-        # Check for test flag in request data (for testing without recording submission)
-        test = request_data.get("test", False)
-
-        # Allow test mode for SQL challenges
-        if test:
-            challenge = Challenges.query.filter_by(id=challenge_id).first_or_404()
-
-            # Check if challenge is hidden and user is not admin
-            if challenge.state == "hidden" and not is_admin():
-                abort(403)
-
-            # Only allow test mode for SQL challenges
-            if challenge.type == "sql":
-                chal_class = get_chal_class(challenge.type)
-                response = chal_class.attempt(challenge, request)
-                # TODO: CTFd 4.0 We should remove the tuple strategy for Challenge plugins in favor of ChallengeResponse
-                if isinstance(response, tuple):
-                    status = "correct" if response[0] else "incorrect"
-                    message = response[1]
-                else:
-                    status = response.status
-                    message = response.message
-
-                record_execute_event(
-                    challenge=challenge,
-                    submission=str(request_data.get("submission", "")),
-                    status=status,
-                    message=message,
-                )
-
-                return {
-                    "success": True,
-                    "data": {
-                        "status": status,
-                        "message": message,
-                    },
-                }
+        challenge = Challenges.query.filter_by(id=challenge_id).first_or_404()
+        if challenge.type == "sql":
+            from CTFd.plugins.sql_challenges.submissions import submit_sql
+            return submit_sql(challenge, request, record_execute_event)
 
         if ctf_paused():
             return (

@@ -314,6 +314,30 @@ function resetSQLEditor() {
     showAutoSaveNotification('Editor has been reset');
 }
 
+// Decode API structure before interpreting errors; SQL cell contents are data.
+async function readSQLResponse(response) {
+    if (response.status === 401 || (response.redirected && response.url.includes('/login'))) {
+        showSessionExpiredModal();
+        return null;
+    }
+    let result;
+    try {
+        result = JSON.parse(await response.text());
+    } catch (error) {
+        showErrorToast('The server could not confirm the result. Please retry.');
+        return null;
+    }
+    if (result && result.data && result.data.status === 'authentication_required') {
+        showSessionExpiredModal();
+        return null;
+    }
+    if (!result || !result.data || typeof result.data.status !== 'string' || typeof result.data.message !== 'string') {
+        showErrorToast('The request was not accepted or the response was invalid. Please check access and retry.');
+        return null;
+    }
+    return result;
+}
+
 // Execute SQL Query (test mode - checks correctness but doesn't record submission)
 async function executeSQLQuery() {
     const testButton = document.getElementById('challenge-execute');
@@ -365,72 +389,8 @@ async function executeSQLQuery() {
 
         clearTimeout(timeoutId);
 
-        // Response received
-        console.log('[SQL Challenge] Response status:', response.status);
-        console.log('[SQL Challenge] Response redirected:', response.redirected);
-        
-        if (!response.ok) {
-            console.error('Response not OK:', response.statusText);
-            
-            if (response.status === 401 || response.status === 403) {
-                console.log('[SQL Challenge] 401/403 detected, showing modal');
-                showSessionExpiredModal();
-                return;
-            }
-        }
-
-        // Check for redirect (which might have returned 200 OK for the login page)
-        if (response.redirected && response.url.includes('/login')) {
-            console.log('[SQL Challenge] Redirect to login detected, showing modal');
-            showSessionExpiredModal();
-            return;
-        }
-
-        // First get the response as text to debug
-        const responseText = await response.text();
-        // Response text received
-        
-        // Check if response text looks like an error page (HTML)
-        if (responseText.includes('You don\'t have the permission') || 
-            responseText.includes('Session expired') ||
-            responseText.includes('Sign In')) {
-            console.log('[SQL Challenge] Error page content detected, showing modal');
-            showSessionExpiredModal();
-            return;
-        }
-        // Response text received
-
-        // Try to parse as JSON
-        let result;
-        try {
-            result = JSON.parse(responseText);
-        } catch (e) {
-            console.error('Failed to parse response as JSON:', e);
-            console.error('Response was:', responseText);
-            showErrorToast('Server returned invalid JSON response');
-            return;
-        }
-        // Result parsed
-
-        // Check if result has the expected structure
-        if (!result || typeof result !== 'object') {
-            console.error('Invalid result structure:', result);
-            showErrorToast('Invalid response from server');
-            return;
-        }
-
-        // CTFd API returns {success: bool, data: {...}} structure
-        // We need to wrap our result if it doesn't have this structure
-        if (!result.hasOwnProperty('data')) {
-            // Wrapping result in CTFd format
-            const wrappedResult = {
-                success: true,
-                data: result
-            };
-            displayResult(wrappedResult, true);
-        } else {
-            displayResult(result, true);
-        }
+        const result = await readSQLResponse(response);
+        if (result) displayResult(result, true);
 
     } catch (error) {
         if (error.name === 'AbortError') {
@@ -473,31 +433,6 @@ async function submitSQLChallenge() {
     const originalHTML = submitButton.innerHTML;
     submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Submitting...';
 
-    // Check deadline before submitting
-    const deadlineElement = document.getElementById('deadline-time');
-    if (deadlineElement) {
-        const deadlineStr = deadlineElement.getAttribute('data-deadline');
-        if (deadlineStr) {
-            const deadline = new Date(deadlineStr);
-            const now = new Date();
-            if (now > deadline) {
-                // Display deadline error as result instead of alert
-                const deadlineResult = {
-                    success: true,
-                    data: {
-                        status: 'incorrect',
-                        message: 'Submission deadline has passed'
-                    }
-                };
-                displayResult(deadlineResult, false);
-                // Re-enable button
-                submitButton.disabled = false;
-                submitButton.innerHTML = originalHTML;
-                return;
-            }
-        }
-    }
-
     try {
         // Create abort controller for timeout
         const controller = new AbortController();
@@ -520,75 +455,15 @@ async function submitSQLChallenge() {
 
         clearTimeout(timeoutId);
 
-        console.log('[SQL Challenge] Submit response status:', response.status);
-        console.log('[SQL Challenge] Submit response redirected:', response.redirected);
-        
-        if (!response.ok) {
-            console.error('Submit response not OK:', response.statusText);
-            if (response.status === 401 || response.status === 403) {
-                console.log('[SQL Challenge] 401/403 detected, showing modal');
-                showSessionExpiredModal();
-                return;
-            }
-        }
-
-        // Check for redirect
-        if (response.redirected && response.url.includes('/login')) {
-            console.log('[SQL Challenge] Redirect to login detected, showing modal');
-            showSessionExpiredModal();
-            return;
-        }
-
-        // First get the response as text
-        const responseText = await response.text();
-        
-        // Check if response text looks like an error page (HTML)
-        if (responseText.includes('You don\'t have the permission') || 
-            responseText.includes('Session expired') ||
-            responseText.includes('Sign In')) {
-            console.log('[SQL Challenge] Error page content detected, showing modal');
-            showSessionExpiredModal();
-            return;
-        }
-
-        // Try to parse as JSON
-        let result;
-        try {
-            result = JSON.parse(responseText);
-        } catch (e) {
-            console.error('Failed to parse submit response as JSON:', e);
-            console.error('Submit response was:', responseText);
-            showErrorToast('Server returned invalid JSON response');
-            return;
-        }
-        // Submit result received
-
-        // Check if result has the expected structure
-        if (!result || typeof result !== 'object') {
-            console.error('Invalid result structure:', result);
-            showErrorToast('Invalid response from server');
-            return;
-        }
-
+        const result = await readSQLResponse(response);
+        if (!result) return;
+        displayResult(result, false);
         if (behaviorLogger) {
-            const submitStatus = result.data.status || 'unknown';
             behaviorLogger.logEvent('submit', {
                 query_text: submission,
                 query_length: submission.length,
-                submit_status: submitStatus
-            })
-        }
-
-        // CTFd API returns {success: bool, data: {...}} structure
-        if (!result.hasOwnProperty('data')) {
-            // Wrapping result in CTFd format
-            const wrappedResult = {
-                success: true,
-                data: result
-            };
-            displayResult(wrappedResult, false);
-        } else {
-            displayResult(result, false);
+                submit_status: result.data.status
+            });
         }
 
     } catch (error) {
@@ -685,7 +560,7 @@ function displayResult(result, isTest = false) {
     if (isAlreadySolved) {
         finalStatusText += ' (Already solved)';
     }
-    document.getElementById('status-text').innerHTML = finalStatusText;
+    document.getElementById('status-text').textContent = finalStatusText;
     
     // Render user result
     if (userResult) {

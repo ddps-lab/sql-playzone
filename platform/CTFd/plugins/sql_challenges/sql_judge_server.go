@@ -62,6 +62,7 @@ type QueryResponse struct {
 	UserResult     QueryResult `json:"user_result"`
 	ExpectedResult QueryResult `json:"expected_result"`
 	Error          string      `json:"error,omitempty"`
+	ErrorKind      string      `json:"error_kind,omitempty"`
 }
 
 type QueryResult struct {
@@ -457,10 +458,10 @@ func (s *Server) handleJudge(w http.ResponseWriter, r *http.Request) {
 	case s.slots <- struct{}{}:
 		defer func() { <-s.slots }()
 	case <-queueTimer.C:
-		writeJSON(w, QueryResponse{Success: false, Error: "SQL judge is busy; please retry"})
+		writeJSON(w, QueryResponse{Success: false, ErrorKind: "system", Error: "SQL judge is busy; please retry"})
 		return
 	case <-ctx.Done():
-		writeJSON(w, QueryResponse{Success: false, Error: "SQL judge request timed out while waiting"})
+		writeJSON(w, QueryResponse{Success: false, ErrorKind: "system", Error: "SQL judge request timed out while waiting"})
 		return
 	}
 
@@ -470,12 +471,16 @@ func (s *Server) handleJudge(w http.ResponseWriter, r *http.Request) {
 	initQueries := []string{req.InitQuery}
 	expectedResult, err := s.executeQuery(ctx, initQueries, req.SolutionQuery, &req)
 	if err != nil {
-		writeJSON(w, QueryResponse{Success: false, Error: fmt.Sprintf("Failed to execute solution query: %v", err)})
+		kind := gradingErrorKind(err)
+		if kind == "student_query" {
+			kind = "problem"
+		}
+		writeJSON(w, QueryResponse{Success: false, ErrorKind: kind, Error: fmt.Sprintf("Failed to execute solution query: %v", err)})
 		return
 	}
 	userResult, err := s.executeQuery(ctx, initQueries, req.UserQuery, &req)
 	if err != nil {
-		writeJSON(w, QueryResponse{Success: false, Error: fmt.Sprintf("Failed to execute user query: %v", err)})
+		writeJSON(w, QueryResponse{Success: false, ErrorKind: gradingErrorKind(err), Error: fmt.Sprintf("Failed to execute user query: %v", err)})
 		return
 	}
 	writeJSON(w, QueryResponse{Success: true, Match: compareResults(expectedResult, userResult), UserResult: *userResult, ExpectedResult: *expectedResult})
@@ -483,7 +488,7 @@ func (s *Server) handleJudge(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) executeQuery(parent context.Context, initQueries []string, query string, req *QueryRequest) (*QueryResult, error) {
 	if err := validateSQLQuery(query, req); err != nil {
-		return nil, err
+		return nil, &gradingError{kind: "student_query", cause: err}
 	}
 	resources, err := newExecutionResources()
 	if err != nil {
@@ -504,6 +509,9 @@ func (s *Server) executeQuery(parent context.Context, initQueries []string, quer
 	}
 	session, err := s.runInitStatements(executionCtx, resources, initQueries, req)
 	if err != nil {
+		if studentQueryError(err) {
+			return nil, &gradingError{kind: "problem", cause: err}
+		}
 		return nil, err
 	}
 	return s.runGradedQuery(executionCtx, resources, query, session)
@@ -756,7 +764,7 @@ func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query
 
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("query error: %w", err)
+		return nil, classifyQueryError(fmt.Errorf("query error: %w", err))
 	}
 	defer rows.Close()
 	columns, err := rows.Columns()
@@ -767,7 +775,7 @@ func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query
 	var resultBytes int64
 	for rows.Next() {
 		if len(result.Rows) >= s.config.MaxResultRows {
-			return nil, fmt.Errorf("%w: more than %d rows", errResultLimit, s.config.MaxResultRows)
+			return nil, classifyQueryError(fmt.Errorf("%w: more than %d rows", errResultLimit, s.config.MaxResultRows))
 		}
 		rawValues := make([]sql.RawBytes, len(columns))
 		destinations := make([]any, len(columns))
@@ -787,13 +795,13 @@ func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query
 				resultBytes += int64(len(value))
 			}
 			if resultBytes > s.config.MaxResultBytes {
-				return nil, fmt.Errorf("%w: more than %d bytes", errResultLimit, s.config.MaxResultBytes)
+				return nil, classifyQueryError(fmt.Errorf("%w: more than %d bytes", errResultLimit, s.config.MaxResultBytes))
 			}
 		}
 		result.Rows = append(result.Rows, stringRow)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate result rows: %w", err)
+		return nil, classifyQueryError(fmt.Errorf("iterate result rows: %w", err))
 	}
 	result.RowCount = len(result.Rows)
 	return result, nil
@@ -1066,4 +1074,41 @@ func main() {
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal("Server failed to start: ", err)
 	}
+}
+
+// Fault provenance crosses the HTTP boundary as data, never as a parsed message.
+// Unknown failures are ungraded. A failed reference is never a student mistake.
+type gradingError struct {
+	kind  string
+	cause error
+}
+
+func (e *gradingError) Error() string { return e.cause.Error() }
+func (e *gradingError) Unwrap() error { return e.cause }
+func gradingErrorKind(err error) string {
+	var fault *gradingError
+	if errors.As(err, &fault) {
+		return fault.kind
+	}
+	return "system"
+}
+func studentQueryError(err error) bool {
+	if errors.Is(err, errResultLimit) {
+		return true
+	}
+	var serverError *mysql.MySQLError
+	if !errors.As(err, &serverError) {
+		return false
+	}
+	state := string(serverError.SQLState[:])
+	// SQLSTATE 42: syntax/access-rule violation; 22: data exception.
+	// 3024: MySQL's statement execution-time limit. Transport cancellation
+	// and unknown server errors remain ungraded rather than guessing blame.
+	return strings.HasPrefix(state, "42") || strings.HasPrefix(state, "22") || serverError.Number == 3024
+}
+func classifyQueryError(err error) error {
+	if studentQueryError(err) {
+		return &gradingError{kind: "student_query", cause: err}
+	}
+	return err
 }

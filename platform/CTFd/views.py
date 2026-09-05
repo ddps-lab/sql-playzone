@@ -43,7 +43,8 @@ from CTFd.utils.config import can_send_mail, is_setup, is_teams_mode
 from CTFd.utils.config.pages import build_markdown, get_page
 from CTFd.utils.config.visibility import challenges_visible
 from CTFd.utils.dates import ctf_ended, ctftime, view_after_ctf
-from CTFd.utils.decorators import authed_only
+from CTFd.utils.decorators import authed_only, during_ctf_time_only, require_verified_emails
+from CTFd.utils.decorators.visibility import check_challenge_visibility
 from CTFd.utils.health import check_config, check_database
 from CTFd.utils.helpers import get_errors, get_infos, markup
 from CTFd.utils.modes import USERS_MODE
@@ -547,6 +548,9 @@ def robots():
 
 @views.route("/challenges/sql/<int:challenge_id>")
 @authed_only
+@check_challenge_visibility
+@during_ctf_time_only
+@require_verified_emails
 def sql_challenge_page(challenge_id):
     """Render SQL challenge on a dedicated page"""
     if not is_setup():
@@ -558,18 +562,9 @@ def sql_challenge_page(challenge_id):
     if challenge.type != "sql":
         abort(404)
 
-    # Check if challenge is hidden and user is not admin
-    if challenge.state == "hidden" and not is_admin():
-        abort(403)
+    from CTFd.plugins.sql_challenges.submissions import require_sql_access
+    require_sql_access(challenge)
 
-    # Check if challenges are visible
-    if not challenges_visible():
-        abort(403)
-
-    # Check if CTF has ended
-    if ctf_ended() and not view_after_ctf():
-        abort(403)
-    
     from CTFd.plugins.sql_challenges import SQLChallenge
     from CTFd.utils.config.pages import build_markdown
     from CTFd.utils.challenges import get_solve_ids_for_user_id
