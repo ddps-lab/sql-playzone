@@ -26,6 +26,8 @@ class BehaviorLogger {
         };
 
         this.eventBuffer = [];
+        this.flushing = false;
+        this.batchSize = 50;
         this.flushInterval = setInterval(() => this.flush(), 5000); // Flush every 5 seconds
 
         console.log('[BehaviorLogger] Initialized with session:', this.sessionId);
@@ -68,9 +70,10 @@ class BehaviorLogger {
      * Send buffered events to server
      */
     async flush() {
-        if (this.eventBuffer.length === 0) return;
+        if (this.flushing || this.eventBuffer.length === 0) return;
+        this.flushing = true;
 
-        const events = this.eventBuffer.splice(0); // Get all events and clear buffer
+        const events = this.eventBuffer.splice(0, this.batchSize); // Bound a retry batch so a backlog can drain
 
         try {
             // Debug CSRF token
@@ -86,7 +89,16 @@ class BehaviorLogger {
             });
 
             if (response.ok) {
+                this.batchSize = 50;
                 // console.log(`[BehaviorLogger] Flushed ${events.length} events`);
+            } else if (response.status === 400 || response.status === 413) {
+                if (events.length > 1) {
+                    this.batchSize = Math.max(1, Math.floor(events.length / 2));
+                    this.eventBuffer.unshift(...events);
+                } else {
+                    console.warn('[BehaviorLogger] An invalid event was not recorded');
+                    this.batchSize = 50;
+                }
             } else {
                 console.error('[BehaviorLogger] Failed to flush events:', response.status, response.errors);
                 // Put events back if failed
@@ -96,6 +108,8 @@ class BehaviorLogger {
             console.error('[BehaviorLogger] Error flushing events:', error);
             // Put events back if failed
             this.eventBuffer.unshift(...events);
+        } finally {
+            this.flushing = false;
         }
     }
 

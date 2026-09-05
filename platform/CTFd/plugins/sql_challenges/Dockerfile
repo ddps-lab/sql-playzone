@@ -8,9 +8,9 @@ COPY go.mod go.sum ./
 # Download dependencies before copying source so source-only changes retain this layer.
 RUN go mod download
 
-COPY sql_judge_server.go ./
+COPY sql_judge_server.go grading_results.go ./
 
-RUN go build -trimpath -o sql-judge-server sql_judge_server.go
+RUN go build -trimpath -o sql-judge-server .
 
 # Final stage
 FROM alpine:latest

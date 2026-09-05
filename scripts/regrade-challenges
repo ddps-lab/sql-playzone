@@ -7,7 +7,8 @@ account, for example::
 
     SELECT JSON_ARRAYAGG(JSON_OBJECT(
         'id', c.id, 'name', c.name, 'category', c.category,
-        'init_query', s.init_query, 'solution_query', s.solution_query))
+        'init_query', s.init_query, 'solution_query', s.solution_query,
+        'grading_policy', s.grading_policy))
     FROM challenges c JOIN sql_challenge s ON s.id = c.id
     WHERE c.type = 'sql';
 
@@ -29,7 +30,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 
@@ -66,6 +67,7 @@ def load_challenges(path: Path, only: str | None) -> list[dict]:
                 "category": item.get("category", ""),
                 "init_query": item.get("init_query") or "",
                 "solution_query": item.get("solution_query") or "",
+                "grading_policy": item.get("grading_policy"),
             }
         )
     if only:
@@ -75,8 +77,11 @@ def load_challenges(path: Path, only: str | None) -> list[dict]:
 
 
 def call_judge(url: str, challenge: dict, timeout: float) -> dict:
+    if challenge.get("grading_policy") is None:
+        return {"status":"policy_required", "error":"출제자가 정렬·표시 형식 기준을 확인해야 합니다", "elapsed_ms":0}
     body = json.dumps(
         {
+            "grading_policy": challenge["grading_policy"],
             "init_query": challenge["init_query"],
             "solution_query": challenge["solution_query"],
             "user_query": challenge["solution_query"],
@@ -107,7 +112,7 @@ def call_judge(url: str, challenge: dict, timeout: float) -> dict:
             "rows": rows,
             "row_count": len(rows),
             "columns": user.get("columns") or [],
-            "bytes": sum(len(value) for row in rows for value in row),
+            "bytes": sum(len(value.encode("utf-8")) if value is not None else 0 for row in rows for value in row),
         }
     )
     return result
@@ -133,30 +138,12 @@ def classify_error(message: str) -> str:
 
 
 def numeric_equal(left: str, right: str) -> bool:
-    """Equal as numbers, or equal once the more precise value is rounded to the other's decimal places.
-
-    This tolerates DECIMAL-versus-float text (72220.1111 vs 72220.11111111111,
-    8510700.00 vs 8510700, 4017733 vs 4.017733e+06) without accepting materially
-    different numbers: values with no fractional digits must match exactly.
-    """
+    """Report only exact numeric equality; rounding can hide a changed answer."""
     try:
-        left_value, right_value = Decimal(left.strip()), Decimal(right.strip())
-    except (InvalidOperation, AttributeError, ValueError):
+        left_value, right_value = Decimal(left), Decimal(right)
+    except (InvalidOperation, TypeError, ValueError):
         return False
-    if not (left_value.is_finite() and right_value.is_finite()):
-        return False
-    if left_value == right_value:
-        return True
-    places = min(decimal_places(left_value), decimal_places(right_value))
-    if places == 0:
-        return False
-    quantum = Decimal(1).scaleb(-places)
-    return left_value.quantize(quantum, ROUND_HALF_UP) == right_value.quantize(quantum, ROUND_HALF_UP)
-
-
-def decimal_places(value: Decimal) -> int:
-    exponent = value.normalize().as_tuple().exponent
-    return max(0, -exponent) if isinstance(exponent, int) else 0
+    return left_value.is_finite() and right_value.is_finite() and left_value == right_value
 
 
 def compare(judge: dict, baseline: dict) -> dict:
@@ -184,71 +171,15 @@ def compare(judge: dict, baseline: dict) -> dict:
     return {"diff": "numeric_format" if formatting_only else "value", "first": first}
 
 
-ORDER_BY_PATTERN = re.compile(r"\bORDER\s+BY\s+(.+?)(?:\s+LIMIT\b|\s*;\s*$|$)", re.IGNORECASE | re.DOTALL)
-NUMERIC_SENSITIVE_PATTERN = re.compile(r"\bAVG\s*\(|(?<![*/])/(?![*/])|\bSUM\s*\(|\bSTD|\bVARIANCE|\bPERCENT", re.IGNORECASE)
-ROUND_PATTERN = re.compile(r"\b(ROUND|TRUNCATE|FORMAT|CAST|CONVERT|FLOOR|CEIL)\s*\(", re.IGNORECASE)
-
-
-def order_by_columns(solution: str) -> list[str] | None:
-    """Return the plain column names or aliases used in ORDER BY, or None when there is no ORDER BY.
-
-    Expressions such as ABS(a - b) are dropped, so the tie check is a lower bound."""
-    match = ORDER_BY_PATTERN.search(solution.strip())
-    if not match:
-        return None
-    columns = []
-    for term in match.group(1).split(","):
-        term = re.sub(r"\s+(ASC|DESC)\s*$", "", term.strip(), flags=re.IGNORECASE).strip("` ")
-        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_$]*(\.[A-Za-z_][A-Za-z0-9_$]*)?", term):
-            columns.append(term.split(".")[-1])
-        elif re.fullmatch(r"\d+", term):
-            columns.append(term)  # positional ORDER BY 1
-    return columns
-
-
-def tie_rows(columns: list[str], result_columns: list[str], rows: list[list[str]]) -> int | None:
-    """Count rows whose ORDER BY key values repeat. None when a key is not a result column."""
-    indexes = []
-    lowered = [c.lower() for c in result_columns]
-    for column in columns:
-        if column.isdigit():
-            position = int(column) - 1
-            if position < 0 or position >= len(result_columns):
-                return None
-            indexes.append(position)
-        elif column.lower() in lowered:
-            indexes.append(lowered.index(column.lower()))
-        else:
-            return None
-    if not indexes:
-        return None
-    seen = {}
-    for row in rows:
-        key = tuple(row[i] for i in indexes)
-        seen[key] = seen.get(key, 0) + 1
-    return sum(count for count in seen.values() if count > 1)
-
-
 def review_findings(challenge: dict, judge: dict, slow_ms: int) -> list[str]:
     """Authoring findings for one challenge, worded for the person who will fix the problem."""
     findings = []
-    solution = challenge.get("solution_query") or ""
     if judge.get("status") != "ok":
         findings.append(f"실행 실패({judge.get('status')}): {judge.get('error', '')[:140]}")
         return findings
-    columns = order_by_columns(solution)
     rows = judge.get("rows") or []
-    if columns is None:
-        if len(rows) > 1:
-            findings.append("ORDER BY가 없어 행 순서가 실행 계획에 따라 달라질 수 있음")
-    elif len(rows) > 1:
-        ties = tie_rows(columns, judge.get("columns") or [], rows)
-        if ties is None:
-            findings.append("ORDER BY에 결과 열이 아닌 식이 있어 동률 여부를 자동 확인하지 못함; 직접 확인 필요")
-        elif ties:
-            findings.append(f"정렬 키 값이 같은 행 {ties}개: 유일한 열(기본 키 등)을 ORDER BY 마지막에 추가")
-    if NUMERIC_SENSITIVE_PATTERN.search(solution) and not ROUND_PATTERN.search(solution):
-        findings.append("AVG·나눗셈·SUM 결과가 ROUND 없이 그대로 비교됨: 지문에 소수 자릿수를 명시하거나 정답에 ROUND 적용")
+    if challenge.get("grading_policy") is None:
+        findings.append("채점 기준 미확인: 지문과 정렬·표시 형식 설정을 확인해야 함")
     if not rows:
         findings.append("정답 결과가 0행: 의도한 것인지 확인")
     if judge.get("row_count", 0) >= 500:

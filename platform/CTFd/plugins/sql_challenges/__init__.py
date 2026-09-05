@@ -14,6 +14,8 @@ from CTFd.plugins.challenges import CHALLENGE_CLASSES, BaseChallenge, ChallengeR
 from CTFd.utils.decorators import admins_only, authed_only
 from CTFd.utils.user import get_ip, is_admin
 
+from .policy import parse_policy, policy_notice
+
 # Set KST timezone
 KST = pytz.timezone('Asia/Seoul')
 
@@ -25,6 +27,7 @@ class SQLChallenge(Challenges):
     )
     init_query = db.Column(db.Text, default="")
     solution_query = db.Column(db.Text, default="")
+    grading_policy = db.Column(db.JSON, nullable=True)
     deadline_utc = db.Column("deadline", db.DateTime, nullable=True)
 
     def __init__(self, *args, **kwargs):
@@ -127,6 +130,11 @@ class SQLChallengeType(BaseChallenge):
         from CTFd.models import Flags
         data = request.form or request.get_json()
         
+        data = dict(data)
+        grading_policy = parse_policy(data, creating=True)
+        for key in ("grading_policy", "grading_order", "grading_format"):
+            data.pop(key, None)
+
         # Extract SQL-specific fields
         init_query = data.get("init_query", "")
         solution_query = data.get("solution_query", "")
@@ -141,6 +149,7 @@ class SQLChallengeType(BaseChallenge):
 
         # Create challenge with base fields
         challenge = cls.challenge_model(**data)
+        challenge.grading_policy = grading_policy
         challenge.init_query = init_query
         challenge.solution_query = solution_query
         # deadline setter property will handle the KST->UTC conversion automatically
@@ -175,6 +184,8 @@ class SQLChallengeType(BaseChallenge):
 
         # The deadline property automatically converts UTC to KST format
         data["deadline"] = challenge.deadline
+        data["grading_policy"] = challenge.grading_policy
+        data["grading_notice"] = policy_notice(challenge.grading_policy)
         # The init and solution SQL are the answer key. CTFd returns this dict
         # from the challenge detail API to every logged-in user, so only admins
         # may receive them.
@@ -193,6 +204,7 @@ class SQLChallengeType(BaseChallenge):
         """
         data = request.form or request.get_json()
         
+        policy = parse_policy(data, current=challenge.grading_policy)
         if "deadline" in data:
             try:
                 challenge.deadline = data["deadline"]
@@ -203,9 +215,10 @@ class SQLChallengeType(BaseChallenge):
         if "solution_query" in data:
             challenge.solution_query = data["solution_query"]
 
+        challenge.grading_policy = policy
         # Update base fields
         for attr, value in data.items():
-            if attr not in ["init_query", "solution_query", "deadline"]:
+            if attr not in ["init_query", "solution_query", "deadline", "grading_policy", "grading_order", "grading_format"]:
                 setattr(challenge, attr, value)
         
         db.session.commit()
@@ -227,10 +240,13 @@ class SQLChallengeType(BaseChallenge):
             status="error",
             message=prefix + "Grading is temporarily unavailable. No attempt was deducted. Please retry.",
         )
+        if challenge.grading_policy is None:
+            return ChallengeResponse(status="error", message=policy_notice(None))
         try:
             response = requests.post(
                 os.environ.get('SQL_JUDGE_SERVER_URL', 'http://localhost:8080') + '/judge',
                 json={
+                    'grading_policy': challenge.grading_policy,
                     'init_query': challenge.init_query,
                     'solution_query': challenge.solution_query,
                     'user_query': submission,
@@ -413,7 +429,7 @@ class SQLChallengeType(BaseChallenge):
         return expected_result == user_result
 
     @classmethod
-    def test_query(cls, init_query, test_query):
+    def test_query(cls, init_query, test_query, grading_policy=None):
         """
         Test a query and return its result.
         Used for testing in the admin interface.
@@ -429,6 +445,7 @@ class SQLChallengeType(BaseChallenge):
             response = requests.post(
                 f"{go_server_url}/judge",
                 json={
+                    'grading_policy': grading_policy or parse_policy({}, creating=True),
                     'init_query': init_query,
                     'solution_query': test_query,  # Use test query as solution
                     'user_query': test_query  # And as user query to get the result
@@ -513,7 +530,7 @@ def start_go_server():
             # Now build the server
             print("Building SQL Judge server...")
             build_result = subprocess.run(
-                ['go', 'build', '-o', 'sql-judge-server', 'sql_judge_server.go'],
+                ['go', 'build', '-o', 'sql-judge-server', '.'],
                 cwd=plugin_dir,
                 capture_output=True,
                 text=True
@@ -611,7 +628,7 @@ def load(app):
                 'error': 'No test query provided'
             }), 400
 
-        result = SQLChallengeType.test_query(init_query, test_query)
+        result = SQLChallengeType.test_query(init_query, test_query, parse_policy(data, creating=True))
         return jsonify(result)
 
     # Add API endpoint for getting SQL challenge submission history

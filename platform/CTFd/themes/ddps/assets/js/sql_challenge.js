@@ -655,7 +655,7 @@ function renderTable(data) {
     for (const row of data.rows) {
         html += '<tr>';
         for (const cell of row) {
-            html += `<td>${escapeHtml(cell)}</td>`;
+            html += cell === null ? '<td><em class="text-muted" title="SQL NULL">NULL</em></td>' : `<td>${escapeHtml(cell)}</td>`;
         }
         html += '</tr>';
     }

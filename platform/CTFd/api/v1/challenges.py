@@ -1344,14 +1344,9 @@ BEHAVIOR_EVENT_TYPES = {
 }
 BEHAVIOR_MAX_TEXT_CHARS = 8000
 BEHAVIOR_TEXT_FIELDS = ("typed_text", "pasted_text", "query_text")
-# The page's tracker flushes every 5 seconds or 20 events, and puts a
-# rejected batch back in front of its buffer to retry forever. So the
-# number of events per request is not capped: after a transient failure the
-# buffer grows past any fixed limit and a count-based 400 would leave the
-# page stuck, silently losing everything that follows. Only the body size is
-# bounded, sized for 50 events of the largest valid text at 12 bytes per
-# character (an ASCII-escaping client writes a supplementary character as
-# two \uXXXX escapes) plus room for the other fields.
+# Accept legacy backlog batches too, while bounding the bytes read before JSON
+# decoding. The current tracker drains at most 50 events per request.
+BEHAVIOR_MAX_EVENTS = 1000
 BEHAVIOR_BODY_BUDGET_EVENTS = 50
 BEHAVIOR_MAX_BODY_BYTES = BEHAVIOR_BODY_BUDGET_EVENTS * (
     len(BEHAVIOR_TEXT_FIELDS) * BEHAVIOR_MAX_TEXT_CHARS * 12 + 2048
@@ -1392,11 +1387,11 @@ def event_time(value):
     """The client's ISO timestamp as naive UTC, or now when it is unusable."""
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        return parsed
+    except (TypeError, ValueError, OverflowError):
         return datetime.utcnow()
-    if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
-    return parsed
 
 
 def record_execute_event(challenge, submission, status, message):
@@ -1431,14 +1426,20 @@ def behavior_event_problem(event, challenge_ids):
     """Why a client event is not acceptable, or None."""
     if not isinstance(event, dict):
         return "not an object"
-    if event.get("event_type") not in BEHAVIOR_EVENT_TYPES:
+    if not isinstance(event.get("event_type"), str) or event["event_type"] not in BEHAVIOR_EVENT_TYPES:
         return "unknown event_type"
     try:
-        challenge_id = int(event.get("challenge_id"))
+        if type(event.get("challenge_id")) not in (int, str):
+            return "invalid challenge_id"
+        challenge_id = int(event["challenge_id"])
     except (TypeError, ValueError):
         return "invalid challenge_id"
     if challenge_id not in challenge_ids:
         return "unknown challenge"
+    for field, limit in (("timestamp", 64), ("session_id", 128), ("submit_status", 32)):
+        value = event.get(field, "")
+        if not isinstance(value, str) or len(value) > limit:
+            return f"invalid {field}"
     for field in BEHAVIOR_TEXT_FIELDS:
         value = event.get(field, "")
         if not isinstance(value, str):
@@ -1450,7 +1451,11 @@ def behavior_event_problem(event, challenge_ids):
 
 def canonical_behavior_event(event, user, challenge_names):
     """The event with every identity and challenge field set by the server."""
-    canonical = dict(event)
+    canonical = {field: event.get(field, "") for field in (
+        "timestamp", "session_id", "event_type", "submit_status", *BEHAVIOR_TEXT_FIELDS
+    )}
+    for field in BEHAVIOR_TEXT_FIELDS:
+        canonical[field.replace("_text", "_length")] = len(canonical[field])
     challenge_id = int(event["challenge_id"])
     canonical["user_id"] = user.id
     canonical["user_name"] = user.name
@@ -1474,10 +1479,19 @@ class BehaviorLog(Resource):
             and request.content_length > BEHAVIOR_MAX_BODY_BYTES
         ):
             return {"success": False, "errors": ["Request body too large"]}, 413
-        data = request.get_json(silent=True)
+        raw = request.stream.read(BEHAVIOR_MAX_BODY_BYTES + 1)
+        if len(raw) > BEHAVIOR_MAX_BODY_BYTES:
+            return {"success": False, "errors": ["Request body too large"]}, 413
+        try:
+            data = json.loads(raw)
+        except (ValueError, UnicodeDecodeError):
+            data = None
         events = data.get("events") if isinstance(data, dict) else None
         if not isinstance(events, list) or not events:
             return {"success": False, "errors": ["No events provided"]}, 400
+
+        if len(events) > BEHAVIOR_MAX_EVENTS:
+            return {"success": False, "errors": ["Too many events"]}, 413
 
         user = get_current_user_attrs()
         challenge_names = {
@@ -1492,7 +1506,11 @@ class BehaviorLog(Resource):
             if problem:
                 dropped.append({"index": index, "reason": problem})
             else:
-                accepted.append(canonical_behavior_event(event, user, challenge_names))
+                canonical = canonical_behavior_event(event, user, challenge_names)
+                if len(json.dumps(canonical).encode("utf-8")) > 512 * 1024:
+                    dropped.append({"index": index, "reason": "event too large"})
+                else:
+                    accepted.append(canonical)
 
         try:
             write_behavior_events(accepted)

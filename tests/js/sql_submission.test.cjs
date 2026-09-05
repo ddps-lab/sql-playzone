@@ -59,3 +59,13 @@ test('SQL error text is rendered as text, not markup',()=>{
     assert.equal(status.textContent,'Unknown column <b>marker</b>');
     assert.equal(status.innerHTML,undefined);
 });
+
+test('result table distinguishes SQL NULL from text and preserves numeric digits',()=>{
+    const render=src.slice(src.indexOf('function renderTable('),src.indexOf('// Escape HTML'));
+    const html=vm.runInNewContext(render+'\nrenderTable({columns:["a","b","c"],rows:[[null,"NULL","9007199254740993"]],row_count:1})',{
+        escapeHtml(value){return String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')},
+    });
+    assert.ok(html.includes('title="SQL NULL">NULL</em>'));
+    assert.ok(html.includes('<td>NULL</td>'));
+    assert.ok(html.includes('<td>9007199254740993</td>'));
+});

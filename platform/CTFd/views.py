@@ -566,6 +566,7 @@ def sql_challenge_page(challenge_id):
     require_sql_access(challenge)
 
     from CTFd.plugins.sql_challenges import SQLChallenge
+    from CTFd.plugins.sql_challenges.policy import policy_notice
     from CTFd.utils.config.pages import build_markdown
     from CTFd.utils.challenges import get_solve_ids_for_user_id
     import pytz
@@ -598,6 +599,7 @@ def sql_challenge_page(challenge_id):
             "id": challenge.id,
             "name": challenge.name,
             "description": description_html,
+            "grading_notice": policy_notice(sql_challenge.grading_policy),
             "value": challenge.value,
             "category": challenge.category,
             "init_query": sql_challenge.init_query,

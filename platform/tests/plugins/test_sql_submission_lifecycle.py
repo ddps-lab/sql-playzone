@@ -417,3 +417,85 @@ def test_sql_page_serves_the_manifest_bundle(environment):
     script = client.get("/themes/ddps/static/" + asset)
     assert script.status_code == 200
     assert b"The server could not confirm the result." in script.data
+
+
+def test_public_policy_is_the_only_policy_sent_to_judge(environment):
+    _, admin, client, _, make = environment
+    policy = dict(
+        version=1, order_by=[dict(column=1, direction="desc")], exact_format_columns=[2]
+    )
+    cid = make(grading_policy=policy)
+    detail = client.get(f"/api/v1/challenges/{cid}").get_json()["data"]
+    assert detail["grading_policy"] == policy
+    assert "1열 내림차순" in detail["grading_notice"]
+    page = client.get(f"/challenges/sql/{cid}").get_data(as_text=True)
+    assert "1열 내림차순" in page
+    with patch("requests.post", return_value=judged()) as judge:
+        assert (
+            submit(client, cid, grading_policy={}).get_json()["data"]["status"]
+            == "correct"
+        )
+    assert judge.call_args.kwargs["json"]["grading_policy"] == policy
+
+
+def test_existing_problem_requires_explicit_policy_without_penalty(environment):
+    _, admin, client, _, make = environment
+    from CTFd.plugins.sql_challenges import SQLChallenge
+
+    cid = make(max_attempts=1)
+    challenge = SQLChallenge.query.get(cid)
+    challenge.grading_policy = None
+    db.session.commit()
+    with patch("requests.post") as judge:
+        assert submit(client, cid).get_json()["data"]["status"] == "error"
+    judge.assert_not_called()
+    assert Fails.query.filter_by(challenge_id=cid).count() == 0
+    result = admin.patch(
+        f"/api/v1/challenges/{cid}", json={"grading_order": "", "grading_format": ""}
+    )
+    assert result.status_code == 200
+    assert SQLChallenge.query.get(cid).grading_policy["order_by"] == []
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        {},
+        {"version": True, "order_by": [], "exact_format_columns": []},
+        {
+            "version": 1,
+            "order_by": [{"column": 0, "direction": "asc"}],
+            "exact_format_columns": [],
+        },
+        {"version": 1, "order_by": [], "exact_format_columns": [1, 1]},
+    ],
+)
+def test_invalid_policy_update_is_atomic(environment, policy):
+    _, admin, _, _, make = environment
+    from CTFd.plugins.sql_challenges import SQLChallenge
+
+    cid = make()
+    result = admin.patch(
+        f"/api/v1/challenges/{cid}",
+        json={"grading_policy": policy, "name": "should not persist"},
+    )
+    assert result.status_code == 400
+    assert SQLChallenge.query.get(cid).name == "Synthetic SQL"
+
+
+def test_admin_test_uses_entered_comparison_policy(environment):
+    _, admin, _, _, _ = environment
+    with patch("requests.post", return_value=judged()) as judge:
+        result = admin.post(
+            "/api/v1/challenges/test-sql",
+            json={
+                "init_query": "",
+                "test_query": "SELECT 1",
+                "grading_order": "1 desc",
+                "grading_format": "1",
+            },
+        )
+    assert result.status_code == 200
+    assert judge.call_args.kwargs["json"]["grading_policy"] == dict(
+        version=1, order_by=[dict(column=1, direction="desc")], exact_format_columns=[1]
+    )
