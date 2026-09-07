@@ -152,11 +152,12 @@ def test_num_users_limit():
 
 
 def test_api_users_post_admin_duplicate_admin_name():
-    """Creating a user with a name matching the calling admin's returns 400, not 500"""
+    """A user may share the calling admin's name (nicknames repeat), but not its login ID"""
     app = create_ctfd()
     with app.app_context():
         admin = Users.query.filter_by(id=1).first()
         admin_name = admin.name
+        admin_login_id = admin.login_id
         with login_as_user(app, "admin") as client:
             r = client.post(
                 "/api/v1/users",
@@ -166,9 +167,21 @@ def test_api_users_post_admin_duplicate_admin_name():
                     "password": "password",
                 },
             )
+            assert r.status_code == 200
+            created = Users.query.filter_by(email="admin2@examplectf.com").first()
+            assert created.name == admin_name
+            # the admin's name is its login ID, so it is not reused as one
+            assert created.login_id is None
+
+            r = client.post(
+                "/api/v1/users",
+                json={
+                    "name": admin_name,
+                    "login_id": admin_login_id,
+                    "email": "admin3@examplectf.com",
+                    "password": "password",
+                },
+            )
             assert r.status_code == 400
-            resp = r.get_json()
-            assert resp["success"] is False
-            assert resp["errors"]
-            assert Users.query.count() == 1
+            assert r.get_json()["errors"]["login_id"]
     destroy_ctfd(app)

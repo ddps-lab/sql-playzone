@@ -377,6 +377,7 @@ def register():
             with app.app_context():
                 user = Users(
                     name=name,
+                    login_id=login_id_for_new_account(name),
                     email=email_address,
                     password=password,
                     bracket_id=bracket_id,
@@ -471,11 +472,12 @@ def login():
                     )
                     return render_template("login.html", errors=errors)
 
-        # Check if the user submitted an email address or a team name
+        # An account is identified by its email address or its login ID; the
+        # display name may repeat, so it never identifies an account.
         if validators.validate_email(name) is True:
             user = Users.query.filter_by(email=name).first()
         else:
-            user = Users.query.filter_by(name=name).first()
+            user = Users.query.filter_by(login_id=name).first()
 
         if user:
             if user.password is None:
@@ -734,6 +736,13 @@ def google_login_hint():
     return ANY_WORKSPACE_DOMAIN
 
 
+def login_id_for_new_account(name):
+    """The registration name doubles as the login ID when it is shaped like one and free."""
+    if validators.validate_login_id(name) and Users.query.filter_by(login_id=name).first() is None:
+        return name
+    return None
+
+
 @auth.route("/google/login")
 def google_login():
     google_client_id = get_app_config("GOOGLE_CLIENT_ID") or get_config("google_client_id")
@@ -864,17 +873,11 @@ def google_callback():
                     
                     # Check if registration is allowed
                     if registration_visible() or google_oauth_only_registration():
-                        # Generate unique username if needed
-                        user_base_name = user_name
-                        unique_name = user_name.split("|")[0].strip()
-                        counter = 1
-                        
-                        while Users.query.filter_by(name=unique_name).first():
-                            unique_name = f"{user_base_name}_{counter}"
-                            counter += 1
-                        
+                        # The profile name is only the display name; it may
+                        # repeat, so no suffix is added. The login ID is chosen
+                        # during onboarding.
                         user = Users(
-                            name=unique_name,
+                            name=user_name.split("|")[0].strip() or user_email.split("@")[0],
                             email=user_email,
                             oauth_id=f"google_{google_id}",
                             verified=True,

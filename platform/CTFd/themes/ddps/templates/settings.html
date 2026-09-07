@@ -45,8 +45,19 @@
               >
 
                 <div class="mb-3">
-                  <b>{{ form.name.label(class="form-label") }}</b>
+                  <b><label class="form-label">{% trans %}ID{% endtrans %}</label></b>
+                  <input class="form-control" type="text" value="{{ login_id or '' }}" disabled>
+                  <small class="form-text text-muted">
+                    {% trans %}Your login ID. Your email address also works for logging in. Ask the instructor to change it.{% endtrans %}
+                  </small>
+                </div>
+
+                <div class="mb-3">
+                  <b><label class="form-label" for="name">{% trans %}Nickname{% endtrans %}</label></b>
                   {{ form.name(class="form-control", value=name) }}
+                  <small class="form-text text-muted">
+                    {% trans %}Your real name, shown on the site and in the instructor's lists.{% endtrans %}
+                  </small>
                 </div>
 
                 <div class="mb-3">

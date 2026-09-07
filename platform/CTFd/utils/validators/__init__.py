@@ -92,3 +92,11 @@ def validate_language(language):
         return
     if LANGUAGE_NAMES.get(language) is None:
         raise ValidationError("Invalid Language")
+
+
+LOGIN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,31}$")
+
+
+def validate_login_id(value):
+    """A login ID: 3 to 32 ASCII letters, digits, dots, underscores or hyphens."""
+    return bool(LOGIN_ID_PATTERN.fullmatch(str(value or "")))

@@ -397,7 +397,10 @@ class Users(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     oauth_id = db.Column(db.String(128), unique=True)
     # User names are not constrained to be unique to allow for official/unofficial teams.
+    # Here the name is the display name (a student's real name, which may
+    # repeat); the login ID below identifies the account at login.
     name = db.Column(db.String(128))
+    login_id = db.Column(db.String(128), unique=True)
     password = db.Column(db.String(128))
     email = db.Column(db.String(128), unique=True)
     type = db.Column(db.String(80))

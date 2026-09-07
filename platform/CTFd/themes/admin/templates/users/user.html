@@ -87,6 +87,7 @@
 <div class="jumbotron">
 	<div class="container">
 		<h1 id="team-id" class="text-center p-0 m-0">{{ user.name }}</h1>
+		<h5 class="text-center text-muted">ID: {{ user.login_id or "—" }}</h5>
 		<div class="mb-2">
 			{% if user.type == 'admin' %}
 				<span class="badge badge-primary">admin</span>

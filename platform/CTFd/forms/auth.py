@@ -62,7 +62,7 @@ def RegistrationForm(*args, **kwargs):
 
 class LoginForm(BaseForm):
     name = StringField(
-        _l("User Name or Email"),
+        _l("ID or Email"),
         validators=[InputRequired()],
         render_kw={"autofocus": True},
     )
