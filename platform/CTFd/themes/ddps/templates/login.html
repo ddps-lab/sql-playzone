@@ -64,7 +64,7 @@
               {% trans %}First time here, or forgot your password? Use your university Google account (Google Workspace); personal Gmail accounts are not accepted. If your university does not use Google, ask the instructor for an account. A new account picks a user name and password right after; an existing account sets a new password.{% endtrans %}
             </p>
             <a class="btn btn-outline-secondary btn-lg btn-block w-100" href="{{ url_for('auth.google_login') }}">
-              <i class="fab fa-google"></i> Sign up or reset password with a university Google account
+              <i class="fab fa-google"></i> Sign up or reset password <span class="d-block">with a university Google account</span>
             </a>
           {% endif %}
         </div>
