@@ -10,6 +10,14 @@ from CTFd.utils import set_config, get_config, get_app_config, validators
 from CTFd.utils.user import is_admin, get_ip, get_current_user
 from CTFd.cache import cache
 
+
+def exam_roster_text():
+    # Student numbers are identifiers. get_config() coerces digit-only text to
+    # int, which loses leading zeros and breaks a roster containing one ID.
+    row = db.session.query(Configs.value).filter_by(key="exam_mode_allowed_ids").first()
+    return row[0] if row and row[0] else ""
+
+
 # Exam browser restriction. When enabled, everyone except admins must use a
 # browser whose User-Agent contains the marker (Trustlock's UA looks like
 # "... Trustlockbrowser/2.1.1 Chrome/124.0.6367.207 Safari/537.36 CMAC 1.0001;").
@@ -157,7 +165,7 @@ def load(app):
     @admins_only
     def index():
         enabled = get_config('exam_mode_enabled', False)
-        allowed_ids = get_config('exam_mode_allowed_ids', '')
+        allowed_ids = exam_roster_text()
         return render_template(
             'exam_mode_config.html',
             exam_mode_enabled=enabled,
@@ -204,7 +212,7 @@ def load(app):
         if get_config('exam_mode_enabled') is not True or exam_browser_exempt() or is_admin():
             return
         user = get_current_user()
-        allowed = set((get_config('exam_mode_allowed_ids') or '').splitlines())
+        allowed = set(exam_roster_text().splitlines())
         entry = None
         if user:
             entry = UserFieldEntries.query.join(UserFields, UserFieldEntries.field_id == UserFields.id).filter(

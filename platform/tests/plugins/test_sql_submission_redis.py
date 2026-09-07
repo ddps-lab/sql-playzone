@@ -84,3 +84,38 @@ def test_execution_budget_uses_prefixed_expiring_redis_key(redis_app):
     assert cache.inc("budget") == 2
     cache.expire("budget", 120)
     assert 0 < redis_app.ttl("sql-test:budget") <= 120
+
+
+def test_memoization_works_without_cross_slot_mget(redis_app, monkeypatch):
+    from CTFd.cache import cache
+    from CTFd.cache.redis import ClusterCompatibleRedisCache
+    from redis.exceptions import ResponseError
+
+    from flask import current_app
+
+    app = current_app._get_current_object()
+    with app.app_context():
+        assert isinstance(cache.cache, ClusterCompatibleRedisCache)
+
+        def cross_slot(*args, **kwargs):
+            raise ResponseError("CROSSSLOT Keys in request don't hash to the same slot")
+
+        monkeypatch.setattr(cache.cache._read_client, "mget", cross_slot)
+        cache.set_many({"first": {"v": 1}, "second": 0})
+        assert cache.get_many("second", "absent", "first", "first") == [
+            0,
+            None,
+            {"v": 1},
+            {"v": 1},
+        ]
+        calls = []
+
+        @cache.memoize()
+        def value(key):
+            calls.append(key)
+            return len(calls)
+
+        assert value("student") == 1
+        assert value("student") == 1
+        cache.delete_memoized(value, "student")
+        assert value("student") == 2
