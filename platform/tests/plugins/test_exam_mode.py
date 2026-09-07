@@ -98,7 +98,7 @@ def test_the_google_button_is_hidden_while_the_exam_browser_rule_is_on():
     app = create_ctfd(enable_plugins=True)
     with app.app_context():
         app.config["GOOGLE_CLIENT_ID"] = "client"
-        button = b"Sign up or reset password with HYU Google"
+        button = b"Sign up or reset password with a university Google account"
         assert button in app.test_client().get("/login").data
         set_config("exam_browser_required", "true")
         assert button not in app.test_client().get("/login").data

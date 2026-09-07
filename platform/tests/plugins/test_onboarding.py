@@ -428,7 +428,7 @@ def test_terms_are_seeded_and_linked_from_the_footer():
         assert b"<span data-copyright-year>2026</span>" in html
         # no email reset: Google is the sign-up and the reset path
         assert b"/reset_password" not in html
-        assert b"Sign up or reset password with HYU Google" in html
+        assert b"Sign up or reset password with a university Google account" in html
     destroy_ctfd(app)
 
 

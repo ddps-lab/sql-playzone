@@ -680,28 +680,58 @@ def oauth_redirect():
         return redirect(url_for("auth.login"))
 
 
-# Google accounts must belong to this Google Workspace domain. The hd
-# parameter sent to Google only pre-selects accounts; the callback enforces it.
-def google_hosted_domain():
-    """The Google Workspace domain that may sign in: GOOGLE_HOSTED_DOMAIN in
-    config.ini or the environment, hanyang.ac.kr by default."""
-    return str(get_app_config("GOOGLE_HOSTED_DOMAIN") or "").strip().lower()
+# Google sign-in is for university accounts. Members of a Google Workspace
+# (a university's Google domain) carry the hd claim; consumer accounts, whether
+# Gmail or a Google account registered with any other address, never do.
+# GOOGLE_HOSTED_DOMAIN lists the Workspace domains that may sign in, or "*"
+# for any Workspace domain (the default, so exchange students can use their
+# own university's account). The hd parameter sent to Google only pre-selects
+# accounts; the callback enforces the rule.
+ANY_WORKSPACE_DOMAIN = "*"
+
+
+def google_hosted_domains():
+    """Workspace domains that may sign in, lower-cased; {"*"} means any."""
+    raw = str(get_app_config("GOOGLE_HOSTED_DOMAIN") or "")
+    domains = {part.strip().lower() for part in raw.split(",") if part.strip()}
+    return domains or {ANY_WORKSPACE_DOMAIN}
 
 
 def google_account_allowed(user_data):
-    """Only verified Workspace members of the course domain.
+    """Only verified Google Workspace members of an allowed domain.
 
     A consumer Google account can carry a verified university email address,
     so the email suffix alone is not proof of membership; the hd claim is.
+    The address must belong to the claimed domain.
     """
-    domain = google_hosted_domain()
+    domains = google_hosted_domains()
+    hosted = str(user_data.get("hd") or "").strip().lower()
     email = str(user_data.get("email") or "").strip().lower()
     return (
-        bool(domain)
-        and user_data.get("verified_email") is True
-        and str(user_data.get("hd") or "").lower() == domain
-        and email.endswith("@" + domain)
+        user_data.get("verified_email") is True
+        and bool(hosted)
+        and email.endswith("@" + hosted)
+        and (ANY_WORKSPACE_DOMAIN in domains or hosted in domains)
     )
+
+
+def google_account_requirement():
+    """The login page's explanation when an account is rejected."""
+    domains = google_hosted_domains()
+    if ANY_WORKSPACE_DOMAIN in domains:
+        return (
+            "Only verified university Google accounts (Google Workspace) can sign in. "
+            "Personal Google accounts such as Gmail are not accepted."
+        )
+    return f"Only verified {', '.join(sorted(domains))} Google accounts can sign in."
+
+
+def google_login_hint():
+    """Google's account picker hint: the one allowed domain, or * for any Workspace."""
+    domains = google_hosted_domains()
+    if len(domains) == 1 and ANY_WORKSPACE_DOMAIN not in domains:
+        return next(iter(domains))
+    return ANY_WORKSPACE_DOMAIN
 
 
 @auth.route("/google/login")
@@ -737,7 +767,7 @@ def google_login():
         f"state={state}&"
         f"access_type=offline&"
         f"prompt=consent&"
-        f"hd={google_hosted_domain()}"
+        f"hd={google_login_hint()}"
     )
     
     return redirect(redirect_url)
@@ -793,14 +823,12 @@ def google_callback():
                 if not google_account_allowed(user_data):
                     log(
                         "logins",
-                        "[{date}] {ip} - Google account {email} rejected: not a verified {domain} account",
+                        "[{date}] {ip} - Google account {email} (hd={hd}) rejected: not a verified Workspace account in {domains}",
                         email=user_data.get("email"),
-                        domain=google_hosted_domain(),
+                        hd=user_data.get("hd"),
+                        domains=",".join(sorted(google_hosted_domains())),
                     )
-                    error_for(
-                        endpoint="auth.login",
-                        message=f"Only verified {google_hosted_domain()} Google accounts can sign in.",
-                    )
+                    error_for(endpoint="auth.login", message=google_account_requirement())
                     return redirect(url_for("auth.login"))
 
                 user_email = user_data.get("email")
