@@ -499,3 +499,21 @@ def test_admin_test_uses_entered_comparison_policy(environment):
     assert judge.call_args.kwargs["json"]["grading_policy"] == dict(
         version=1, order_by=[dict(column=1, direction="desc")], exact_format_columns=[1]
     )
+
+
+@pytest.mark.parametrize("student_number", ["2026730001", "0012345678"])
+def test_single_numeric_roster_preserves_identifier_and_enforces_edits(
+    environment, student_number
+):
+    app, admin, client, uid, _ = environment
+    field = UserFields.query.filter_by(name="Student ID Number").first()
+    entry = UserFieldEntries.query.filter_by(user_id=uid, field_id=field.id).first()
+    entry.value = student_number
+    db.session.commit()
+    set_config("exam_mode_allowed_ids", student_number)
+    set_config("exam_mode_enabled", "true")
+    assert client.get("/challenges").status_code == 200
+    assert student_number in admin.get("/admin/exam_mode/").get_data(as_text=True)
+    set_config("exam_mode_allowed_ids", "9999999999")
+    assert client.get("/challenges").status_code == 403
+    assert client.get("/healthcheck").status_code == 200
