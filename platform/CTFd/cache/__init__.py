@@ -26,6 +26,15 @@ class CTFdCache(Cache):
     Ideally likely we should have our own isolated redis connection but that might introduce more issues
     """
 
+    def _set_cache(self, app, config):
+        # Keep the public transport setting (used by locks and events) and the
+        # existing key namespace while selecting the compatible Redis backend.
+        if config["CACHE_TYPE"].lower() in ("redis", "rediscache"):
+            config = dict(
+                config, CACHE_TYPE="CTFd.cache.redis.ClusterCompatibleRedisCache"
+            )
+        return super()._set_cache(app, config)
+
     def inc(self, *args, **kwargs):
         """
         Support redis INCR in flask-caching

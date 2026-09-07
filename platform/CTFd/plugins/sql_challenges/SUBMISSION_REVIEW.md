@@ -53,3 +53,11 @@ EC2 컨테이너가 기존 instance role로 Secret을 읽을 수 있도록 IMDSv
 11. 구버전 Exam Mode가 이미 변경한 ban의 원래 상태는 DB만으로 복원할 수 없습니다. 자동 일괄 해제하지 않고 관리자 기록과 대조합니다.
 
 원본·지난 학기 데이터로 쓰기 테스트하지 않습니다. 로컬 검증과 PR 작성은 dev 병합·apply·main 병합 승인을 대신하지 않습니다.
+
+## 2026-09-07 dev에서 확인한 배포 경로
+
+새 MySQL 설치에서는 공통 Alembic migration 후 SQL 플러그인의 자체 migration이 테이블을 생성합니다. SQLite 하네스는 플러그인 migration 대신 `create_all()`을 사용하므로 이 순서 차이를 검증하지 못합니다. `add_grading_policy` 플러그인 revision이 마지막에 누락된 열을 추가하고, 공통 migration이 이미 만든 열은 보존합니다. `tests/test_sql_plugin_bootstrap.py`는 `SQL_MIGRATION_TEST_URL`로 지정한 **일회용 MySQL**에 별도 합성 DB를 만들어 실제 migration 순서를 검사하고 제거합니다. 운영 DB 주소를 넣지 않습니다.
+
+Valkey Serverless는 서로 다른 hash slot의 키를 MGET으로 읽을 수 없습니다. 호환 backend는 기존 키·prefix·만료·직렬화·Redis 잠금을 유지하면서 `get_many`를 transaction 없는 GET pipeline으로 수행합니다. 기존 캐시나 로그인 세션을 일괄 삭제하거나 다른 namespace로 옮기지 않습니다.
+
+시험 명단은 일반 설정의 자동 숫자 변환을 거치지 않고 저장된 문자열을 읽습니다. 학번 한 개만 등록하거나 앞자리에 0이 있어도 동일하게 접근을 검사해야 합니다. 새 dev release를 적용한 뒤 단일 학번의 허용·제외를 실제 학생 세션에서 재검증합니다.
