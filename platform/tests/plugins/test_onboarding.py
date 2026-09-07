@@ -193,9 +193,18 @@ def test_onboarding_rejects_bad_names_passwords_and_missing_student_id():
         cases = [
             ({"login_id": "taken"}, b"That ID is already taken"),
             ({"login_id": "TAKEN"}, b"That ID is already taken"),
-            ({"login_id": "ab"}, b"3 to 32 letters, digits, dots, underscores or hyphens"),
-            ({"login_id": "min su"}, b"3 to 32 letters, digits, dots, underscores or hyphens"),
-            ({"login_id": "minsu@hanyang.ac.kr"}, b"3 to 32 letters, digits, dots, underscores or hyphens"),
+            (
+                {"login_id": "ab"},
+                b"3 to 32 letters, digits, dots, underscores or hyphens",
+            ),
+            (
+                {"login_id": "min su"},
+                b"3 to 32 letters, digits, dots, underscores or hyphens",
+            ),
+            (
+                {"login_id": "minsu@hanyang.ac.kr"},
+                b"3 to 32 letters, digits, dots, underscores or hyphens",
+            ),
             (
                 {"name": "someone@hanyang.ac.kr"},
                 b"Your nickname cannot be an email address",
@@ -440,7 +449,7 @@ def test_terms_are_seeded_and_linked_from_the_footer():
         assert b"/reset_password" not in html
         # the button label breaks deliberately before its second line
         assert (
-            b"Sign up or reset password <span class=\"d-block\">with a university Google account</span>"
+            b'Sign up or reset password <span class="d-block">with a university Google account</span>'
             in html
         )
     destroy_ctfd(app)
@@ -728,4 +737,19 @@ def test_students_cannot_change_their_email_but_admins_can():
         admin = login_as_user(app, name="admin", password="password")
         r = admin.patch("/api/v1/users/me", json={"email": "admin2@examplectf.com"})
         assert r.status_code == 200
+    destroy_ctfd(app)
+
+
+def test_onboarding_suggests_the_email_local_part_as_the_id():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        user_id = create_google_user(
+            app, name="김민수", email="minsu.kim@hanyang.ac.kr"
+        )
+        client = start_session(app, user_id)
+        html = client.get("/onboarding/").data.decode()
+        assert 'name="login_id"' in html
+        assert 'value="minsu.kim"' in html
+        # the nickname starts from the Google profile name, not the other way round
+        assert 'value="김민수"' in html
     destroy_ctfd(app)
