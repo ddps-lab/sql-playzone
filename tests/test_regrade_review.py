@@ -1,51 +1,31 @@
 import importlib.machinery
 import importlib.util
-import unittest
 from pathlib import Path
+import unittest
+from unittest.mock import patch
 
-
-ROOT = Path(__file__).resolve().parent.parent
-loader = importlib.machinery.SourceFileLoader("regrade", str(ROOT / "scripts" / "regrade-challenges"))
-spec = importlib.util.spec_from_loader("regrade", loader)
+loader = importlib.machinery.SourceFileLoader('regrade', str(Path(__file__).resolve().parents[1] / 'scripts/regrade-challenges'))
+spec = importlib.util.spec_from_loader(loader.name, loader)
 regrade = importlib.util.module_from_spec(spec)
 loader.exec_module(regrade)
 
+class ReviewTests(unittest.TestCase):
+    def test_missing_policy_cannot_pass_deployment_review(self):
+        with patch.object(regrade.urllib.request, 'urlopen') as network:
+            result = regrade.call_judge('http://unused', {'id':1}, 1)
+        network.assert_not_called()
+        self.assertEqual(result['status'], 'policy_required')
 
-class ReviewHeuristicsTests(unittest.TestCase):
-    def test_order_by_columns(self):
-        self.assertIsNone(regrade.order_by_columns("SELECT a FROM t"))
-        self.assertEqual(regrade.order_by_columns("SELECT a, b FROM t ORDER BY b DESC, t.a LIMIT 10"), ["b", "a"])
-        self.assertEqual(regrade.order_by_columns("SELECT a FROM t ORDER BY ABS(a - 1) DESC, a;"), ["a"])
-        self.assertEqual(regrade.order_by_columns("SELECT a FROM t ORDER BY 1"), ["1"])
+    def test_declared_bag_and_ties_do_not_require_invented_tiebreakers(self):
+        challenge={'solution_query':'SELECT AVG(h) FROM t', 'grading_policy':{'version':1,'order_by':[],'exact_format_columns':[]}}
+        result={'status':'ok','rows':[['1.00'],['1.00']],'columns':['avg'],'row_count':2,'elapsed_ms':100}
+        self.assertEqual(regrade.review_findings(challenge,result,1500),[])
+        result['elapsed_ms']=2000
+        self.assertEqual(len(regrade.review_findings(challenge,result,1500)),1)
 
-    def test_tie_rows(self):
-        rows = [["190", "Kim"], ["190", "Lee"], ["180", "Park"]]
-        self.assertEqual(regrade.tie_rows(["HEIGHT"], ["HEIGHT", "NAME"], rows), 2)
-        self.assertEqual(regrade.tie_rows(["height", "name"], ["HEIGHT", "NAME"], rows), 0)
-        self.assertIsNone(regrade.tie_rows(["missing"], ["HEIGHT", "NAME"], rows))
-        self.assertEqual(regrade.tie_rows(["1"], ["HEIGHT", "NAME"], rows), 2)
-
-    def test_review_findings(self):
-        ok = {"status": "ok", "rows": [["190", "Kim"], ["190", "Lee"]], "columns": ["HEIGHT", "NAME"], "row_count": 2, "elapsed_ms": 100}
-        findings = regrade.review_findings({"solution_query": "SELECT HEIGHT, NAME FROM P ORDER BY HEIGHT DESC"}, ok, 1500)
-        self.assertTrue(any("정렬 키 값이 같은 행 2개" in f for f in findings))
-        findings = regrade.review_findings({"solution_query": "SELECT HEIGHT, NAME FROM P ORDER BY HEIGHT DESC, NAME"}, ok, 1500)
-        self.assertEqual(findings, [])
-        findings = regrade.review_findings({"solution_query": "SELECT AVG(H) FROM P"}, {"status": "ok", "rows": [["183.0901"]], "columns": ["AVG(H)"], "row_count": 1, "elapsed_ms": 2000}, 1500)
-        self.assertTrue(any("ROUND" in f for f in findings) and any("2000ms" in f for f in findings))
-        self.assertTrue(regrade.review_findings({"solution_query": "SELECT 1"}, {"status": "query_error", "error": "boom"}, 1500)[0].startswith("실행 실패"))
-
-    def test_numeric_equal_tolerates_precision_but_not_value_changes(self):
-        self.assertTrue(regrade.numeric_equal("72220.1111", "72220.11111111111"))
-        self.assertTrue(regrade.numeric_equal("183.0901", "183.0900900900901"))
-        self.assertTrue(regrade.numeric_equal("8510700.00", "8510700"))
-        self.assertTrue(regrade.numeric_equal("4017733", "4.017733e+06"))
-        self.assertFalse(regrade.numeric_equal("1000000", "1000001"))
-        self.assertFalse(regrade.numeric_equal("1.5", "1.4"))
-        self.assertFalse(regrade.numeric_equal("1", "2"))
-        self.assertFalse(regrade.numeric_equal("abc", "1"))
-        self.assertFalse(regrade.numeric_equal("NaN", "NaN"))
-
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_numeric_reporting_cannot_hide_rounding_differences_or_null(self):
+        for left,right in [('72220.1111','72220.11111111111'),('183.0901','183.0900900900901'),('1000000','1000001'),('NaN','NaN'),(None,'NULL')]:
+            self.assertFalse(regrade.numeric_equal(left,right))
+        self.assertTrue(regrade.numeric_equal('8510700.00','8510700'))
+        self.assertTrue(regrade.numeric_equal('4017733','4.017733e+06'))
+        self.assertEqual(regrade.compare({'status':'ok','rows':[[None]]},{'status':'ok','rows':[['NULL']]} )['diff'],'value')

@@ -104,6 +104,8 @@ env_values = {
         f"{quote_plus(rds_secret['password'])}"
         "@${RDS_ENDPOINT}/ctfd"
     ),
+    "RDS_MASTER_SECRET_ARN": "${RDS_MASTER_SECRET_ARN}",
+    "AWS_DEFAULT_REGION": "${REGION}",
     "SECRET_KEY": application_secret["CTFD_SECRET_KEY"],
     # Uploads go to S3 through the instance role so they survive instance
     # replacement and are shared by every instance in the ASG.

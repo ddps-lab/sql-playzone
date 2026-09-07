@@ -10,7 +10,7 @@ Usage:
 
 The output is the JSON array that scripts/regrade-challenges and
 scripts/review-challenges read: id, name, category, description, value, state,
-init_query, solution_query. Solutions are included, so keep the file outside Git.
+init_query, solution_query, grading_policy. Solutions are included, so keep the file outside Git.
 """
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def main() -> None:
         detail = api(base, token, f"/api/v1/challenges/{item['id']}")
         if "solution_query" not in detail:
             raise SystemExit("The token is not an admin token; solution_query is missing from the response")
-        challenges.append({key: detail.get(key) for key in ("id", "name", "category", "description", "value", "state", "init_query", "solution_query")})
+        challenges.append({key: detail.get(key) for key in ("id", "name", "category", "description", "value", "state", "init_query", "solution_query", "grading_policy")})
     arguments.out.parent.mkdir(parents=True, exist_ok=True)
     arguments.out.write_text(json.dumps(challenges, ensure_ascii=False, indent=1))
     os.chmod(arguments.out, 0o600)

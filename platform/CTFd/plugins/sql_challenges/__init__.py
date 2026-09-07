@@ -7,12 +7,14 @@ import atexit
 import socket
 from datetime import datetime, timezone
 import pytz
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, abort
 from CTFd.models import Challenges, db
 from CTFd.plugins import register_plugin_assets_directory
 from CTFd.plugins.challenges import CHALLENGE_CLASSES, BaseChallenge, ChallengeResponse
 from CTFd.utils.decorators import admins_only, authed_only
 from CTFd.utils.user import get_ip, is_admin
+
+from .policy import parse_policy, policy_notice
 
 # Set KST timezone
 KST = pytz.timezone('Asia/Seoul')
@@ -25,6 +27,7 @@ class SQLChallenge(Challenges):
     )
     init_query = db.Column(db.Text, default="")
     solution_query = db.Column(db.Text, default="")
+    grading_policy = db.Column(db.JSON, nullable=True)
     deadline_utc = db.Column("deadline", db.DateTime, nullable=True)
 
     def __init__(self, *args, **kwargs):
@@ -83,18 +86,18 @@ class SQLChallenge(Challenges):
                 else:
                     naive_dt = datetime.fromisoformat(value.replace(' ', 'T'))
                 # Localize to KST
-                kst_dt = KST.localize(naive_dt)
+                kst_dt = KST.localize(naive_dt) if naive_dt.tzinfo is None else naive_dt
                 # Convert to UTC for storage
                 utc_dt = kst_dt.astimezone(pytz.UTC)
                 # Store as naive UTC
                 self.deadline_utc = utc_dt.replace(tzinfo=None)
             except Exception as e:
-                import logging
-                logging.error(f"Failed to parse deadline string '{value}': {e}")
-                self.deadline_utc = None
+                raise ValueError("Invalid deadline; use an ISO date and time") from e
         elif isinstance(value, datetime):
             # Coming from code as datetime object (assume naive UTC)
-            self.deadline_utc = value
+            self.deadline_utc = value.astimezone(pytz.UTC).replace(tzinfo=None) if value.tzinfo else value
+        else:
+            raise ValueError("Invalid deadline; use an ISO date and time")
 
 
 class SQLChallengeType(BaseChallenge):
@@ -127,6 +130,11 @@ class SQLChallengeType(BaseChallenge):
         from CTFd.models import Flags
         data = request.form or request.get_json()
         
+        data = dict(data)
+        grading_policy = parse_policy(data, creating=True)
+        for key in ("grading_policy", "grading_order", "grading_format"):
+            data.pop(key, None)
+
         # Extract SQL-specific fields
         init_query = data.get("init_query", "")
         solution_query = data.get("solution_query", "")
@@ -141,10 +149,14 @@ class SQLChallengeType(BaseChallenge):
 
         # Create challenge with base fields
         challenge = cls.challenge_model(**data)
+        challenge.grading_policy = grading_policy
         challenge.init_query = init_query
         challenge.solution_query = solution_query
         # deadline setter property will handle the KST->UTC conversion automatically
-        challenge.deadline = deadline_str if deadline_str else None
+        try:
+            challenge.deadline = deadline_str if deadline_str else None
+        except ValueError as error:
+            abort(400, description=str(error))
         
         db.session.add(challenge)
         db.session.commit()
@@ -172,6 +184,8 @@ class SQLChallengeType(BaseChallenge):
 
         # The deadline property automatically converts UTC to KST format
         data["deadline"] = challenge.deadline
+        data["grading_policy"] = challenge.grading_policy
+        data["grading_notice"] = policy_notice(challenge.grading_policy)
         # The init and solution SQL are the answer key. CTFd returns this dict
         # from the challenge detail API to every logged-in user, so only admins
         # may receive them.
@@ -190,18 +204,21 @@ class SQLChallengeType(BaseChallenge):
         """
         data = request.form or request.get_json()
         
-        # Update SQL-specific fields
+        policy = parse_policy(data, current=challenge.grading_policy)
+        if "deadline" in data:
+            try:
+                challenge.deadline = data["deadline"]
+            except ValueError as error:
+                abort(400, description=str(error))
         if "init_query" in data:
             challenge.init_query = data["init_query"]
         if "solution_query" in data:
             challenge.solution_query = data["solution_query"]
-        if "deadline" in data:
-            # deadline setter property will handle the KST->UTC conversion automatically
-            challenge.deadline = data["deadline"]
-        
+
+        challenge.grading_policy = policy
         # Update base fields
         for attr, value in data.items():
-            if attr not in ["init_query", "solution_query", "deadline"]:
+            if attr not in ["init_query", "solution_query", "deadline", "grading_policy", "grading_order", "grading_format"]:
                 setattr(challenge, attr, value)
         
         db.session.commit()
@@ -209,143 +226,67 @@ class SQLChallengeType(BaseChallenge):
 
     @classmethod
     def attempt(cls, challenge, request):
-        """
-        Check whether a given SQL query produces the correct result.
-        """
+        """Only a completed comparison or explicit student SQL error is graded."""
+        import json
+        import requests
+        from CTFd.utils.user import get_current_user
+
         data = request.form or request.get_json()
         submission = data.get("submission", "").strip()
-        is_test = data.get("test", False)  # Check if this is test mode (checks correctness but doesn't record)
-
-        # Get user information from request
-        user_id = str(data.get("user_id", ""))
-        user_name = data.get("user_name", "")
-        client_ip = get_ip()
-
-        # Debug logging
-        import logging
-        logging.info(f"SQL Challenge attempt - Test mode: {is_test}, User ID: {user_id}, User Name: {user_name}, IP: {client_ip}")
-
-        # Enforce duplicate login check (session validation)
-        # This will abort if the session is invalid (e.g. duplicate login)
-        from CTFd.utils.user import get_current_user
-        get_current_user()
-
-        if not submission:
-            return ChallengeResponse(
-                status="incorrect",
-                message="Please provide a SQL query"
-            )
-
-        # Check deadline only for actual submissions, not test mode
-        # Use deadline_utc (raw datetime) for comparison, not the property (which returns a string)
-        if not is_test and challenge.deadline_utc and datetime.utcnow() > challenge.deadline_utc:
-            return ChallengeResponse(
-                status="incorrect",
-                message="Submission deadline has passed"
-            )
-        
-        # Execute SQL queries using Go MySQL server
+        is_test = data.get("test", False)
+        user = get_current_user()
+        prefix = "[TEST]\n" if is_test else ""
+        unavailable = ChallengeResponse(
+            status="error",
+            message=prefix + "Grading is temporarily unavailable. No attempt was deducted. Please retry.",
+        )
+        if challenge.grading_policy is None:
+            return ChallengeResponse(status="error", message=policy_notice(None))
         try:
-            import requests
-            import json
-
-            # Use Go MySQL server
-            go_server_url = os.environ.get('SQL_JUDGE_SERVER_URL', 'http://localhost:8080')
-
-            if is_test:
-                # For test mode, check correctness but format message differently
-                response = requests.post(
-                    f"{go_server_url}/judge",
-                    json={
-                        'init_query': challenge.init_query,
-                        'solution_query': challenge.solution_query,
-                        'user_query': submission,
-                        'user_id': user_id,
-                        'user_name': user_name,
-                        'client_ip': client_ip,
-                        'challenge_id': str(challenge.id)
-                    },
-                    timeout=10
+            response = requests.post(
+                os.environ.get('SQL_JUDGE_SERVER_URL', 'http://localhost:8080') + '/judge',
+                json={
+                    'grading_policy': challenge.grading_policy,
+                    'init_query': challenge.init_query,
+                    'solution_query': challenge.solution_query,
+                    'user_query': submission,
+                    'user_id': str(user.id),
+                    'user_name': user.name,
+                    'client_ip': get_ip(),
+                    'challenge_id': str(challenge.id),
+                },
+                timeout=10,
+            )
+            if response.status_code != 200:
+                return unavailable
+            result = response.json()
+            if not isinstance(result, dict):
+                return unavailable
+            if result.get('success') is False:
+                if result.get('error_kind') == 'student_query':
+                    return ChallengeResponse(status="incorrect", message=prefix + str(result.get('error', 'SQL query failed')))
+                # Older judges and unknown error kinds fail without a penalty.
+                # Never expose reference-query or infrastructure errors to students.
+                return unavailable
+            if result.get('success') is not True or not isinstance(result.get('match'), bool):
+                return unavailable
+            for key in ('user_result', 'expected_result'):
+                rows = result.get(key)
+                if not isinstance(rows, dict) or not isinstance(rows.get('rows'), list) or not isinstance(rows.get('columns'), list):
+                    return unavailable
+            user_result = json.dumps(result['user_result'])
+            if result['match']:
+                return ChallengeResponse(
+                    status="correct",
+                    message=prefix + f"✅ Correct! Your query produced the expected result.\n\n[USER_RESULT]\n{user_result}\n[/USER_RESULT]",
                 )
-
-                if response.status_code == 200:
-                    result = response.json()
-
-                    if not result.get('success'):
-                        return ChallengeResponse(
-                            status="incorrect",
-                            message=f"[TEST]\nError: {result.get('error', 'Unknown error')}"
-                        )
-
-                    # Format results for display
-                    user_result_str = json.dumps(result['user_result'])
-
-                    if result['match']:
-                        return ChallengeResponse(
-                            status="correct",
-                            message=f"[TEST]\n✅ Correct! Your query produces the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]"
-                        )
-                    else:
-                        expected_result_str = json.dumps(result['expected_result'])
-                        return ChallengeResponse(
-                            status="incorrect",
-                            message=f"[TEST]\n❌ Incorrect. Your query does not produce the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]\n\n[EXPECTED_RESULT]\n{expected_result_str}\n[/EXPECTED_RESULT]"
-                        )
-                else:
-                    return ChallengeResponse(
-                        status="incorrect",
-                        message=f"[TEST]\nSQL judge server error: HTTP {response.status_code}"
-                    )
-            else:
-                # Normal submission - compare with solution
-                response = requests.post(
-                    f"{go_server_url}/judge",
-                    json={
-                        'init_query': challenge.init_query,
-                        'solution_query': challenge.solution_query,
-                        'user_query': submission,
-                        'user_id': user_id,
-                        'user_name': user_name,
-                        'client_ip': client_ip,
-                        'challenge_id': str(challenge.id)
-                    },
-                    timeout=10
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    
-                    if not result.get('success'):
-                        return ChallengeResponse(
-                            status="incorrect",
-                            message=f"Error: {result.get('error', 'Unknown error')}"
-                        )
-                    
-                    # Format results for display
-                    user_result_str = json.dumps(result['user_result'])
-                    expected_result_str = json.dumps(result['expected_result'])
-                    
-                    if result['match']:
-                        return ChallengeResponse(
-                            status="correct",
-                            message=f"✅ Correct! Your query produced the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]"
-                        )
-                    else:
-                        return ChallengeResponse(
-                            status="incorrect",
-                            message=f"❌ Incorrect. Your query did not produce the expected result.\n\n[USER_RESULT]\n{user_result_str}\n[/USER_RESULT]\n\n[EXPECTED_RESULT]\n{expected_result_str}\n[/EXPECTED_RESULT]"
-                        )
-                else:
-                    return ChallengeResponse(
-                        status="incorrect",
-                        message=f"SQL judge server error: HTTP {response.status_code}"
-                    )
-                    
-        except Exception as e:
+            expected = json.dumps(result['expected_result'])
             return ChallengeResponse(
                 status="incorrect",
-                message=f"Error executing query: {str(e)}"
+                message=prefix + f"❌ Incorrect. Your query did not produce the expected result.\n\n[USER_RESULT]\n{user_result}\n[/USER_RESULT]\n\n[EXPECTED_RESULT]\n{expected}\n[/EXPECTED_RESULT]",
             )
+        except (requests.RequestException, ValueError, TypeError, KeyError):
+            return unavailable
 
     @classmethod
     def execute_and_compare_with_details(cls, init_query, solution_query, user_query):
@@ -488,7 +429,7 @@ class SQLChallengeType(BaseChallenge):
         return expected_result == user_result
 
     @classmethod
-    def test_query(cls, init_query, test_query):
+    def test_query(cls, init_query, test_query, grading_policy=None):
         """
         Test a query and return its result.
         Used for testing in the admin interface.
@@ -504,6 +445,7 @@ class SQLChallengeType(BaseChallenge):
             response = requests.post(
                 f"{go_server_url}/judge",
                 json={
+                    'grading_policy': grading_policy or parse_policy({}, creating=True),
                     'init_query': init_query,
                     'solution_query': test_query,  # Use test query as solution
                     'user_query': test_query  # And as user query to get the result
@@ -588,7 +530,7 @@ def start_go_server():
             # Now build the server
             print("Building SQL Judge server...")
             build_result = subprocess.run(
-                ['go', 'build', '-o', 'sql-judge-server', 'sql_judge_server.go'],
+                ['go', 'build', '-o', 'sql-judge-server', '.'],
                 cwd=plugin_dir,
                 capture_output=True,
                 text=True
@@ -686,7 +628,7 @@ def load(app):
                 'error': 'No test query provided'
             }), 400
 
-        result = SQLChallengeType.test_query(init_query, test_query)
+        result = SQLChallengeType.test_query(init_query, test_query, parse_policy(data, creating=True))
         return jsonify(result)
 
     # Add API endpoint for getting SQL challenge submission history

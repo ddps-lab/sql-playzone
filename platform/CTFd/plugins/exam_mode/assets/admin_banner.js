@@ -2,6 +2,7 @@
 // nobody forgets to switch it off after the exam.
 (async function () {
   const rules = {
+    exam_mode_enabled: "allowed student list",
     exam_browser_required: "exam browser only",
     single_session_required: "one session per student",
   };

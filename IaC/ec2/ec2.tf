@@ -227,6 +227,13 @@ resource "aws_launch_template" "arm_launch_template" {
     name = aws_iam_instance_profile.ec2_profile.name
   }
 
+  # CTFd in Docker obtains the role credentials for S3 and RDS secret refresh.
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
+
   block_device_mappings {
     device_name = "/dev/sda1"
 

@@ -34,7 +34,7 @@
     
     <!-- SQL Challenge Specific Fields -->
         <div class="alert alert-info" role="alert">
-          문제를 만들기 전에 <a href="https://github.com/ddps-lab/sql-playzone/blob/dev/platform/CTFd/plugins/sql_challenges/AUTHORING.md" target="_blank" rel="noopener">SQL 문제 출제 가이드</a>를 읽어 주세요. init은 로컬 스크립트를 그대로 붙여도 되지만, 정답에는 유일한 정렬 기준과 명시적인 숫자 형식이 필요하고 일부 단어는 차단됩니다.
+          문제를 만들기 전에 <a href="https://github.com/ddps-lab/sql-playzone/blob/dev/platform/CTFd/plugins/sql_challenges/AUTHORING.md" target="_blank" rel="noopener">SQL 문제 출제 가이드</a>를 읽어 주세요. init은 로컬 스크립트를 그대로 붙여도 되지만, 정렬·표시 형식 설정은 문제 설명과 일치해야 하며 학생에게도 공개됩니다.
         </div>
     <div class="form-group">
         <label for="init_query">Initialization Query<br>
@@ -54,7 +54,14 @@
         <textarea class="form-control challenge-solution-query" name="solution_query" rows="5">{{ challenge.solution_query }}</textarea>
     </div>
     
-    <!-- Test Section -->
+    {% if not challenge.grading_policy %}<p class="alert alert-warning">기존 문제의 채점 기준을 확인한 후 저장하세요. 저장 전에는 채점하지 않습니다.</p>{% endif %}
+ <div class="form-group"><label>정렬 기준 (결과의 열 번호, 1부터)</label>
+ <input class="form-control" name="grading_order" value="{% if challenge.grading_policy %}{% for key in challenge.grading_policy.order_by %}{{ key.column }} {{ key.direction }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}" placeholder="예: 1 asc, 2 desc">
+ <small>비워 두면 행 순서를 평가하지 않습니다. 같은 정렬 값을 가진 행끼리는 순서가 자유롭습니다. 문제 설명과 일치시켜 주세요.</small></div>
+ <div class="form-group"><label>표시 형식까지 평가하는 열 번호</label>
+ <input class="form-control" name="grading_format" value="{{ challenge.grading_policy.exact_format_columns | join(', ') if challenge.grading_policy else '' }}" placeholder="예: 3, 4">
+ <small>소수 자릿수 등 표시 요구를 문제에 명시한 열만 입력하세요. 나머지 숫자는 정확한 값으로 비교합니다(1 = 1.00).</small></div>
+ <!-- Test Section -->
     <div class="form-group">
         <label
           >Test Your Queries<br />

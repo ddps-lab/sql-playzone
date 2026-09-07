@@ -218,3 +218,40 @@ def test_client_events_are_validated_and_stamped_with_the_real_user(
             == 403
         )
     destroy_ctfd(app)
+
+
+def test_extra_fields_are_not_logged_and_metadata_is_bounded(tmp_path, monkeypatch):
+    app = create_app(tmp_path, monkeypatch)
+    with app.app_context():
+        cid = create_challenge(app)
+        client = student_client(app)
+        base = {'challenge_id':cid, 'event_type':'paste', 'pasted_text':'SELECT 1'}
+        response = client.post('/api/v1/challenges/behavior', json={'events':[
+            {**base,'untrusted_extra':'x'*1100000, 'pasted_length':999},
+            {**base,'session_id':'x'*200},
+            {**base,'submit_status':{'nested':'object'}},
+        ]})
+        assert response.status_code == 200
+        assert response.get_json()['data']['logged'] == 1
+        row = behavior_lines(tmp_path)[0]
+        assert 'untrusted_extra' not in row
+        assert row['pasted_length'] == len('SELECT 1')
+        assert len(json.dumps(row).encode()) < 512*1024
+    destroy_ctfd(app)
+
+
+def test_malformed_event_shapes_and_backlog_limits(tmp_path, monkeypatch):
+    app = create_app(tmp_path, monkeypatch)
+    with app.app_context():
+        cid = create_challenge(app)
+        client = student_client(app)
+        base = dict(event_type="focus", challenge_id=cid)
+        events = [dict(base,event_type=[]),dict(base,challenge_id=True),dict(base,challenge_id=float('inf')),dict(base,timestamp="0001-01-01T00:00:00+14:00")]
+        result = client.post('/api/v1/challenges/behavior',json={'events':events})
+        assert result.status_code == 200
+        assert result.get_json()['data']['logged'] == 1
+        assert len(result.get_json()['data']['dropped']) == 3
+        result = client.post('/api/v1/challenges/behavior',json={'events':[base]*1001})
+        assert result.status_code == 413
+        assert len(behavior_lines(tmp_path)) == 1
+    destroy_ctfd(app)

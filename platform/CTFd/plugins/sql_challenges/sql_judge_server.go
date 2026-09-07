@@ -47,13 +47,14 @@ var (
 )
 
 type QueryRequest struct {
-	InitQuery     string `json:"init_query"`
-	SolutionQuery string `json:"solution_query"`
-	UserQuery     string `json:"user_query"`
-	ClientIP      string `json:"client_ip,omitempty"`
-	UserID        string `json:"user_id,omitempty"`
-	UserName      string `json:"user_name,omitempty"`
-	ChallengeID   string `json:"challenge_id,omitempty"`
+	GradingPolicy GradingPolicy `json:"grading_policy"`
+	InitQuery     string        `json:"init_query"`
+	SolutionQuery string        `json:"solution_query"`
+	UserQuery     string        `json:"user_query"`
+	ClientIP      string        `json:"client_ip,omitempty"`
+	UserID        string        `json:"user_id,omitempty"`
+	UserName      string        `json:"user_name,omitempty"`
+	ChallengeID   string        `json:"challenge_id,omitempty"`
 }
 
 type QueryResponse struct {
@@ -62,12 +63,15 @@ type QueryResponse struct {
 	UserResult     QueryResult `json:"user_result"`
 	ExpectedResult QueryResult `json:"expected_result"`
 	Error          string      `json:"error,omitempty"`
+	ErrorKind      string      `json:"error_kind,omitempty"`
 }
 
 type QueryResult struct {
-	Columns  []string   `json:"columns"`
-	Rows     [][]string `json:"rows"`
-	RowCount int        `json:"row_count"`
+	ColumnTypes []string   `json:"column_types,omitempty"`
+	Nulls       [][]bool   `json:"nulls,omitempty"`
+	Columns     []string   `json:"columns"`
+	Rows        [][]string `json:"rows"`
+	RowCount    int        `json:"row_count"`
 }
 
 type Config struct {
@@ -131,19 +135,10 @@ func newExecutionResources() (executionResources, error) {
 	return r, nil
 }
 
-// MySQL privileges are the primary isolation boundary. This list preserves
-// the existing defense-in-depth behavior and its compatibility characteristics.
+// Database grants enforce isolation; token checks only restrict dangerous calls.
 var dangerousFunctions = []string{
-	"LOAD_FILE", "INTO OUTFILE", "INTO DUMPFILE", "LOAD DATA", "LOAD XML", "FILE", "HANDLER",
-	"SYSTEM", "SHELL", "EXEC", "EXECUTE", "XP_CMDSHELL", "SP_OA",
-	"BENCHMARK", "SLEEP", "WAITFOR", "DELAY", "PG_SLEEP", "RANDOMBLOB",
-	"GET_LOCK", "RELEASE_LOCK", "MASTER_POS_WAIT", "IS_FREE_LOCK", "IS_USED_LOCK",
-	"EXTRACTVALUE", "UPDATEXML", "XMLTYPE", "LOAD_EXTENSION", "CREATE EXTENSION",
-	"GENERATE_SERIES", "UTL_", "DBMS_", "SYS.", "SYS_",
-	"INFORMATION_SCHEMA.PROCESSLIST", "PERFORMANCE_SCHEMA", "MYSQL.USER", "PG_SHADOW", "PG_AUTHID",
-	"UTL_HTTP", "UTL_TCP", "OPENROWSET", "OPENDATASOURCE", "OPENQUERY",
-	"GRANT", "REVOKE", "CREATE USER", "DROP USER", "ALTER USER", "SET ROLE", "SET SESSION AUTHORIZATION",
-	// The optimizer hint would override the SET SESSION max_execution_time applied to every graded statement.
+	"LOAD_FILE", "BENCHMARK", "SLEEP", "GET_LOCK", "RELEASE_LOCK",
+	"MASTER_POS_WAIT", "IS_FREE_LOCK", "IS_USED_LOCK", "SYS_EXEC", "SYS_EVAL",
 	"MAX_EXECUTION_TIME",
 }
 
@@ -457,33 +452,27 @@ func (s *Server) handleJudge(w http.ResponseWriter, r *http.Request) {
 	case s.slots <- struct{}{}:
 		defer func() { <-s.slots }()
 	case <-queueTimer.C:
-		writeJSON(w, QueryResponse{Success: false, Error: "SQL judge is busy; please retry"})
+		writeJSON(w, QueryResponse{Success: false, ErrorKind: "system", Error: "SQL judge is busy; please retry"})
 		return
 	case <-ctx.Done():
-		writeJSON(w, QueryResponse{Success: false, Error: "SQL judge request timed out while waiting"})
+		writeJSON(w, QueryResponse{Success: false, ErrorKind: "system", Error: "SQL judge request timed out while waiting"})
 		return
 	}
 
 	logSecurityEvent("REQUEST", "Query submission for challenge", &req)
 	log.Printf("Start Query Execution [UserID: %s, UserName: %s, IP: %s, ChallengeID: %s]",
 		req.UserID, req.UserName, req.ClientIP, req.ChallengeID)
-	initQueries := []string{req.InitQuery}
-	expectedResult, err := s.executeQuery(ctx, initQueries, req.SolutionQuery, &req)
+	expectedResult, userResult, ranks, err := s.judgeQueries(ctx, &req)
 	if err != nil {
-		writeJSON(w, QueryResponse{Success: false, Error: fmt.Sprintf("Failed to execute solution query: %v", err)})
+		writeJSON(w, QueryResponse{Success: false, ErrorKind: gradingErrorKind(err), Error: err.Error()})
 		return
 	}
-	userResult, err := s.executeQuery(ctx, initQueries, req.UserQuery, &req)
-	if err != nil {
-		writeJSON(w, QueryResponse{Success: false, Error: fmt.Sprintf("Failed to execute user query: %v", err)})
-		return
-	}
-	writeJSON(w, QueryResponse{Success: true, Match: compareResults(expectedResult, userResult), UserResult: *userResult, ExpectedResult: *expectedResult})
+	writeJSON(w, QueryResponse{Success: true, Match: compareGradedResults(expectedResult, userResult, req.GradingPolicy, ranks), UserResult: *userResult, ExpectedResult: *expectedResult})
 }
 
 func (s *Server) executeQuery(parent context.Context, initQueries []string, query string, req *QueryRequest) (*QueryResult, error) {
 	if err := validateSQLQuery(query, req); err != nil {
-		return nil, err
+		return nil, &gradingError{kind: "student_query", cause: err}
 	}
 	resources, err := newExecutionResources()
 	if err != nil {
@@ -504,6 +493,9 @@ func (s *Server) executeQuery(parent context.Context, initQueries []string, quer
 	}
 	session, err := s.runInitStatements(executionCtx, resources, initQueries, req)
 	if err != nil {
+		if studentQueryError(err) {
+			return nil, &gradingError{kind: "problem", cause: err}
+		}
 		return nil, err
 	}
 	return s.runGradedQuery(executionCtx, resources, query, session)
@@ -756,18 +748,25 @@ func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query
 
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("query error: %w", err)
+		return nil, classifyQueryError(fmt.Errorf("query error: %w", err))
 	}
 	defer rows.Close()
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, fmt.Errorf("read result columns: %w", err)
 	}
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
 	result := &QueryResult{Columns: columns, Rows: make([][]string, 0)}
+	for _, typ := range types {
+		result.ColumnTypes = append(result.ColumnTypes, typ.DatabaseTypeName())
+	}
 	var resultBytes int64
 	for rows.Next() {
 		if len(result.Rows) >= s.config.MaxResultRows {
-			return nil, fmt.Errorf("%w: more than %d rows", errResultLimit, s.config.MaxResultRows)
+			return nil, classifyQueryError(fmt.Errorf("%w: more than %d rows", errResultLimit, s.config.MaxResultRows))
 		}
 		rawValues := make([]sql.RawBytes, len(columns))
 		destinations := make([]any, len(columns))
@@ -778,22 +777,25 @@ func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query
 			return nil, fmt.Errorf("scan result row: %w", err)
 		}
 		stringRow := make([]string, len(columns))
+		nullRow := make([]bool, len(columns))
 		for index, value := range rawValues {
 			if value == nil {
 				stringRow[index] = "NULL"
+				nullRow[index] = true
 				resultBytes += 4
 			} else {
 				stringRow[index] = string(value)
 				resultBytes += int64(len(value))
 			}
 			if resultBytes > s.config.MaxResultBytes {
-				return nil, fmt.Errorf("%w: more than %d bytes", errResultLimit, s.config.MaxResultBytes)
+				return nil, classifyQueryError(fmt.Errorf("%w: more than %d bytes", errResultLimit, s.config.MaxResultBytes))
 			}
 		}
 		result.Rows = append(result.Rows, stringRow)
+		result.Nulls = append(result.Nulls, nullRow)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate result rows: %w", err)
+		return nil, classifyQueryError(fmt.Errorf("iterate result rows: %w", err))
 	}
 	result.RowCount = len(result.Rows)
 	return result, nil
@@ -935,58 +937,102 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("OK"))
 }
 
-func compareResults(expected, actual *QueryResult) bool {
-	if expected.RowCount != actual.RowCount || len(expected.Columns) != len(actual.Columns) || len(expected.Rows) != len(actual.Rows) {
-		return false
-	}
-	for rowIndex, expectedRow := range expected.Rows {
-		if len(expectedRow) != len(actual.Rows[rowIndex]) {
-			return false
-		}
-		for columnIndex, expectedValue := range expectedRow {
-			if expectedValue != actual.Rows[rowIndex][columnIndex] {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 func validateSQLQuery(query string, req *QueryRequest) error {
-	upperQuery := strings.ToUpper(query)
-	for _, dangerous := range dangerousFunctions {
-		if strings.Contains(upperQuery, strings.ToUpper(dangerous)) {
-			logSecurityEvent("BLOCKED", fmt.Sprintf("Dangerous function: %s", dangerous), req)
-			return fmt.Errorf("security violation: dangerous function '%s' is not allowed", dangerous)
-		}
-	}
-	fileOpsPattern := regexp.MustCompile(`(?i)(LOAD_FILE|INTO\s+(OUTFILE|DUMPFILE)|LOAD\s+DATA)`)
-	if fileOpsPattern.MatchString(query) {
-		logSecurityEvent("BLOCKED", "File system operation attempt", req)
-		return errors.New("security violation: file system operations are not allowed")
-	}
-	systemPattern := regexp.MustCompile(`(?i)(sys_exec|sys_eval|system|shell|exec|execute|xp_cmdshell)`)
-	if systemPattern.MatchString(query) {
-		logSecurityEvent("BLOCKED", "System command execution attempt", req)
-		return errors.New("security violation: system command execution is not allowed")
-	}
-	commentPattern := regexp.MustCompile(`(?i)(/\*.*\*/|--.*$|#.*$)`)
-	if commentPattern.MatchString(query) {
-		for _, comment := range commentPattern.FindAllString(query, -1) {
-			for _, dangerous := range dangerousFunctions {
-				if strings.Contains(strings.ToUpper(comment), strings.ToUpper(dangerous)) {
-					logSecurityEvent("BLOCKED", fmt.Sprintf("Dangerous function in comment: %s", dangerous), req)
-					return errors.New("security violation: dangerous content in comments")
-				}
+	tokens := sqlTokens(query)
+	for i, token := range tokens {
+		for _, name := range dangerousFunctions {
+			if token == name && i+1 < len(tokens) && tokens[i+1] == "(" {
+				logSecurityEvent("BLOCKED", "Restricted SQL function: "+name, req)
+				return fmt.Errorf("security violation: function %s is not allowed", name)
 			}
 		}
-	}
-	unionPattern := regexp.MustCompile(`(?i)UNION.*SELECT.*(INFORMATION_SCHEMA|MYSQL\.|PERFORMANCE_SCHEMA)`)
-	if unionPattern.MatchString(query) {
-		logSecurityEvent("BLOCKED", "UNION with system tables attempt", req)
-		return errors.New("security violation: accessing system tables via UNION is not allowed")
+		if (token == "GRANT" || token == "REVOKE") && (i == 0 || tokens[i-1] == ";") {
+			return errors.New("security violation: privilege statement is not allowed")
+		}
+		if i+2 < len(tokens) && tokens[i+1] == "." && ((token == "MYSQL" && tokens[i+2] == "USER") || (token == "INFORMATION_SCHEMA" && tokens[i+2] == "PROCESSLIST") || token == "PERFORMANCE_SCHEMA") {
+			return errors.New("security violation: system table access is not allowed")
+		}
+		if token == "INTO" && i+1 < len(tokens) && (tokens[i+1] == "OUTFILE" || tokens[i+1] == "DUMPFILE") {
+			return errors.New("security violation: file output is not allowed")
+		}
 	}
 	return nil
+}
+
+// Lexical boundaries avoid rejecting identifiers and data that merely contain a
+// restricted word. Executable comments and optimizer hints are inspected too.
+// This is a conservative supplementary filter, not a SQL parser or sandbox.
+func sqlTokens(query string) []string {
+	var tokens []string
+	for i := 0; i < len(query); {
+		c := query[i]
+		if c == '\'' || c == '"' || c == '`' {
+			quote := c
+			i++
+			var value strings.Builder
+			for i < len(query) {
+				c = query[i]
+				i++
+				if c == '\\' && i < len(query) {
+					value.WriteByte(query[i])
+					i++
+					continue
+				}
+				if c == quote {
+					if i < len(query) && query[i] == quote {
+						value.WriteByte(quote)
+						i++
+						continue
+					}
+					break
+				}
+				value.WriteByte(c)
+			}
+			if quote == '`' {
+				tokens = append(tokens, strings.ToUpper(value.String()))
+			} else {
+				tokens = append(tokens, "<literal>")
+			}
+			continue
+		}
+		if c == '#' || (c == '-' && i+2 < len(query) && query[i+1] == '-' && query[i+2] <= ' ') {
+			for i < len(query) && query[i] != '\n' {
+				i++
+			}
+			continue
+		}
+		if c == '/' && i+1 < len(query) && query[i+1] == '*' {
+			start := i + 2
+			end := strings.Index(query[start:], "*/")
+			if end < 0 {
+				break
+			}
+			end += start
+			if start < end && (query[start] == '!' || query[start] == '+') {
+				tokens = append(tokens, sqlTokens(query[start+1:end])...)
+			}
+			i = end + 2
+			continue
+		}
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '$' || c >= 128 {
+			start := i
+			i++
+			for i < len(query) {
+				c = query[i]
+				if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '$' || c >= 128) {
+					break
+				}
+				i++
+			}
+			tokens = append(tokens, strings.ToUpper(query[start:i]))
+			continue
+		}
+		if c > ' ' {
+			tokens = append(tokens, string(c))
+		}
+		i++
+	}
+	return tokens
 }
 
 func randomName(prefix string, byteCount int) (string, error) {
@@ -1066,4 +1112,41 @@ func main() {
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal("Server failed to start: ", err)
 	}
+}
+
+// Fault provenance crosses the HTTP boundary as data, never as a parsed message.
+// Unknown failures are ungraded. A failed reference is never a student mistake.
+type gradingError struct {
+	kind  string
+	cause error
+}
+
+func (e *gradingError) Error() string { return e.cause.Error() }
+func (e *gradingError) Unwrap() error { return e.cause }
+func gradingErrorKind(err error) string {
+	var fault *gradingError
+	if errors.As(err, &fault) {
+		return fault.kind
+	}
+	return "system"
+}
+func studentQueryError(err error) bool {
+	if errors.Is(err, errResultLimit) {
+		return true
+	}
+	var serverError *mysql.MySQLError
+	if !errors.As(err, &serverError) {
+		return false
+	}
+	state := string(serverError.SQLState[:])
+	// SQLSTATE 42: syntax/access-rule violation; 22: data exception.
+	// 3024: MySQL's statement execution-time limit. Transport cancellation
+	// and unknown server errors remain ungraded rather than guessing blame.
+	return strings.HasPrefix(state, "42") || strings.HasPrefix(state, "22") || serverError.Number == 3024
+}
+func classifyQueryError(err error) error {
+	if studentQueryError(err) {
+		return &gradingError{kind: "student_query", cause: err}
+	}
+	return err
 }

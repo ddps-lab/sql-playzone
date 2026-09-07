@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func TestCompareResultsPreservesCurrentContract(t *testing.T) {
+func TestCompareResultsPublicBagContract(t *testing.T) {
 	expected := &QueryResult{
 		Columns:  []string{"expected_alias"},
 		Rows:     [][]string{{"1"}, {"NULL"}},
@@ -28,9 +28,9 @@ func TestCompareResultsPreservesCurrentContract(t *testing.T) {
 			match:  true,
 		},
 		{
-			name:   "row order matters",
+			name:   "incidental row order is ignored",
 			actual: &QueryResult{Columns: []string{"value"}, Rows: [][]string{{"NULL"}, {"1"}}, RowCount: 2},
-			match:  false,
+			match:  true,
 		},
 		{
 			name:   "row count matters",
@@ -46,7 +46,7 @@ func TestCompareResultsPreservesCurrentContract(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := compareResults(expected, test.actual); got != test.match {
+			if got := compareGradedResults(expected, test.actual, GradingPolicy{}, nil); got != test.match {
 				t.Fatalf("compareResults() = %v, want %v", got, test.match)
 			}
 		})
@@ -237,5 +237,26 @@ func TestSchemaAliasRewriteSkipsLiteralsAndAcceptsQuotedNames(t *testing.T) {
 	got := rewriteSchemaAliases("SELECT * FROM `kbo-data`.PLAYER p JOIN `kbo-data`.`TEAM X` t ON t.id = p.team_id", []string{"kbo-data"}, "ctfd_tmp_x")
 	if got != "SELECT * FROM `ctfd_tmp_x`.PLAYER p JOIN `ctfd_tmp_x`.`TEAM X` t ON t.id = p.team_id" {
 		t.Fatalf("quoted alias rewrite = %q", got)
+	}
+}
+
+func TestValidateSQLLexicalBoundaries(t *testing.T) {
+	for _, query := range []string{
+		"SELECT profile, file_name, executive, system_id, grant_amount FROM students",
+		"SELECT 'SLEEP(5)', 'mysql.user', 'GRANT', 'LOAD_FILE(1)'",
+		"SELECT 1 /* SLEEP(5) */ -- LOAD_FILE(1)\n",
+		"SELECT `file`, `sleep`, `system` FROM students",
+	} {
+		if err := validateSQLQuery(query, nil); err != nil {
+			t.Fatalf("valid SQL rejected: %s: %v", query, err)
+		}
+	}
+	for _, query := range []string{
+		"SELECT SLEEP /* gap */ (5)", "SELECT `SLEEP`(5)", "SELECT /*!80000 SLEEP(5) */",
+		"SELECT /*+ MAX_EXECUTION_TIME(99999) */ 1", "SELECT * FROM `mysql`.`user`",
+	} {
+		if err := validateSQLQuery(query, nil); err == nil {
+			t.Fatalf("dangerous SQL allowed: %s", query)
+		}
 	}
 }

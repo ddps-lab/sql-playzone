@@ -431,3 +431,35 @@ func TestIntegrationQuotedSchemaAliasKeepsLiterals(t *testing.T) {
 	}
 	assertNoTemporaryResources(t, server)
 }
+
+func TestIntegrationGradingErrorKinds(t *testing.T) {
+	server := integrationServer(t)
+	for _, tc := range []struct{ name, init, solution, user, kind string }{
+		{"student syntax", "", "SELECT 1", "SELECT missing_column", "student_query"},
+		{"reference syntax", "", "SELECT missing_column", "SELECT 1", "problem"},
+		{"init syntax", "CREATE TABLE", "SELECT 1", "SELECT 1", "problem"},
+		{"result mismatch", "", "SELECT 1", "SELECT 2", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := json.Marshal(QueryRequest{InitQuery: tc.init, SolutionQuery: tc.solution, UserQuery: tc.user})
+			recorder := httptest.NewRecorder()
+			server.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/judge", bytes.NewReader(body)))
+			var result QueryResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.ErrorKind != tc.kind {
+				t.Fatalf("kind=%q want=%q error=%s", result.ErrorKind, tc.kind, result.Error)
+			}
+		})
+	}
+	server.controlDB.Close()
+	body := []byte(`{"solution_query":"SELECT 1","user_query":"SELECT 1"}`)
+	recorder := httptest.NewRecorder()
+	server.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/judge", bytes.NewReader(body)))
+	var result QueryResponse
+	json.Unmarshal(recorder.Body.Bytes(), &result)
+	if result.ErrorKind != "system" {
+		t.Fatalf("closed control connection classified as %+v", result)
+	}
+}

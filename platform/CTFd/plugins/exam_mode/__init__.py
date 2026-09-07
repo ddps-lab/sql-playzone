@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
+from flask import abort, Blueprint, render_template, request, redirect, url_for, session, jsonify
 from CTFd.models import db, Users, UserFieldEntries, UserFields, Configs, Files
 from CTFd.utils.decorators import admins_only
 from CTFd.plugins import (
@@ -7,7 +7,7 @@ from CTFd.plugins import (
     register_plugin_assets_directory,
 )
 from CTFd.utils import set_config, get_config, get_app_config, validators
-from CTFd.utils.user import is_admin, get_ip
+from CTFd.utils.user import is_admin, get_ip, get_current_user
 from CTFd.cache import cache
 
 # Exam browser restriction. When enabled, everyone except admins must use a
@@ -170,8 +170,7 @@ def load(app):
     @exam_mode.route('/browser', methods=['POST'])
     @admins_only
     def update_browser():
-        # A separate form on purpose: saving the exam mode form above rewrites
-        # every user's banned flag, and this toggle must not trigger that.
+        # Browser/session rules and the exam roster are independent settings.
         required = request.form.get('exam_browser_required') == 'on'
         marker = request.form.get('exam_browser_marker', '').strip() or DEFAULT_EXAM_BROWSER_MARKER
         set_config('exam_browser_required', 'true' if required else 'false')
@@ -186,47 +185,12 @@ def load(app):
         enabled = request.form.get('exam_mode_enabled') == 'on'
         allowed_ids_text = request.form.get('exam_mode_allowed_ids', '').strip()
         
-        # Save config
+        allowed_ids = {line.strip() for line in allowed_ids_text.splitlines() if line.strip()}
+        if enabled and (not allowed_ids or not UserFields.query.filter_by(name="Student ID Number").first()):
+            abort(400, description='A student ID field and a non-empty allowed list are required.')
         set_config('exam_mode_enabled', 'true' if enabled else 'false')
-        set_config('exam_mode_allowed_ids', allowed_ids_text)
+        set_config('exam_mode_allowed_ids', '\n'.join(sorted(allowed_ids)))
 
-        # Parse allowed IDs
-        allowed_ids = set(line.strip() for line in allowed_ids_text.splitlines() if line.strip())
-
-        # Get Student ID field
-        student_id_field = UserFields.query.filter_by(name="Student ID Number").first()
-        
-        if not student_id_field:
-            # If field doesn't exist, we can't filter by it, so maybe just warn?
-            # For now, let's assume it exists as per requirements.
-            pass
-
-        # Bulk update logic
-        users = Users.query.filter_by(type='user').all()
-        
-        for user in users:
-            should_ban = False
-            
-            if enabled:
-                # Check if user has allowed student ID
-                user_student_id = None
-                if student_id_field:
-                    entry = UserFieldEntries.query.filter_by(user_id=user.id, field_id=student_id_field.id).first()
-                    if entry:
-                        user_student_id = entry.value
-                
-                if user_student_id and user_student_id in allowed_ids:
-                    should_ban = False
-                else:
-                    should_ban = True
-            else:
-                # If disabled, unban everyone (or revert to previous state? Requirement says unban)
-                should_ban = False
-            
-            user.banned = should_ban
-
-        db.session.commit()
-        
         return redirect(url_for('exam_mode.index'))
 
     app.register_blueprint(exam_mode)
@@ -234,6 +198,24 @@ def load(app):
     # A banner on every admin page while an exam rule is on.
     register_plugin_assets_directory(app, base_path='/plugins/exam_mode/assets/')
     register_admin_plugin_script('/plugins/exam_mode/assets/admin_banner.js')
+
+    @app.before_request
+    def require_exam_roster():
+        if get_config('exam_mode_enabled') is not True or exam_browser_exempt() or is_admin():
+            return
+        user = get_current_user()
+        allowed = set((get_config('exam_mode_allowed_ids') or '').splitlines())
+        entry = None
+        if user:
+            entry = UserFieldEntries.query.join(UserFields, UserFieldEntries.field_id == UserFields.id).filter(
+                UserFields.name == 'Student ID Number', UserFieldEntries.user_id == user.id,
+            ).first()
+        if entry and entry.value in allowed:
+            return
+        message = 'This account is not on the allowed student list for the current exam.'
+        if request.is_json or str(request.endpoint or '').startswith('api.'):
+            return jsonify({'success': False, 'data': {'status': 'forbidden', 'message': message}}), 403
+        return render_template('errors/403.html', error=message), 403
 
     @app.before_request
     def require_exam_browser():
