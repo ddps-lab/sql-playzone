@@ -428,7 +428,11 @@ def test_terms_are_seeded_and_linked_from_the_footer():
         assert b"<span data-copyright-year>2026</span>" in html
         # no email reset: Google is the sign-up and the reset path
         assert b"/reset_password" not in html
-        assert b"Sign up or reset password with a university Google account" in html
+        # the button label breaks deliberately before its second line
+        assert (
+            b"Sign up or reset password <span class=\"d-block\">with a university Google account</span>"
+            in html
+        )
     destroy_ctfd(app)
 
 
