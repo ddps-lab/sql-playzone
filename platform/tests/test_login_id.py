@@ -143,3 +143,22 @@ def test_the_login_form_asks_for_the_id_or_email():
     with app.app_context():
         assert b"ID or Email" in app.test_client().get("/login").data
     destroy_ctfd(app)
+
+
+def test_admins_can_search_users_by_login_id_and_students_cannot():
+    app = create_ctfd()
+    with app.app_context():
+        gen_user(app.db, name="홍길동", email="hong@hanyang.ac.kr", login_id="hong1")
+        gen_user(app.db, name="김철수", email="kim@hanyang.ac.kr", login_id="kim1")
+        admin = login_as_user(app, name="admin", password="password")
+        r = admin.get("/api/v1/users?field=login_id&q=hong&view=admin")
+        assert r.status_code == 200
+        found = r.get_json()["data"]
+        assert [u["name"] for u in found] == ["홍길동"]
+        # the list keeps the public view: the login ID itself is not exposed
+        assert "login_id" not in found[0]
+        student = login_as_user(app, name="kim1", password="password")
+        r = student.get("/api/v1/users?field=login_id&q=hong")
+        assert r.status_code == 400
+        assert "admins" in r.get_json()["errors"]["field"]
+    destroy_ctfd(app)
