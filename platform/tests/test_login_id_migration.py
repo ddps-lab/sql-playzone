@@ -13,6 +13,14 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 
 
+def load_migration(platform, filename):
+    path = platform / "migrations/versions" / filename
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_login_id_migration_backfills_unique_names_only():
     uri = os.getenv("SQL_MIGRATION_TEST_URL")
     if not uri:
@@ -24,18 +32,22 @@ def test_login_id_migration_backfills_unique_names_only():
     engine = create_engine(make_url(uri).set(database=database))
     try:
         platform = Path(__file__).resolve().parents[1]
-        path = platform / "migrations/versions/b7c1e4d2a9f3_add_login_id_to_users.py"
-        spec = importlib.util.spec_from_file_location("login_id_migration", path)
-        migration = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(migration)
+        migration = load_migration(platform, "b7c1e4d2a9f3_add_login_id_to_users.py")
+        follow_up = load_migration(
+            platform, "d4e5f6a7b8c9_clear_login_id_of_passwordless_accounts.py"
+        )
         with engine.begin() as connection:
             connection.execute(
-                text("CREATE TABLE users(id INTEGER PRIMARY KEY, name VARCHAR(128))")
+                text(
+                    "CREATE TABLE users(id INTEGER PRIMARY KEY, name VARCHAR(128),"
+                    " password VARCHAR(128))"
+                )
             )
             connection.execute(
                 text(
-                    "INSERT INTO users VALUES (1,'admin'),(2,'Hong'),(3,'hong'),"
-                    "(4,'smoke-student'),(5,NULL),(6,' spaced ')"
+                    "INSERT INTO users VALUES (1,'admin','h'),(2,'Hong','h'),(3,'hong','h'),"
+                    "(4,'smoke-student','h'),(5,NULL,'h'),(6,' spaced ','h'),"
+                    "(7,'Google Only',NULL)"
                 )
             )
         with engine.connect() as connection:
@@ -55,7 +67,23 @@ def test_login_id_migration_backfills_unique_names_only():
                 4: "smoke-student",
                 5: None,
                 6: "spaced",
+                7: None,  # no password: never logged in by name, chooses an ID later
             }
+            # a database migrated by the earlier, broader copy: the follow-up
+            # clears only password-less accounts whose ID is their name
+            connection.execute(
+                text("UPDATE users SET login_id = 'Google Only' WHERE id = 7")
+            )
+            with Operations.context(context):
+                with context.begin_transaction():
+                    follow_up.upgrade()
+            rows = dict(
+                connection.execute(
+                    text("SELECT id, login_id FROM users ORDER BY id")
+                ).all()
+            )
+            assert rows[7] is None
+            assert rows[1] == "admin" and rows[4] == "smoke-student"
             indexes = {i["name"]: i for i in inspect(connection).get_indexes("users")}
             assert indexes["ix_users_login_id"]["unique"]
             with pytest.raises(IntegrityError):
