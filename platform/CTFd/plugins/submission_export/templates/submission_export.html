@@ -66,6 +66,7 @@
                             <th rowspan="2">Name</th>
                             <th rowspan="2">Email</th>
                             <th rowspan="2">Student ID</th>
+                            <th rowspan="2">Account status</th>
                             <th colspan="{{ challenges|length }}" class="text-center">Challenges</th>
                             <th rowspan="2">Total Score</th>
                         </tr>
@@ -86,6 +87,7 @@
                             <td class="user-info">{{ user.name }}</td>
                             <td class="user-info">{{ user.email }}</td>
                             <td class="user-info">{{ user.student_id or 'N/A' }}</td>
+                            <td>{% if user.banned %}Banned {% endif %}{% if user.hidden %}Hidden{% endif %}{% if not user.banned and not user.hidden %}Active{% endif %}</td>
                             {% set ns = namespace(total_score=0) %}
                             {% for challenge in challenges %}
                                 {% set score = user.challenge_scores[challenge.id] %}

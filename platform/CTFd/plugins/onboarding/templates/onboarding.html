@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import render_extra_fields %}
+
+{% block content %}
+  <div class="jumbotron">
+    <div class="container">
+      <h1>
+        {% if mode == "setup" %}
+          {% trans %}Set Up Your Account{% endtrans %}
+        {% elif mode == "terms" %}
+          {% trans %}Terms of Service{% endtrans %}
+        {% else %}
+          {% trans %}Set a New Password{% endtrans %}
+        {% endif %}
+      </h1>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="row">
+      <div class="col-md-6 offset-md-3 mb-5">
+        {% include "components/errors.html" %}
+
+        <p>
+          {% if mode == "setup" %}
+            {% trans %}Your HYU Google account is confirmed. Choose a user name and a password now. From then on, log in with them instead of Google.{% endtrans %}
+          {% elif mode == "terms" %}
+            {% trans %}Please read and agree to the Terms of Service before continuing.{% endtrans %}
+          {% else %}
+            {% trans %}You signed in with Google. Set a new password to continue; from now on, log in with it.{% endtrans %}
+          {% endif %}
+        </p>
+
+        <form method="post" accept-charset="utf-8" role="form" id="onboarding-form" data-password-min-length="{{ password_min_length }}" data-password-max-length="{{ password_max_length }}">
+          {% if mode != "terms" %}
+            <div class="mb-3">
+              <b>{{ form.name.label(class="form-label") }}</b>
+              {{ form.name(class="form-control", value=name, autocomplete="username") }}
+              <small class="form-text text-muted">
+                {{ form.name.description }}
+              </small>
+            </div>
+
+            <div class="mb-3">
+              <b><label class="form-label">{% trans %}Email{% endtrans %}</label></b>
+              <input class="form-control" type="email" value="{{ email }}" disabled>
+              <small class="form-text text-muted">
+                {% trans %}Taken from your Google account. It also works as your login name.{% endtrans %}
+              </small>
+            </div>
+
+            <div class="mb-3">
+              <b>{{ form.password.label(class="form-label") }}</b>
+              {{ form.password(class="form-control", autocomplete="new-password") }}
+              <small class="form-text text-muted">
+                {{ form.password.description }}
+              </small>
+            </div>
+
+            <div class="mb-3">
+              <b>{{ form.password_confirm.label(class="form-label") }}</b>
+              {{ form.password_confirm(class="form-control", autocomplete="new-password") }}
+              <small class="form-text text-muted">
+                {{ form.password_confirm.description }}
+              </small>
+              <ul class="list-unstyled small mt-2 mb-0" id="password-rules">
+                <li id="rule-length" class="text-muted">{{ password_min_length }}–{{ password_max_length }} {% trans %}characters{% endtrans %}</li>
+                <li id="rule-mix" class="text-muted">{% trans %}Contains both an English letter (A-Z) and a digit (0-9){% endtrans %}</li>
+                <li id="rule-match" class="text-muted">{% trans %}Both password fields match{% endtrans %}</li>
+              </ul>
+            </div>
+          {% endif %}
+
+          {% if mode == "setup" %}
+            {{ render_extra_fields(form.extra | rejectattr("label.text", "equalto", terms_field_name) | list) }}
+          {% endif %}
+
+          {% if mode != "reset" %}
+            <div class="mb-3">
+              <b><label class="form-label">{% trans %}Terms of Service{% endtrans %}</label></b>
+              {% if terms %}
+                <div class="border rounded p-3 mb-2 small" style="max-height: 18rem; overflow-y: auto;">
+                  {{ terms }}
+                </div>
+              {% else %}
+                <p class="mb-2">
+                  <a href="{{ Configs.tos_link }}" target="_blank" rel="noopener">
+                    {% trans %}Read the Terms of Service{% endtrans %}
+                  </a>
+                </p>
+              {% endif %}
+              {% for field in form.extra if field.label.text == terms_field_name %}
+                <div class="form-check">
+                  {{ field(class="form-check-input", **{"data-terms-checkbox": "1"}) }}
+                  <label class="form-check-label" for="{{ field.id }}">{{ field.description }}</label>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          {{ form.nonce() }}
+
+          <div class="pt-3">
+            {{ form.submit(class="btn btn-primary w-100") }}
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (function () {
+      // Live feedback only; the server applies the same rules on submit.
+      var form = document.getElementById("onboarding-form");
+      if (!form) return;
+      var password = form.elements.namedItem("password");
+      var confirm = form.elements.namedItem("password_confirm");
+      var terms = form.querySelector("[data-terms-checkbox]");
+      var submit = form.querySelector('input[type="submit"], button[type="submit"]');
+      var minLength = parseInt(form.dataset.passwordMinLength, 10) || 8;
+      var maxLength = parseInt(form.dataset.passwordMaxLength, 10) || 128;
+      // Count characters the way the server does (code points, not UTF-16 units).
+      function length(text) { return Array.from(text).length; }
+      var rules = {
+        length: document.getElementById("rule-length"),
+        mix: document.getElementById("rule-mix"),
+        match: document.getElementById("rule-match")
+      };
+      function mark(node, ok, touched) {
+        if (!node) return;
+        node.classList.remove("text-muted", "text-success", "text-danger");
+        node.classList.add(!touched ? "text-muted" : ok ? "text-success" : "text-danger");
+        node.textContent = (ok && touched ? "\u2713 " : "\u2022 ") + node.textContent.replace(/^[\u2713\u2022] /, "");
+      }
+      function check() {
+        var ready = true;
+        if (password && confirm) {
+          // the server strips ASCII whitespace from both fields before checking
+          var value = password.value.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "");
+          var again = confirm.value.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "");
+          var touched = value.length > 0 || again.length > 0;
+          var okLength = length(value) >= minLength && length(value) <= maxLength;
+          var okMix = /[A-Za-z]/.test(value) && /[0-9]/.test(value);
+          var okMatch = again.length > 0 && again === value;
+          mark(rules.length, okLength, touched);
+          mark(rules.mix, okMix, touched);
+          mark(rules.match, okMatch, touched);
+          ready = okLength && okMix && okMatch;
+        }
+        if (terms) ready = ready && terms.checked;
+        if (submit) submit.disabled = !ready;
+      }
+      [password, confirm, terms].forEach(function (node) {
+        if (node) node.addEventListener("input", check);
+        if (node) node.addEventListener("change", check);
+      });
+      check();
+    })();
+  </script>
+{% endblock %}

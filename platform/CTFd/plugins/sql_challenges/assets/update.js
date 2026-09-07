@@ -51,7 +51,9 @@ CTFd.plugin.run((_CTFd) => {
             },
             body: JSON.stringify({
                 init_query: initQuery,
-                test_query: queryToTest
+                test_query: queryToTest,
+                grading_order: $('[name="grading_order"]').val(),
+                grading_format: $('[name="grading_format"]').val()
             })
         })
         .then(response => response.json())

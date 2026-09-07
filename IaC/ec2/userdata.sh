@@ -13,37 +13,37 @@ cat << 'CWCONFIG' | tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-a
       "files": {
         "collect_list": [
           {
-            "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/logins.log",
+            "file_path": "/opt/sql-playzone/platform/.data/CTFd/logs/logins.log",
             "log_group_name": "${APPLICATION_LOG_GROUP_NAME}",
             "log_stream_name": "logins",
             "timezone": "Local"
           },
           {
-            "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/registrations.log",
+            "file_path": "/opt/sql-playzone/platform/.data/CTFd/logs/registrations.log",
             "log_group_name": "${APPLICATION_LOG_GROUP_NAME}",
             "log_stream_name": "registrations",
             "timezone": "Local"
           },
           {
-            "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/submissions.log",
+            "file_path": "/opt/sql-playzone/platform/.data/CTFd/logs/submissions.log",
             "log_group_name": "${APPLICATION_LOG_GROUP_NAME}",
             "log_stream_name": "submissions",
             "timezone": "Local"
           },
           {
-            "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/error.log",
+            "file_path": "/opt/sql-playzone/platform/.data/CTFd/logs/error.log",
             "log_group_name": "${APPLICATION_LOG_GROUP_NAME}",
             "log_stream_name": "error",
             "timezone": "Local"
           },
           {
-            "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/sql-judge.log",
+            "file_path": "/opt/sql-playzone/platform/.data/CTFd/logs/sql-judge.log",
             "log_group_name": "${APPLICATION_LOG_GROUP_NAME}",
             "log_stream_name": "sql-judge",
             "timezone": "Local"
           },
           {
-            "file_path": "/home/ubuntu/sql-playzone/platform/.data/CTFd/logs/sql_challenge_behavior.log",
+            "file_path": "/opt/sql-playzone/platform/.data/CTFd/logs/sql_challenge_behavior.log",
             "log_group_name": "${BEHAVIOR_LOG_GROUP_NAME}",
             "log_stream_name": "${BEHAVIOR_LOG_STREAM_NAME}",
             "timezone": "Local"
@@ -63,8 +63,7 @@ CWCONFIG
     -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 
 
-cd /home/ubuntu/sql-playzone/platform
-git pull origin main
+cd /opt/sql-playzone/platform
 
 # Load application and database credentials from Secrets Manager
 application_secret_file=$(mktemp)
@@ -90,6 +89,7 @@ fi
 
 python3 - "$application_secret_file" "$rds_secret_file" << 'PY'
 import json
+import secrets
 import sys
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -104,8 +104,21 @@ env_values = {
         f"{quote_plus(rds_secret['password'])}"
         "@${RDS_ENDPOINT}/ctfd"
     ),
+    "RDS_MASTER_SECRET_ARN": "${RDS_MASTER_SECRET_ARN}",
+    "AWS_DEFAULT_REGION": "${REGION}",
     "SECRET_KEY": application_secret["CTFD_SECRET_KEY"],
-    "UPLOAD_FOLDER": "/var/uploads",
+    # Uploads go to S3 through the instance role so they survive instance
+    # replacement and are shared by every instance in the ASG.
+    "UPLOAD_PROVIDER": "s3",
+    "AWS_S3_BUCKET": "${UPLOAD_BUCKET_NAME}",
+    "AWS_S3_REGION": "${REGION}",
+    # Download links are presigned URLs. With boto3's default addressing they
+    # point at the global host (bucket.s3.amazonaws.com), which S3 answers
+    # with a redirect to the regional host for a bucket outside us-east-1;
+    # the redirected request no longer matches the signature, so every
+    # attachment download fails with 403. Virtual addressing signs the
+    # regional host directly.
+    "AWS_S3_ADDRESSING_STYLE": "virtual",
     "REDIS_URL": "rediss://${ELASTICACHE_ENDPOINT}:6379",
     "WORKERS": "1",
     "LOG_FOLDER": "/var/log/CTFd",
@@ -115,15 +128,38 @@ env_values = {
     "SQL_JUDGE_SERVER_URL": "http://sql-judge:8080",
     "GOOGLE_CLIENT_ID": application_secret["GOOGLE_CLIENT_ID"],
     "GOOGLE_CLIENT_SECRET": application_secret["GOOGLE_CLIENT_SECRET"],
+    # Optional: the Google Workspace domain allowed to sign in (hanyang.ac.kr
+    # when absent).
+    "GOOGLE_HOSTED_DOMAIN": application_secret.get("GOOGLE_HOSTED_DOMAIN", ""),
+    "CTFD_IMAGE": "${CTFD_IMAGE}",
+    "SQL_JUDGE_IMAGE": "${SQL_JUDGE_IMAGE}",
 }
 
 env_path = Path(".env")
 lines = env_path.read_text().splitlines() if env_path.exists() else []
-lines = [line for line in lines if line.partition("=")[0] not in env_values]
+stale_keys = {"UPLOAD_FOLDER"}
+lines = [line for line in lines if line.partition("=")[0] not in env_values | stale_keys]
 lines.extend(f"{key}={value}" for key, value in env_values.items())
 env_path.write_text("\n".join(lines) + "\n")
+
+judge_env_path = Path(".env.judge")
+judge_lines = judge_env_path.read_text().splitlines() if judge_env_path.exists() else []
+existing_judge_values = {}
+for line in judge_lines:
+    key, separator, value = line.partition("=")
+    if separator:
+        existing_judge_values[key] = value
+
+judge_env_values = {
+    "MYSQL_HOST": "mysql-judge",
+    "MYSQL_PORT": "3306",
+    "MYSQL_ROOT_PASSWORD": existing_judge_values.get("MYSQL_ROOT_PASSWORD") or secrets.token_hex(32),
+}
+judge_lines = [line for line in judge_lines if line.partition("=")[0] not in judge_env_values]
+judge_lines.extend(f"{key}={value}" for key, value in judge_env_values.items())
+judge_env_path.write_text("\n".join(judge_lines) + "\n")
 PY
-chmod 600 .env
+chmod 600 .env .env.judge
 
 rm -f "$application_secret_file" "$rds_secret_file"
 trap - EXIT
@@ -131,13 +167,7 @@ trap - EXIT
 # Login to ECR
 aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
 
-# Pull images from ECR
-docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${SQL_JUDGE_ECR_REPOSITORY_NAME}:latest
-docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${CTFD_ECR_REPOSITORY_NAME}:latest
-
-# Tag the pulled images with local names that docker-compose expects
-docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${SQL_JUDGE_ECR_REPOSITORY_NAME}:latest platform-sql-judge:latest
-docker tag ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${CTFD_ECR_REPOSITORY_NAME}:latest platform-ctfd:latest
-
-# Run docker-compose
-docker compose up -d
+# Pull the private release images and start the preloaded production bundle.
+docker pull "${CTFD_IMAGE}"
+docker pull "${SQL_JUDGE_IMAGE}"
+docker compose -f docker-compose.yml up --pull never -d

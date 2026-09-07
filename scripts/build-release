@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import subprocess
+import tempfile
+from pathlib import Path
+
+from release_registry import AwsClient, AwsConfig, ReleaseRegistry, ReleaseRegistryError
+
+
+def command_output(*command: str) -> str:
+    result = subprocess.run(command, text=True, capture_output=True)
+    if result.returncode != 0:
+        raise ReleaseRegistryError(
+            f"Command failed: {' '.join(command)}: {result.stderr.strip()}"
+        )
+    return result.stdout.strip()
+
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build and publish a SQL Playzone release")
+    parser.add_argument("--channel", required=True, choices=("dev", "main"))
+    parser.add_argument("--commit", required=True)
+    parser.add_argument("--artifact-prefix", default="sql-2026-s2")
+    parser.add_argument("--profile", default="hyu-ddps")
+    parser.add_argument("--region", default="ap-northeast-2")
+    parser.add_argument("--repository-url", default="https://github.com/ddps-lab/sql-playzone.git")
+    parser.add_argument("--builder-base-ami")
+    return parser.parse_args()
+
+
+def latest_builder_base_ami(aws: AwsClient, artifact_prefix: str) -> str:
+    result = aws.run(
+        "ec2",
+        "describe-images",
+        "--owners",
+        "self",
+        "--filters",
+        f"Name=tag:ArtifactPrefix,Values={artifact_prefix}",
+        "Name=tag:ArtifactRole,Values=builder-base",
+        "Name=state,Values=available",
+    )
+    images = result.get("Images", []) if result else []
+    if not images:
+        raise ReleaseRegistryError(
+            "No builder base AMI exists; run ./scripts/build-builder-base first"
+        )
+    return max(images, key=lambda image: image["CreationDate"])["ImageId"]
+
+
+def main() -> None:
+    arguments = parse_arguments()
+    commit_sha = command_output("git", "rev-parse", f"{arguments.commit}^{{commit}}")
+    if len(commit_sha) != 40:
+        raise ReleaseRegistryError("A full commit SHA is required")
+
+    remote_refs = command_output("git", "ls-remote", "--heads", "origin")
+    if not any(line.startswith(f"{commit_sha}\t") for line in remote_refs.splitlines()):
+        raise ReleaseRegistryError(
+            f"Commit {commit_sha} must be pushed as a branch head before building"
+        )
+
+    timestamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    release_id = f"{arguments.channel}-{commit_sha[:12]}-{timestamp}"
+    namespace = f"/sql-playzone/{arguments.artifact_prefix}"
+    aws = AwsClient(AwsConfig(arguments.profile, arguments.region))
+    registry = ReleaseRegistry(aws, namespace)
+    account_id = aws.run("sts", "get-caller-identity")["Account"]
+    builder_base_ami_id = arguments.builder_base_ami or latest_builder_base_ami(
+        aws, arguments.artifact_prefix
+    )
+
+    root = Path(__file__).resolve().parent.parent
+    packer_directory = root / "IaC" / "packer"
+    with tempfile.TemporaryDirectory(prefix="sql-playzone-packer-") as directory:
+        packer_manifest = Path(directory) / "manifest.json"
+        subprocess.run(["packer", "init", str(packer_directory)], check=True)
+        subprocess.run(
+            [
+                "packer",
+                "build",
+                f"-var=aws_account_id={account_id}",
+                f"-var=aws_profile={arguments.profile}",
+                f"-var=region={arguments.region}",
+                f"-var=artifact_prefix={arguments.artifact_prefix}",
+                f"-var=artifact_channel={arguments.channel}",
+                f"-var=builder_instance_profile={arguments.artifact_prefix}-packer-builder-profile",
+                f"-var=builder_base_ami_id={builder_base_ami_id}",
+                f"-var=repository_url={arguments.repository_url}",
+                f"-var=commit_sha={commit_sha}",
+                f"-var=release_id={release_id}",
+                f"-var=ctfd_repository_name={arguments.artifact_prefix}-ctfd",
+                f"-var=ctfd_cache_repository_name={arguments.artifact_prefix}-ctfd-cache",
+                f"-var=sql_judge_repository_name={arguments.artifact_prefix}-sql-judge",
+                f"-var=sql_judge_cache_repository_name={arguments.artifact_prefix}-sql-judge-cache",
+                f"-var=manifest_output={packer_manifest}",
+                str(packer_directory),
+            ],
+            check=True,
+        )
+        packer_data = json.loads(packer_manifest.read_text())
+
+    build = packer_data["builds"][-1]
+    ami_id = build["artifact_id"].rsplit(":", 1)[-1]
+    base_ami_id = build["custom_data"]["base_ami_id"]
+    registry_host = f"{account_id}.dkr.ecr.{arguments.region}.amazonaws.com"
+
+    def digest(repository: str) -> str:
+        result = aws.run(
+            "ecr",
+            "describe-images",
+            "--repository-name",
+            repository,
+            "--image-ids",
+            f"imageTag={release_id}",
+        )
+        return result["imageDetails"][0]["imageDigest"]
+
+    manifest = {
+        "schema_version": 1,
+        "release_id": release_id,
+        "channel": arguments.channel,
+        "commit_sha": commit_sha,
+        "built_at": dt.datetime.now(dt.UTC).isoformat(),
+        "base_ami_id": base_ami_id,
+        "ami_id": ami_id,
+        "ctfd_image": f"{registry_host}/{arguments.artifact_prefix}-ctfd@{digest(f'{arguments.artifact_prefix}-ctfd')}",
+        "sql_judge_image": f"{registry_host}/{arguments.artifact_prefix}-sql-judge@{digest(f'{arguments.artifact_prefix}-sql-judge')}",
+    }
+    registry.publish_manifest(manifest)
+    registry.set_channel_release(arguments.channel, release_id)
+    print(json.dumps(manifest, indent=2, sort_keys=True))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (ReleaseRegistryError, subprocess.CalledProcessError) as error:
+        raise SystemExit(str(error)) from error

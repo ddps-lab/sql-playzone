@@ -90,12 +90,26 @@ resource "aws_iam_policy" "ecr_read_policy" {
         Resource = "*"
       },
       {
-        Effect   = "Allow"
-        Action   = "secretsmanager:GetSecretValue"
+        Effect = "Allow"
+        Action = "secretsmanager:GetSecretValue"
         Resource = [
           "arn:aws:secretsmanager:${var.region}:${var.aws_account_id}:secret:${var.application_secret_name}-*",
           var.rds_master_secret_arn
         ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = "s3:ListBucket"
+        Resource = var.upload_bucket_arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
+        Resource = "${var.upload_bucket_arn}/*"
       }
     ]
   })
@@ -130,7 +144,7 @@ resource "aws_lb" "alb" {
   subnets            = var.public_subnet_ids
 
   enable_deletion_protection = false
-  enable_http2              = true
+  enable_http2               = true
 
   tags = {
     Name = "${var.prefix}-alb"
@@ -144,14 +158,19 @@ resource "aws_lb_target_group" "tg" {
   protocol = "HTTP"
   vpc_id   = var.vpc_id
 
+  # CTFd's /healthcheck answers 200 only when the database and config are
+  # reachable, and it stays open to any client: the exam-browser restriction
+  # and the onboarding gate exempt it. The index page does not qualify; with
+  # the exam-browser switch on it returns 403 and the ASG replaced every
+  # instance six minutes after boot (dev, 2026-09-02).
   health_check {
     enabled             = true
     healthy_threshold   = 2
     unhealthy_threshold = 2
     timeout             = 5
     interval            = 30
-    path                = "/"
-    matcher             = "200,301,302"
+    path                = "/healthcheck"
+    matcher             = "200"
   }
 
   deregistration_delay = 30
@@ -196,20 +215,28 @@ resource "aws_lb_listener" "https" {
 
 # Launch Template for ARM instances
 resource "aws_launch_template" "arm_launch_template" {
-  name_prefix   = "${var.prefix}-lt-arm"
-  image_id      = data.aws_ami.ctfd_ami_arm.id
-  instance_type = "t4g.micro"
-  key_name      = var.key_name != "" ? var.key_name : null
+  name_prefix            = "${var.prefix}-lt-arm"
+  image_id               = var.ami_id
+  instance_type          = "t4g.micro"
+  key_name               = var.key_name != "" ? var.key_name : null
+  update_default_version = true
 
   vpc_security_group_ids = [var.ec2_security_group_id]
-  
+
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name
   }
 
+  # CTFd in Docker obtains the role credentials for S3 and RDS secret refresh.
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
+
   block_device_mappings {
     device_name = "/dev/sda1"
-    
+
     ebs {
       volume_size           = 30
       volume_type           = "gp3"
@@ -219,24 +246,37 @@ resource "aws_launch_template" "arm_launch_template" {
   }
 
   user_data = base64encode(templatefile("${path.module}/userdata.sh", {
-    REGION                        = var.region
-    AWS_ACCOUNT_ID                = var.aws_account_id
-    CTFD_ECR_REPOSITORY_NAME      = var.ctfd_ecr_repository_name
-    SQL_JUDGE_ECR_REPOSITORY_NAME = var.sql_judge_ecr_repository_name
-    APPLICATION_LOG_GROUP_NAME    = var.application_log_group_name
-    BEHAVIOR_LOG_GROUP_NAME       = var.behavior_log_group_name
-    BEHAVIOR_LOG_STREAM_NAME      = var.behavior_log_stream_name
-    APPLICATION_SECRET_NAME       = var.application_secret_name
-    RDS_MASTER_SECRET_ARN         = var.rds_master_secret_arn
-    RDS_ENDPOINT                  = var.rds_endpoint
-    ELASTICACHE_ENDPOINT          = var.elasticache_serverless_endpoint
+    REGION                     = var.region
+    AWS_ACCOUNT_ID             = var.aws_account_id
+    CTFD_IMAGE                 = var.ctfd_image
+    SQL_JUDGE_IMAGE            = var.sql_judge_image
+    APPLICATION_LOG_GROUP_NAME = var.application_log_group_name
+    BEHAVIOR_LOG_GROUP_NAME    = var.behavior_log_group_name
+    BEHAVIOR_LOG_STREAM_NAME   = var.behavior_log_stream_name
+    APPLICATION_SECRET_NAME    = var.application_secret_name
+    RDS_MASTER_SECRET_ARN      = var.rds_master_secret_arn
+    RDS_ENDPOINT               = var.rds_endpoint
+    ELASTICACHE_ENDPOINT       = var.elasticache_serverless_endpoint
+    UPLOAD_BUCKET_NAME         = var.upload_bucket_name
   }))
 
   tag_specifications {
     resource_type = "instance"
     tags = {
-      Name = "${var.prefix}-instance-arm"
+      Name            = "${var.prefix}-instance-arm"
+      Project         = "sql-playzone"
+      ArtifactPrefix  = var.artifact_prefix
+      ArtifactChannel = var.artifact_channel
+      ArtifactRelease = var.artifact_release_id
     }
+  }
+
+  tags = {
+    Name            = "${var.prefix}-lt-arm"
+    Project         = "sql-playzone"
+    ArtifactPrefix  = var.artifact_prefix
+    ArtifactChannel = var.artifact_channel
+    ArtifactRelease = var.artifact_release_id
   }
 }
 
@@ -245,46 +285,50 @@ resource "aws_autoscaling_group" "asg" {
   name                = "${var.prefix}-asg"
   vpc_zone_identifier = var.public_subnet_ids
   target_group_arns   = [aws_lb_target_group.tg.arn]
-  
+
   min_size         = var.asg_min_size
   max_size         = var.asg_max_size
   desired_capacity = var.asg_desired_capacity
 
-  health_check_type         = "ELB"
-  health_check_grace_period = 180
+  health_check_type = "ELB"
+  # First boot waits for MySQL initialisation and the judge healthcheck before
+  # CTFd starts. A spot instance took 3m50s from launch to ALB healthy on
+  # 2026-09-02, so the grace period keeps a margin above that.
+  health_check_grace_period = 300
 
   mixed_instances_policy {
     launch_template {
       launch_template_specification {
         launch_template_id = aws_launch_template.arm_launch_template.id
-        version            = "$Latest"
+        version            = tostring(aws_launch_template.arm_launch_template.latest_version)
       }
 
-      # First override - will be used for on-demand base capacity
+      # On-demand launches try the overrides in this order; spot launches pick
+      # by price and capacity.
       override {
         instance_type = var.ondemand_instance_type
       }
 
-      # Additional overrides - will be used for spot instances
+      # Fallback instance types when the first one is unavailable
       override {
         instance_type = "t4g.medium"
         launch_template_specification {
           launch_template_id = aws_launch_template.arm_launch_template.id
-          version            = "$Latest"
+          version            = tostring(aws_launch_template.arm_launch_template.latest_version)
         }
       }
       override {
         instance_type = "t4g.large"
         launch_template_specification {
           launch_template_id = aws_launch_template.arm_launch_template.id
-          version            = "$Latest"
+          version            = tostring(aws_launch_template.arm_launch_template.latest_version)
         }
       }
     }
 
     instances_distribution {
       on_demand_base_capacity                  = var.on_demand_base_capacity
-      on_demand_percentage_above_base_capacity = var.on_demand_percentage_above_base  # Scaling 시 on-demand 비율 (0이면 전부 spot)
+      on_demand_percentage_above_base_capacity = var.on_demand_percentage_above_base # Scaling 시 on-demand 비율 (0이면 전부 spot, 100이면 전부 on-demand)
       spot_allocation_strategy                 = "price-capacity-optimized"
     }
   }
@@ -293,6 +337,48 @@ resource "aws_autoscaling_group" "asg" {
     key                 = "Name"
     value               = "${var.prefix}-server"
     propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Project"
+    value               = "sql-playzone"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ArtifactPrefix"
+    value               = var.artifact_prefix
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ArtifactChannel"
+    value               = var.artifact_channel
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ArtifactRelease"
+    value               = var.artifact_release_id
+    propagate_at_launch = true
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
+
+    preferences {
+      auto_rollback          = true
+      instance_warmup        = 300 # Same first-boot budget as health_check_grace_period
+      min_healthy_percentage = 100
+    }
+
+    triggers = ["tag"]
+  }
+
+  lifecycle {
+    # Exam scheduled actions and target tracking change these at runtime.
+    # Ignoring them keeps an apply during an exam window from shrinking the group.
+    ignore_changes = [desired_capacity, min_size]
   }
 }
 
@@ -330,6 +416,64 @@ resource "aws_autoscaling_policy" "request_count_tracking" {
     # 그런데 지금 여러 type 이 있는데 (small, medium, large)
     # 인스턴스당으로 1분당 300요청이면, large 가 동작해서 충분함에도 불구하고 scaling 이 될 수도 있다.
     # 어떤게 좋을지 알아봐야 할듯함.
-    target_value = 300.0  # 인스턴스당 300 요청 유지
+    target_value = 300.0 # 인스턴스당 300 요청 유지
   }
+}
+
+# Scheduled pre-scaling for exams and quizzes
+#
+# Target tracking needs 3-5 minutes to add an instance, which is too slow for
+# the burst at the start of an exam. Each window raises the minimum and desired
+# capacity before the exam and restores the minimum afterwards; target tracking
+# then scales in as load drops. Windows are declared in KST (UTC+9) and
+# scheduled actions require UTC. The root module rejects overlapping windows
+# and capacities outside asg_min_size..asg_max_size, so no action ever has to
+# change the maximum and one window's end cannot undo another window's floor.
+locals {
+  exam_windows = {
+    for window in var.exam_windows : window.name => {
+      capacity   = window.capacity
+      start_time = timeadd("${window.start}Z", "-9h")
+      end_time   = timeadd("${window.end}Z", "-9h")
+    }
+  }
+
+  # A scheduled action cannot start in the past, so windows whose start or end
+  # has already passed are dropped at plan time. Remove stale entries from the
+  # variable file once an exam is over.
+  exam_scale_out = {
+    for name, window in local.exam_windows : name => window
+    if timecmp(window.start_time, plantimestamp()) > 0
+  }
+  exam_scale_in = {
+    for name, window in local.exam_windows : name => window
+    if timecmp(window.end_time, plantimestamp()) > 0
+  }
+}
+
+resource "aws_autoscaling_schedule" "exam_scale_out" {
+  for_each = local.exam_scale_out
+
+  scheduled_action_name  = "${var.prefix}-exam-${each.key}-start"
+  autoscaling_group_name = aws_autoscaling_group.asg.name
+  start_time             = each.value.start_time
+
+  min_size         = each.value.capacity
+  max_size         = -1
+  desired_capacity = each.value.capacity
+}
+
+resource "aws_autoscaling_schedule" "exam_scale_in" {
+  for_each = local.exam_scale_in
+
+  scheduled_action_name  = "${var.prefix}-exam-${each.key}-end"
+  autoscaling_group_name = aws_autoscaling_group.asg.name
+  start_time             = each.value.end_time
+
+  # Only the floor is restored; -1 leaves the maximum and the desired capacity
+  # alone so that target tracking scales in gradually instead of terminating
+  # every extra instance at once.
+  min_size         = var.asg_min_size
+  max_size         = -1
+  desired_capacity = -1
 }

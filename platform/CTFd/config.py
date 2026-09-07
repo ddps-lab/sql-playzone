@@ -284,6 +284,9 @@ class ServerConfig(object):
     OAUTH_CLIENT_SECRET: str = empty_str_cast(config_ini["oauth"]["OAUTH_CLIENT_SECRET"])
     GOOGLE_CLIENT_ID: str = empty_str_cast(config_ini["oauth"]["GOOGLE_CLIENT_ID"])
     GOOGLE_CLIENT_SECRET: str = empty_str_cast(config_ini["oauth"]["GOOGLE_CLIENT_SECRET"])
+    GOOGLE_HOSTED_DOMAIN: str = empty_str_cast(
+        config_ini["oauth"].get("GOOGLE_HOSTED_DOMAIN", ""), default="hanyang.ac.kr"
+    )
 
 
     # === MANAGEMENT ===

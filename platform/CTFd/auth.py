@@ -442,7 +442,9 @@ def register():
 
 
 @auth.route("/login", methods=["POST", "GET"])
-@ratelimit(method="POST", limit=10, interval=5)
+# A whole lecture hall logs in with the form at exam start from one NAT
+# address, so the per-address limit must cover the class.
+@ratelimit(method="POST", limit=120, interval=5)
 def login():
     errors = get_errors()
     if request.method == "POST":
@@ -590,7 +592,8 @@ def oauth_redirect():
             }
             api_data = requests.get(url=user_url, headers=headers, timeout=5).json()
 
-            user_id = api_data["id"]
+            # oauth_id is a string column (Google accounts store "google_<id>")
+            user_id = str(api_data["id"])
             user_name = api_data["name"]
             user_email = api_data["email"]
 
@@ -624,7 +627,7 @@ def oauth_redirect():
                     return redirect(url_for("auth.login"))
 
             if get_config("user_mode") == TEAMS_MODE and user.team_id is None:
-                team_id = api_data["team"]["id"]
+                team_id = str(api_data["team"]["id"])
                 team_name = api_data["team"]["name"]
 
                 team = Teams.query.filter_by(oauth_id=team_id).first()
@@ -677,6 +680,30 @@ def oauth_redirect():
         return redirect(url_for("auth.login"))
 
 
+# Google accounts must belong to this Google Workspace domain. The hd
+# parameter sent to Google only pre-selects accounts; the callback enforces it.
+def google_hosted_domain():
+    """The Google Workspace domain that may sign in: GOOGLE_HOSTED_DOMAIN in
+    config.ini or the environment, hanyang.ac.kr by default."""
+    return str(get_app_config("GOOGLE_HOSTED_DOMAIN") or "").strip().lower()
+
+
+def google_account_allowed(user_data):
+    """Only verified Workspace members of the course domain.
+
+    A consumer Google account can carry a verified university email address,
+    so the email suffix alone is not proof of membership; the hd claim is.
+    """
+    domain = google_hosted_domain()
+    email = str(user_data.get("email") or "").strip().lower()
+    return (
+        bool(domain)
+        and user_data.get("verified_email") is True
+        and str(user_data.get("hd") or "").lower() == domain
+        and email.endswith("@" + domain)
+    )
+
+
 @auth.route("/google/login")
 def google_login():
     google_client_id = get_app_config("GOOGLE_CLIENT_ID") or get_config("google_client_id")
@@ -710,14 +737,16 @@ def google_login():
         f"state={state}&"
         f"access_type=offline&"
         f"prompt=consent&"
-        f"hd=hanyang.ac.kr"
+        f"hd={google_hosted_domain()}"
     )
     
     return redirect(redirect_url)
 
 
 @auth.route("/google/callback")
-@ratelimit(method="GET", limit=10, interval=60)
+# A lecture hall shares one NAT address, so the per-IP limit must cover a
+# whole class signing up in the same minute of the first lecture.
+@ratelimit(method="GET", limit=300, interval=60)
 def google_callback():
     code = request.args.get("code")
     state = request.args.get("state")
@@ -760,7 +789,20 @@ def google_callback():
             
             if userinfo_response.status_code == 200:
                 user_data = userinfo_response.json()
-                
+
+                if not google_account_allowed(user_data):
+                    log(
+                        "logins",
+                        "[{date}] {ip} - Google account {email} rejected: not a verified {domain} account",
+                        email=user_data.get("email"),
+                        domain=google_hosted_domain(),
+                    )
+                    error_for(
+                        endpoint="auth.login",
+                        message=f"Only verified {google_hosted_domain()} Google accounts can sign in.",
+                    )
+                    return redirect(url_for("auth.login"))
+
                 user_email = user_data.get("email")
                 raw_user_name = user_data.get("name", user_email.split("@")[0])
                 
@@ -775,8 +817,12 @@ def google_callback():
                 
                 google_id = user_data.get("id")
                 
-                # Check if user exists
-                user = Users.query.filter_by(email=user_email).first()
+                # Find the account by its Google identity first, then by
+                # email, so an account whose email was edited still matches.
+                user = (
+                    Users.query.filter_by(oauth_id=f"google_{google_id}").first()
+                    or Users.query.filter_by(email=user_email).first()
+                )
                 
                 if user is None:
                     # Check user count limit
@@ -840,6 +886,9 @@ def google_callback():
                     pass
                 
                 login_user(user)
+                # Lets the onboarding plugin tell a Google-authenticated
+                # session from a later form login (login_user issues a new nonce).
+                session["google_login_nonce"] = session["nonce"]
                 log("logins", "[{date}] {ip} - {name} logged in via Google OAuth", name=user.name)
                 
                 return redirect(url_for("challenges.listing" if not (get_config("user_mode") == TEAMS_MODE and user.team_id is None) else "teams.private"))

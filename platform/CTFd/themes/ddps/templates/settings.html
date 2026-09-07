@@ -20,11 +20,14 @@
               data-bs-target="#profile" role="tab"
           >{% trans %}Profile{% endtrans %}
           </button>
+          {% if is_admin() %}
+          {# API tokens are for admin scripts; students have no use for them. #}
           <button
               class="nav-link" id="settings-tokens-tab" data-bs-toggle="pill" data-bs-target="#tokens"
               role="tab"
           >{% trans %}Access Tokens{% endtrans %}
           </button>
+          {% endif %}
         </div>
       </div>
 
@@ -48,7 +51,10 @@
 
                 <div class="mb-3">
                   <b>{{ form.email.label(class="form-label") }}</b>
-                  {{ form.email(class="form-control", value=email) }}
+                  {{ form.email(class="form-control", value=email, disabled=True) }}
+                  <small class="form-text text-muted">
+                    {% trans %}Your email address comes from your HYU Google account and cannot be changed here.{% endtrans %}
+                  </small>
                 </div>
 
                 <hr>
@@ -106,6 +112,7 @@
             {% endwith %}
           </div>
 
+          {% if is_admin() %}
           <div class="tab-pane fade" id="tokens" role="tabpanel">
 
             {% with form = Forms.self.TokensForm() %}
@@ -243,6 +250,7 @@
             {% endif %}
 
           </div>
+          {% endif %}
         </div>
       </div>
     </div>

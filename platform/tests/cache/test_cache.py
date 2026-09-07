@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from unittest.mock import MagicMock
+
 from redis.exceptions import ConnectionError
 
 from CTFd.cache import clear_all_user_sessions, clear_user_session
@@ -108,3 +110,27 @@ def test_redis_cache_subclass_commands():
             resp = cache.inc("testing_inc")
             assert resp == 1
         destroy_ctfd(app)
+
+
+def test_redis_cache_clear_uses_cluster_safe_deletes():
+    from CTFd.cache import clear_redis_backend
+
+    backend = MagicMock()
+    backend.key_prefix = "flask_cache_"
+    backend._read_client.scan_iter.return_value = iter(
+        f"flask_cache_{index}" for index in range(3)
+    )
+
+    def delete_one_key(*keys):
+        assert len(keys) == 1
+        return 1
+
+    backend._write_client.delete.side_effect = delete_one_key
+
+    assert clear_redis_backend(backend) is True
+
+    backend._read_client.keys.assert_not_called()
+    backend._read_client.scan_iter.assert_called_once_with(
+        match="flask_cache_*", count=500
+    )
+    assert backend._write_client.delete.call_count == 3

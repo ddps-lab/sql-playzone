@@ -9,6 +9,46 @@ variable "prefix" {
   }
 }
 
+variable "artifact_prefix" {
+  description = "Semester-scoped prefix used by the artifact foundation"
+  type        = string
+  default     = "sql-2026-s2"
+
+  validation {
+    condition     = length(var.artifact_prefix) <= 28 && can(regex("^[a-z0-9][a-z0-9-]*[a-z0-9]$", var.artifact_prefix))
+    error_message = "artifact_prefix must be at most 28 characters and contain only lowercase letters, numbers, and internal hyphens."
+  }
+}
+
+variable "artifact_channel" {
+  description = "Release channel consumed by this runtime"
+  type        = string
+  default     = "main"
+
+  validation {
+    condition     = contains(["dev", "main"], var.artifact_channel)
+    error_message = "artifact_channel must be dev or main."
+  }
+}
+
+variable "artifact_release_id" {
+  description = "Optional exact release override; null selects the channel current pointer"
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "deployment_mode" {
+  description = "Persistent production runtime or disposable validation runtime"
+  type        = string
+  default     = "persistent"
+
+  validation {
+    condition     = contains(["persistent", "ephemeral"], var.deployment_mode)
+    error_message = "deployment_mode must be persistent or ephemeral."
+  }
+}
+
 variable "region" {
   description = "AWS region"
   type        = string
@@ -51,25 +91,25 @@ variable "data_subnet_cidrs" {
 variable "aurora_engine_version" {
   description = "Aurora MySQL engine version"
   type        = string
-  default     = "8.0.mysql_aurora.3.08.2"  # Aurora MySQL 8.0 compatible
+  default     = "8.0.mysql_aurora.3.08.2" # Aurora MySQL 8.0 compatible
 }
 
 variable "aurora_min_capacity" {
   description = "Minimum capacity for Aurora Serverless v2 (in ACUs)"
   type        = number
-  default     = 0.5  # 최소 0.5 ACU
+  default     = 0.5 # 최소 0.5 ACU
 }
 
 variable "aurora_max_capacity" {
   description = "Maximum capacity for Aurora Serverless v2 (in ACUs)"
   type        = number
-  default     = 32  # 최대 32 ACU
+  default     = 32 # 최대 32 ACU
 }
 
 variable "aurora_instance_count" {
   description = "Number of Aurora instances"
   type        = number
-  default     = 1  # 기본 1개 인스턴스 (writer)
+  default     = 1 # 기본 1개 인스턴스 (writer)
 }
 
 # # 기존 RDS 변수들 (마이그레이션 후 제거 예정)
@@ -104,9 +144,14 @@ variable "on_demand_base_capacity" {
 }
 
 variable "on_demand_percentage_above_base" {
-  description = "Percentage of on-demand instances above base capacity"
+  description = "Percentage of on-demand instances above base capacity. 100 keeps every scaled-out instance on-demand so exam capacity cannot be reclaimed as spot; 0 restores spot scale-out."
   type        = number
-  default     = 0
+  default     = 100
+
+  validation {
+    condition     = var.on_demand_percentage_above_base >= 0 && var.on_demand_percentage_above_base <= 100
+    error_message = "on_demand_percentage_above_base must be between 0 and 100."
+  }
 }
 
 variable "asg_min_size" {
@@ -125,4 +170,58 @@ variable "asg_desired_capacity" {
   description = "Desired capacity of Auto Scaling Group"
   type        = number
   default     = 1
+}
+
+variable "exam_windows" {
+  description = "Pre-scaling windows for exams and quizzes. The group is raised to capacity at start and its minimum is restored at end. Times are KST without a zone suffix, e.g. 2026-10-20T08:30:00. Windows must not overlap (merge back-to-back exams into one window), capacity must stay within asg_min_size..asg_max_size, and windows that have already passed are ignored and should be removed."
+  type = list(object({
+    name     = string
+    start    = string
+    end      = string
+    capacity = number
+  }))
+  default = []
+
+  validation {
+    condition = alltrue([
+      for window in var.exam_windows :
+      can(regex("^[a-z0-9][a-z0-9-]{0,30}$", window.name))
+    ])
+    error_message = "exam_windows[*].name must be 1-31 lowercase letters, digits, or hyphens."
+  }
+
+  validation {
+    condition     = length(distinct(var.exam_windows[*].name)) == length(var.exam_windows)
+    error_message = "exam_windows[*].name must be unique."
+  }
+
+  validation {
+    condition = alltrue([
+      for window in var.exam_windows :
+      can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$", window.start))
+      && can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$", window.end))
+      && try(timecmp("${window.start}Z", "${window.end}Z") < 0, false)
+    ])
+    error_message = "exam_windows[*].start and end must be KST timestamps like 2026-10-20T08:30:00 with end after start."
+  }
+
+  validation {
+    condition = alltrue([
+      for window in var.exam_windows :
+      floor(window.capacity) == window.capacity
+      && window.capacity >= var.asg_min_size
+      && window.capacity <= var.asg_max_size
+    ])
+    error_message = "exam_windows[*].capacity must be a whole number between asg_min_size and asg_max_size; raise asg_max_size if an exam needs more."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for i, a in var.exam_windows : [
+        for j, b in var.exam_windows :
+        i >= j || try(timecmp("${a.end}Z", "${b.start}Z") < 0 || timecmp("${b.end}Z", "${a.start}Z") < 0, false)
+      ]
+    ]))
+    error_message = "exam_windows must not overlap or touch; merge back-to-back exams into one window."
+  }
 }
