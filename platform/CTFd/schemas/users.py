@@ -1,6 +1,7 @@
 from marshmallow import ValidationError, post_dump, pre_load, validate
 from marshmallow.fields import Nested
 from marshmallow_sqlalchemy import field_for
+from sqlalchemy import func
 from sqlalchemy.orm import load_only
 
 from CTFd.models import Brackets, UserFieldEntries, UserFields, Users, ma
@@ -9,7 +10,11 @@ from CTFd.utils import get_config, string_types
 from CTFd.utils.crypto import verify_password
 from CTFd.utils.email import check_email_is_blacklisted, check_email_is_whitelisted
 from CTFd.utils.user import get_current_user, is_admin
-from CTFd.utils.validators import validate_country_code, validate_language
+from CTFd.utils.validators import (
+    validate_country_code,
+    validate_language,
+    validate_login_id,
+)
 
 
 class UserSchema(ma.ModelSchema):
@@ -73,36 +78,52 @@ class UserSchema(ma.ModelSchema):
         
         name = name.strip()
 
-        existing_user = Users.query.filter_by(name=name).first()
-        current_user = get_current_user()
+        # Display names may repeat (students who share a real name); the login
+        # ID is the unique handle and is validated separately.
         if is_admin():
-            # Set to the user_id we are targetting or the instance id for self updates
-            user_id = data.get("id")
-            if user_id is None and self.instance:
-                user_id = self.instance.id
-            if user_id:
-                if existing_user and existing_user.id != user_id:
-                    raise ValidationError(
-                        "User name has already been taken", field_names=["name"]
-                    )
-            else:
-                if existing_user:
-                    raise ValidationError(
-                        "User name has already been taken", field_names=["name"]
-                    )
-        else:
-            if name == current_user.name:
-                return data
-            else:
-                name_changes = get_config("name_changes", default=True)
-                if bool(name_changes) is False:
-                    raise ValidationError(
-                        "Name changes are disabled", field_names=["name"]
-                    )
-                if existing_user:
-                    raise ValidationError(
-                        "User name has already been taken", field_names=["name"]
-                    )
+            return data
+        current_user = get_current_user()
+        if name == current_user.name:
+            return data
+        name_changes = get_config("name_changes", default=True)
+        if bool(name_changes) is False:
+            raise ValidationError("Name changes are disabled", field_names=["name"])
+        return data
+
+    @pre_load
+    def validate_login_id(self, data):
+        """Admins set login IDs; they are unique and shaped like a handle."""
+        if "login_id" not in data:
+            # An admin creating an account may leave the ID to the name when
+            # the name is usable as one, as scripts and imports expect.
+            if is_admin() and data.get("id") is None and self.instance is None:
+                name = str(data.get("name") or "").strip()
+                if validate_login_id(name) and Users.query.filter(
+                    func.lower(Users.login_id) == name.lower()
+                ).first() is None:
+                    data["login_id"] = name
+            return data
+        if not is_admin():
+            raise ValidationError(
+                "Your login ID is set by the instructor", field_names=["login_id"]
+            )
+        login_id = str(data.get("login_id") or "").strip()
+        if login_id == "":
+            data["login_id"] = None
+            return data
+        if validate_login_id(login_id) is False:
+            raise ValidationError(
+                "A login ID is 3 to 32 letters, digits, dots, underscores or hyphens",
+                field_names=["login_id"],
+            )
+        user_id = data.get("id")
+        if user_id is None and self.instance:
+            user_id = self.instance.id
+        existing = Users.query.filter(func.lower(Users.login_id) == login_id.lower()).first()
+        if existing and existing.id != user_id:
+            raise ValidationError("That login ID is already taken", field_names=["login_id"])
+        data["login_id"] = login_id
+        return data
 
     @pre_load
     def validate_email(self, data):
@@ -397,6 +418,7 @@ class UserSchema(ma.ModelSchema):
         "admin": [
             "website",
             "name",
+            "login_id",
             "created",
             "country",
             "banned",

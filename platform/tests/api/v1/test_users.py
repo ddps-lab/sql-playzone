@@ -157,7 +157,7 @@ def test_api_users_post_admin_duplicate_information():
             assert resp["success"] is False
             assert Users.query.count() == 2
 
-            # Duplicate user
+            # Duplicate name: display names may repeat; the login ID stays free
             r = client.post(
                 "/api/v1/users",
                 json={
@@ -167,10 +167,29 @@ def test_api_users_post_admin_duplicate_information():
                 },
             )
             resp = r.get_json()
+            assert r.status_code == 200
+            assert resp["success"] is True
+            assert Users.query.count() == 3
+            assert (
+                Users.query.filter_by(email="user2@examplectf.com").first().login_id
+                is None
+            )
+
+            # Duplicate login ID
+            r = client.post(
+                "/api/v1/users",
+                json={
+                    "name": "user3",
+                    "login_id": "user",
+                    "email": "user3@examplectf.com",
+                    "password": "password",
+                },
+            )
+            resp = r.get_json()
             assert r.status_code == 400
-            assert resp["errors"]["name"]
+            assert resp["errors"]["login_id"]
             assert resp["success"] is False
-            assert Users.query.count() == 2
+            assert Users.query.count() == 3
     destroy_ctfd(app)
 
 
@@ -207,23 +226,32 @@ def test_api_users_patch_admin_duplicate_information():
             app, name="user2", email="user2@examplectf.com", password="password"
         )
         with login_as_user(app, "admin") as client:
-            # Duplicate name
+            # Duplicate name is allowed: display names may repeat
             r = client.patch(
-                "/api/v1/users/1",
+                "/api/v1/users/2",
                 json={
                     "name": "user2",
-                    "email": "user@examplectf.com",
+                    "email": "user1@examplectf.com",
                     "password": "password",
                 },
             )
             resp = r.get_json()
+            assert r.status_code == 200
+            assert resp["success"] is True
+
+            # Duplicate login ID
+            r = client.patch(
+                "/api/v1/users/2",
+                json={"login_id": "user2"},
+            )
+            resp = r.get_json()
             assert r.status_code == 400
-            assert resp["errors"]["name"]
+            assert resp["errors"]["login_id"]
             assert resp["success"] is False
 
             # Duplicate email
             r = client.patch(
-                "/api/v1/users/1",
+                "/api/v1/users/2",
                 json={
                     "name": "user",
                     "email": "user2@examplectf.com",
@@ -263,7 +291,7 @@ def test_api_users_patch_duplicate_information():
             assert resp["errors"]["email"]
             assert resp["success"] is False
 
-            # Duplicate user
+            # Duplicate name is allowed: display names may repeat
             r = client.patch(
                 "/api/v1/users/me",
                 json={
@@ -273,10 +301,19 @@ def test_api_users_patch_duplicate_information():
                 },
             )
             resp = r.get_json()
-            assert r.status_code == 400
-            assert resp["errors"]["name"]
-            assert resp["success"] is False
+            assert r.status_code == 200
+            assert resp["success"] is True
+            assert Users.query.filter_by(name="user2").count() == 2
             assert Users.query.count() == 3
+
+            # The login ID is not the user's to change
+            r = client.patch(
+                "/api/v1/users/me",
+                json={"login_id": "user2", "confirm": "password"},
+            )
+            resp = r.get_json()
+            assert r.status_code == 400
+            assert resp["errors"]["login_id"]
     destroy_ctfd(app)
 
 

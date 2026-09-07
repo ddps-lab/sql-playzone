@@ -22,6 +22,7 @@ from flask import (
 )
 from flask_babel import lazy_gettext as _l
 from markupsafe import Markup
+from sqlalchemy import func
 from wtforms import PasswordField, StringField
 from wtforms.validators import InputRequired
 
@@ -273,11 +274,22 @@ def OnboardingForm(user_id, *args, **kwargs):
     )
 
     class _OnboardingForm(BaseForm):
-        name = StringField(
-            _l("User Name"),
-            description=_l("Shown on the scoreboard. Pick any name you like."),
+        login_id = StringField(
+            _l("ID"),
+            description=_l(
+                "Used to log in, together with your password; your email address "
+                "works too. 3 to 32 letters, digits, dots, underscores or hyphens."
+            ),
             validators=[InputRequired()],
             render_kw={"autofocus": True},
+        )
+        name = StringField(
+            _l("Nickname"),
+            description=_l(
+                "Your real name. It is shown on the site and in the instructor's "
+                "lists so that students can be told apart."
+            ),
+            validators=[InputRequired()],
         )
         password = PasswordField(
             _l("Password"),
@@ -321,23 +333,50 @@ def validate_password(password, password_confirm):
     return errors
 
 
-def validate_submission(user, name, password, password_confirm, credentials, fields):
+def login_id_taken(login_id, user_id):
+    """Login IDs are unique regardless of case (as MySQL compares them)."""
+    return (
+        Users.query.filter(
+            func.lower(Users.login_id) == login_id.lower(), Users.id != user_id
+        ).first()
+        is not None
+    )
+
+
+def suggested_login_id(user):
+    """A starting point for the ID field: the email's local part when usable."""
+    if user.login_id:
+        return user.login_id
+    local_part = str(user.email or "").split("@")[0].lower()
+    candidate = re.sub(r"[^a-z0-9._-]", "", local_part)[:32]
+    if validators.validate_login_id(candidate) and not login_id_taken(candidate, user.id):
+        return candidate
+    return ""
+
+
+def validate_submission(
+    user, login_id, name, password, password_confirm, credentials, fields
+):
     """Same rules as auth.register, applied to an existing account.
 
-    ``credentials`` says whether a user name and password are being set;
-    ``fields`` lists the custom user fields collected on this visit.
+    ``credentials`` says whether the login ID, nickname and password are
+    being set; ``fields`` lists the custom user fields collected on this visit.
     """
     errors = []
 
     if credentials:
+        if validators.validate_login_id(login_id) is False:
+            errors.append(
+                _l("Your ID must be 3 to 32 letters, digits, dots, underscores or hyphens")
+            )
+        elif login_id_taken(login_id, user.id):
+            errors.append(_l("That ID is already taken"))
         if len(name) == 0:
-            errors.append(_l("Pick a longer user name"))
+            errors.append(_l("Enter your name as the nickname"))
         elif len(name) > NAME_MAX_LENGTH:
-            errors.append(_l("Pick a shorter user name"))
+            errors.append(_l("Pick a shorter nickname"))
         if validators.validate_email(name) is True:
-            errors.append(_l("Your user name cannot be an email address"))
-        if Users.query.filter(Users.name == name, Users.id != user.id).first():
-            errors.append(_l("That user name is already taken"))
+            errors.append(_l("Your nickname cannot be an email address"))
         if (
             user.password is not None
             and name != user.name
@@ -363,8 +402,9 @@ def validate_submission(user, name, password, password_confirm, credentials, fie
     return errors, entries
 
 
-def complete_onboarding(user, name, password, entries, credentials):
+def complete_onboarding(user, login_id, name, password, entries, credentials):
     if credentials:
+        user.login_id = login_id
         user.name = name
         user.password = password  # hashed by the Users model validator
     for field_id, value in entries.items():
@@ -425,18 +465,23 @@ def load(app):
         credentials = mode != "terms"
 
         errors = []
+        login_id = suggested_login_id(user)
         name = user.name
         if request.method == "POST":
+            # A password reset may leave the ID field out; the account keeps its ID.
+            login_id = request.form.get("login_id", "").strip() or (user.login_id or "")
             name = request.form.get("name", "").strip()
             password = request.form.get("password", "").strip(ASCII_WHITESPACE)
             password_confirm = request.form.get("password_confirm", "").strip(
                 ASCII_WHITESPACE
             )
             errors, entries = validate_submission(
-                user, name, password, password_confirm, credentials, fields
+                user, login_id, name, password, password_confirm, credentials, fields
             )
             if not errors:
-                complete_onboarding(user, name, password, entries, credentials)
+                complete_onboarding(
+                    user, login_id, name, password, entries, credentials
+                )
                 if credentials:
                     # A Google session that only gave consent still owes the
                     # password reset; the hook brings it back here for that.
@@ -462,6 +507,7 @@ def load(app):
             "onboarding.html",
             form=OnboardingForm(user.id),
             errors=errors,
+            login_id=login_id,
             name=name,
             email=user.email,
             mode=mode,

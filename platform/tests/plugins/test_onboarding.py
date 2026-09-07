@@ -34,7 +34,9 @@ def create_google_user(
     with app.app_context():
         user = Users(name=name, email=email, oauth_id=f"google_{email}", verified=True)
         if password is not None:
+            # an account that already finished onboarding also has a login ID
             user.password = password
+            user.login_id = name
         db.session.add(user)
         db.session.commit()
         if student_id is not None:
@@ -75,7 +77,8 @@ def onboarding_data(client, **overrides):
     with client.session_transaction() as sess:
         nonce = sess["nonce"]
     data = {
-        "name": "playzone-minsu",
+        "login_id": "minsu",
+        "name": "김민수",
         "password": "hunter22!",
         f"fields[{field_id(STUDENT_ID_FIELD)}]": "2025123456",
         f"fields[{field_id(TERMS_FIELD)}]": "y",
@@ -148,7 +151,8 @@ def test_onboarding_sets_name_password_and_student_id_then_form_login_works():
         assert r.location.endswith("/challenges")
 
         user = Users.query.filter_by(id=user_id).first()
-        assert user.name == "playzone-minsu"
+        assert user.login_id == "minsu"
+        assert user.name == "김민수"
         assert verify_password("hunter22!", user.password)
         field = UserFields.query.filter_by(name=STUDENT_ID_FIELD).first()
         entry = UserFieldEntries.query.filter_by(
@@ -162,18 +166,20 @@ def test_onboarding_sets_name_password_and_student_id_then_form_login_works():
 
         # the session survives the password change and the gate is lifted
         assert client.get("/challenges").status_code == 200
-        assert (
-            client.get("/api/v1/users/me").get_json()["data"]["name"]
-            == "playzone-minsu"
-        )
+        assert client.get("/api/v1/users/me").get_json()["data"]["name"] == "김민수"
         # this session is still Google-authenticated, so the page now offers a password change
         assert b"Set a New Password" in client.get("/onboarding/").data
 
         client.get("/logout")
-        client = login_as_user(app, name="playzone-minsu", password="hunter22!")
+        client = login_as_user(app, name="minsu", password="hunter22!")
         assert client.get("/api/v1/users/me").status_code == 200
         client = login_as_user(app, name="minsu@hanyang.ac.kr", password="hunter22!")
         assert client.get("/api/v1/users/me").status_code == 200
+        # the nickname is not a login name
+        client = login_as_user(
+            app, name="김민수", password="hunter22!", raise_for_error=False
+        )
+        assert client.get("/api/v1/users/me").status_code != 200
     destroy_ctfd(app)
 
 
@@ -185,12 +191,16 @@ def test_onboarding_rejects_bad_names_passwords_and_missing_student_id():
         user_id = create_google_user(app)
         client = start_session(app, user_id)
         cases = [
-            ({"name": "taken"}, b"That user name is already taken"),
+            ({"login_id": "taken"}, b"That ID is already taken"),
+            ({"login_id": "TAKEN"}, b"That ID is already taken"),
+            ({"login_id": "ab"}, b"3 to 32 letters, digits, dots, underscores or hyphens"),
+            ({"login_id": "min su"}, b"3 to 32 letters, digits, dots, underscores or hyphens"),
+            ({"login_id": "minsu@hanyang.ac.kr"}, b"3 to 32 letters, digits, dots, underscores or hyphens"),
             (
                 {"name": "someone@hanyang.ac.kr"},
-                b"Your user name cannot be an email address",
+                b"Your nickname cannot be an email address",
             ),
-            ({"name": ""}, b"Pick a longer user name"),
+            ({"name": ""}, b"Enter your name as the nickname"),
             ({"password": "short1"}, b"Password must be at least 8 characters"),
             (
                 {"password": "12345678"},

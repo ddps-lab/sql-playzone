@@ -105,7 +105,7 @@ def non_admin_login():
     if validators.validate_email(name) is True:
         user = Users.query.filter_by(email=name).first()
     else:
-        user = Users.query.filter_by(name=name).first()
+        user = Users.query.filter_by(login_id=name).first()
     if user is not None:
         return user.type != 'admin'
     # A configured preset admin exists in the database only after its first

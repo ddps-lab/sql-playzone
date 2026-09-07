@@ -180,6 +180,9 @@ def test_google_callback_admits_verified_course_accounts():
         user = Users.query.filter_by(email="Student@hanyang.ac.kr").first()
         assert user.oauth_id == "google_1"
         assert user.password is None
+        # the profile name is the display name; the login ID comes from onboarding
+        assert user.name == "Student"
+        assert user.login_id is None
     destroy_ctfd(app)
 
 
@@ -196,4 +199,16 @@ def test_google_callback_finds_the_account_by_google_id_after_an_email_edit():
         with client.session_transaction() as sess:
             assert sess["id"] == user_id
         assert Users.query.filter(Users.type != "admin").count() == 1
+    destroy_ctfd(app)
+
+
+def test_google_accounts_may_share_a_profile_name():
+    app = create_google_ctfd()
+    with app.app_context():
+        for uid, email in (("1", "hong.a@hanyang.ac.kr"), ("2", "hong.b@other.ac.kr")):
+            info = google_userinfo(email, hd=email.split("@")[1], uid=uid)
+            info["name"] = "홍길동"
+            assert_admitted(app, info)
+        names = [u.name for u in Users.query.filter(Users.type != "admin").all()]
+        assert names == ["홍길동", "홍길동"]
     destroy_ctfd(app)

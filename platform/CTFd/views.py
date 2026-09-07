@@ -184,7 +184,13 @@ def setup():
                 )
 
             admin = Admins(
-                name=name, email=email, password=password, type="admin", hidden=True
+                name=name,
+                # The first admin logs in with the name typed here (or the email).
+                login_id=name if validators.validate_login_id(name) else None,
+                email=email,
+                password=password,
+                type="admin",
+                hidden=True,
             )
 
             # Create an empty index page
@@ -321,6 +327,7 @@ def settings():
     return render_template(
         "settings.html",
         name=user.name,
+        login_id=user.login_id,
         email=user.email,
         language=user.language,
         website=user.website,

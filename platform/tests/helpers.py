@@ -407,6 +407,8 @@ def gen_flag(db, challenge_id, content="flag", type="static", data=None, **kwarg
 def gen_user(
     db, name="user_name", email="user@examplectf.com", password="password", **kwargs
 ):
+    # Test accounts log in with their name unless a login ID is given.
+    kwargs.setdefault("login_id", name)
     user = Users(name=name, email=email, password=password, **kwargs)
     db.session.add(user)
     db.session.commit()

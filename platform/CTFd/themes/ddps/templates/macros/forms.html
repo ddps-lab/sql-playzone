@@ -5,6 +5,7 @@
       <div class="mb-3">
         {% if show_labels %}
           <b>{{ field.label(class="form-label") }}</b>
+          {% if field.flags.required %}<span class="text-danger">*</span>{% endif %}
         {% endif %}
 
         {% if show_optionals %}
@@ -30,6 +31,7 @@
 
       <div>
         {{ field.label(class="form-label") }}
+        {% if field.flags.required %}<span class="text-danger">*</span>{% endif %}
         {% if show_optionals %}
           {% if field.flags.required is false %}
             <small class="ms-1 text-muted">
@@ -59,6 +61,7 @@
 
       <div>
         <b>{{ field.label(class="form-label") }}</b>
+        {% if field.flags.required %}<span class="text-danger">*</span>{% endif %}
         {% if show_optionals %}
           {% if field.flags.required is false %}
             <small class="ms-1 text-muted">
