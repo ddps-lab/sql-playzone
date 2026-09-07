@@ -61,10 +61,10 @@
             <hr>
 
             <p class="text-center text-muted mb-2">
-              {% trans %}First time here, or forgot your password? Use your HYU Google account. A new account picks a user name and password right after; an existing account sets a new password.{% endtrans %}
+              {% trans %}First time here, or forgot your password? Use your university Google account (Google Workspace); personal Gmail accounts are not accepted. If your university does not use Google, ask the instructor for an account. A new account picks a user name and password right after; an existing account sets a new password.{% endtrans %}
             </p>
             <a class="btn btn-outline-secondary btn-lg btn-block w-100" href="{{ url_for('auth.google_login') }}">
-              <i class="fab fa-google"></i> Sign up or reset password with HYU Google
+              <i class="fab fa-google"></i> Sign up or reset password with a university Google account
             </a>
           {% endif %}
         </div>

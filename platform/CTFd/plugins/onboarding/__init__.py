@@ -72,7 +72,7 @@ AFFIRMATIVE_VALUES = {"y", "yes", "true", "on", "1"}
 # The email address is the link to the Google account and the login name;
 # students cannot change it (admins can, in the admin panel).
 EMAIL_LOCKED_MESSAGE = (
-    "Your email address comes from your HYU Google account and cannot be changed here."
+    "Your email address comes from your university Google account and cannot be changed here."
 )
 TOKENS_ADMIN_ONLY_MESSAGE = "API tokens are available to administrators only."
 
