@@ -1,9 +1,33 @@
 {% extends "base.html" %}
 
+{% block stylesheets %}
+  {{ super() }}
+  {% if legal_page %}
+    <style>
+      .legal-content { line-height: 1.8; overflow-wrap: anywhere; }
+      .legal-content h1 { margin-bottom: 1.5rem; }
+      .legal-content h2 { margin-top: 2rem; margin-bottom: 1rem; }
+      .legal-content table { width: 100%; margin-bottom: 1.5rem; border-collapse: collapse; }
+      .legal-content th, .legal-content td { padding: .75rem .5rem; vertical-align: top; border-bottom: 1px solid var(--bs-border-color, #dee2e6); }
+      .legal-content th { background: var(--bs-tertiary-bg, #f8f9fa); }
+    </style>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
+  {% if legal_page %}
+  <div class="container py-4 py-md-5">
+    <div class="row justify-content-center">
+      <article class="col-12 col-lg-9 legal-content" lang="ko">
+        {{ content | safe }}
+      </article>
+    </div>
+  </div>
+  {% else %}
   <div class="h-100">
     {{ content | safe }}
   </div>
+  {% endif %}
 {% endblock %}
 
 {% block scripts %}

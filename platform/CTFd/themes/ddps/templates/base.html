@@ -137,7 +137,12 @@
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-center text-center text-md-start">
       <p class="small text-body m-0 lh-1 mb-2 mb-md-0">
         © 2025 Hanyang University DDPS Lab. All Rights Reserved.
-        <a href="https://portal.hanyang.ac.kr/PiopAct/piopMainDaepyoWeb.do" class="text-secondary text-decoration-none" target="_blank" rel="noopener"> | Privacy Policy</a>
+        {% if Configs.tos_url or Configs.tos_text %}
+          <a href="{{ Configs.tos_link }}" class="text-secondary text-decoration-none"> | 서비스 이용약관</a>
+        {% endif %}
+        {% if Configs.privacy_url or Configs.privacy_text %}
+          <a href="{{ Configs.privacy_link }}" class="text-secondary text-decoration-none fw-bold"> | 개인정보처리방침</a>
+        {% endif %}
       </p>
       
       <a href="https://ctfd.io" class="text-secondary text-decoration-none lh-1">

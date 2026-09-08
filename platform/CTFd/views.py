@@ -357,7 +357,12 @@ def tos():
     if tos_url:
         return redirect(tos_url)
     elif tos_text:
-        return render_template("page.html", content=build_markdown(tos_text))
+        return render_template(
+            "page.html",
+            content=build_markdown(tos_text),
+            title="서비스 이용약관",
+            legal_page=True,
+        )
     else:
         abort(404)
 
@@ -369,7 +374,12 @@ def privacy():
     if privacy_url:
         return redirect(privacy_url)
     elif privacy_text:
-        return render_template("page.html", content=build_markdown(privacy_text))
+        return render_template(
+            "page.html",
+            content=build_markdown(privacy_text),
+            title="개인정보처리방침",
+            legal_page=True,
+        )
     else:
         abort(404)
 
