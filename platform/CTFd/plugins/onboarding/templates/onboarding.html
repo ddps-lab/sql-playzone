@@ -99,6 +99,12 @@
                   </a>
                 </p>
               {% endif %}
+              {% if Configs.privacy_url or Configs.privacy_text %}
+                <p class="mb-2 small">
+                  수집하는 정보와 이용 목적, 보관 및 문의 방법은
+                  <a href="{{ Configs.privacy_link }}" target="_blank" rel="noopener">개인정보처리방침</a>에서 확인해 주세요.
+                </p>
+              {% endif %}
               {% for field in form.extra if field.label.text == terms_field_name %}
                 <div class="form-check">
                   {{ field(class="form-check-input", **{"data-terms-checkbox": "1"}) }}

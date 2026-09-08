@@ -21,6 +21,7 @@ from flask import abort, g, redirect, request, session, url_for
 from CTFd.cache import cache
 from CTFd.utils import get_config
 from CTFd.utils.helpers import error_for
+from CTFd.utils.config.pages import is_public_site_info
 from CTFd.utils.logging import log
 from CTFd.utils.security.auth import logout_user
 from CTFd.utils.user import authed, get_current_user_attrs, get_ip
@@ -147,7 +148,7 @@ def load(app):
 
     @app.before_request
     def enforce_single_session():
-        if request.endpoint in EXEMPT_ENDPOINTS or not authed():
+        if is_public_site_info() or request.endpoint in EXEMPT_ENDPOINTS or not authed():
             return
         if not single_session_required():
             return

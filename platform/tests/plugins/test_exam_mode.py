@@ -161,7 +161,7 @@ def test_admins_and_the_login_page_are_not_restricted():
         assert (
             anonymous.get("/healthcheck", headers={"User-Agent": ""}).status_code == 200
         )
-        assert anonymous.get("/", headers={"User-Agent": CHROME}).status_code == 403
+        assert anonymous.get("/", headers={"User-Agent": CHROME}).status_code == 200
 
         admin = login_as_user(app, name="admin", password="password")
         assert (

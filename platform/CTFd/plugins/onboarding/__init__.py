@@ -33,7 +33,7 @@ from CTFd.forms.fields import SubmitField
 from CTFd.forms.users import attach_custom_user_fields, build_custom_user_fields
 from CTFd.models import Files, UserFieldEntries, UserFields, Users, db
 from CTFd.utils import get_config, set_config, validators
-from CTFd.utils.config.pages import build_markdown
+from CTFd.utils.config.pages import build_markdown, is_public_site_info
 from CTFd.utils.decorators import authed_only, ratelimit
 from CTFd.utils.logging import log
 from CTFd.utils.security.auth import lookup_user_token, update_user
@@ -64,7 +64,7 @@ EXEMPT_ENDPOINTS = {
 # student ID, so it shows up in the admin user view and exports.
 TERMS_FIELD_NAME = "Terms of Service"
 TERMS_FIELD_DESCRIPTION = "I have read and agree to the Terms of Service above."
-TERMS_TEXT_PATH = Path(__file__).with_name("terms.md")
+TERMS_TEXT_PATH = Path(__file__).parent.parent / "legal" / "terms.md"
 
 # What a checked boolean field submits (WTForms sends "y"); anything else,
 # including "false" or "0" from a hand-made request, is not consent.
@@ -111,7 +111,7 @@ PASSWORD_MIN_LENGTH = 8
 
 
 def request_is_exempt():
-    if request.endpoint in EXEMPT_ENDPOINTS:
+    if is_public_site_info() or request.endpoint in EXEMPT_ENDPOINTS:
         return True
     if request.endpoint == "views.files":
         # Uploaded files serve both site assets, which this page needs, and
