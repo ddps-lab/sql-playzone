@@ -37,7 +37,7 @@ def load(app):
         challenges = Challenges.query.order_by(Challenges.id).all()
 
         # Get all users with their information
-        users = Users.query.filter_by(type='user', banned=False, hidden=False).order_by(Users.id).all()
+        users = Users.query.filter_by(type='user').order_by(Users.id).all()
 
         # Get Student ID Number field
         student_id_field = UserFields.query.filter_by(name="Student ID Number").first()
@@ -75,6 +75,8 @@ def load(app):
                 'name': user.name,
                 'email': user.email,
                 'student_id': student_id,
+                'banned': user.banned,
+                'hidden': user.hidden,
                 'challenge_scores': challenge_scores
             })
 
@@ -92,7 +94,7 @@ def load(app):
         challenges = Challenges.query.order_by(Challenges.id).all()
 
         # Get all users
-        users = Users.query.filter_by(type='user', banned=False, hidden=False).order_by(Users.id).all()
+        users = Users.query.filter_by(type='user').order_by(Users.id).all()
 
         # Get Student ID Number field
         student_id_field = UserFields.query.filter_by(name="Student ID Number").first()
@@ -104,7 +106,7 @@ def load(app):
         writer = csv.writer(output)
 
         # Write header
-        header = ['Name', 'Email', 'Student ID']
+        header = ['Name', 'Email', 'Student ID', 'Banned', 'Hidden']
         for challenge in challenges:
             header.append(f'{challenge.name} (ID: {challenge.id})')
         header.append('Total Score')
@@ -129,7 +131,7 @@ def load(app):
             }
 
             # Build row with total score
-            row = [user.name, user.email, student_id]
+            row = [user.name, user.email, student_id, user.banned, user.hidden]
             total_score = 0
             for challenge in challenges:
                 if challenge.id in user_solves:

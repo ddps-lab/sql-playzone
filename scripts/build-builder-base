@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import subprocess
+import tempfile
+from pathlib import Path
+
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build the SQL Playzone builder base AMI")
+    parser.add_argument("--artifact-prefix", default="sql-2026-s2")
+    parser.add_argument("--profile", default="hyu-ddps")
+    parser.add_argument("--region", default="ap-northeast-2")
+    return parser.parse_args()
+
+
+def main() -> None:
+    arguments = parse_arguments()
+    root = Path(__file__).resolve().parent.parent
+    packer_directory = root / "IaC" / "packer" / "base"
+    base_id = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+
+    with tempfile.TemporaryDirectory(prefix="sql-playzone-builder-base-") as directory:
+        packer_manifest = Path(directory) / "manifest.json"
+        subprocess.run(["packer", "init", str(packer_directory)], check=True)
+        subprocess.run(
+            [
+                "packer",
+                "build",
+                f"-var=aws_profile={arguments.profile}",
+                f"-var=region={arguments.region}",
+                f"-var=artifact_prefix={arguments.artifact_prefix}",
+                f"-var=builder_instance_profile={arguments.artifact_prefix}-packer-builder-profile",
+                f"-var=base_id={base_id}",
+                f"-var=manifest_output={packer_manifest}",
+                str(packer_directory),
+            ],
+            check=True,
+        )
+        packer_data = json.loads(packer_manifest.read_text())
+
+    build = packer_data["builds"][-1]
+    print(
+        json.dumps(
+            {
+                "ami_id": build["artifact_id"].rsplit(":", 1)[-1],
+                "base_id": base_id,
+                "ubuntu_base_ami_id": build["custom_data"]["ubuntu_base_ami_id"],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Export SQL challenge definitions from a running CTFd through the admin API.
+
+Environment:
+  CTFD_URL    e.g. https://sql-dev.ddps.cloud
+  CTFD_TOKEN  an admin access token (Settings -> Access Tokens); never pass it on the command line
+
+Usage:
+  CTFD_URL=... CTFD_TOKEN=... ./scripts/export-challenges --out ../private/challenges-<date>.json
+
+The output is the JSON array that scripts/regrade-challenges and
+scripts/review-challenges read: id, name, category, description, value, state,
+init_query, solution_query, grading_policy. Solutions are included, so keep the file outside Git.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import urllib.request
+from pathlib import Path
+
+
+def api(base: str, token: str, path: str) -> dict:
+    request = urllib.request.Request(base + path, headers={"Authorization": f"Token {token}", "Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        payload = json.load(response)
+    if not payload.get("success"):
+        raise SystemExit(f"{path}: {payload}")
+    return payload["data"]
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], epilog=__doc__.split("\n\n", 1)[1], formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--out", type=Path, required=True, help="output JSON path (keep outside Git)")
+    parser.add_argument("--category", help="only export this category")
+    arguments = parser.parse_args()
+    base = os.environ.get("CTFD_URL", "").rstrip("/")
+    token = os.environ.get("CTFD_TOKEN", "")
+    if not base or not token:
+        raise SystemExit("Set CTFD_URL and CTFD_TOKEN in the environment")
+
+    listing = api(base, token, "/api/v1/challenges?view=admin")
+    challenges = []
+    for item in listing:
+        if item.get("type") != "sql":
+            continue
+        if arguments.category and item.get("category") != arguments.category:
+            continue
+        detail = api(base, token, f"/api/v1/challenges/{item['id']}")
+        if "solution_query" not in detail:
+            raise SystemExit("The token is not an admin token; solution_query is missing from the response")
+        challenges.append({key: detail.get(key) for key in ("id", "name", "category", "description", "value", "state", "init_query", "solution_query", "grading_policy")})
+    arguments.out.parent.mkdir(parents=True, exist_ok=True)
+    arguments.out.write_text(json.dumps(challenges, ensure_ascii=False, indent=1))
+    os.chmod(arguments.out, 0o600)
+    print(f"{len(challenges)} SQL challenges written to {arguments.out} (mode 600)", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

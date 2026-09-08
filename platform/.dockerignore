@@ -15,5 +15,6 @@ CTFd/uploads/**/*
 **/node_modules
 **/*.pyc
 **/__pycache__
+CTFd/plugins/sql_challenges/sql-judge-server
 .venv*
 venv*

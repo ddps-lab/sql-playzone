@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""Re-grade challenge definitions against a SQL Judge and optionally a baseline judge.
+
+Input is a JSON array of objects with ``id``, ``name``, ``init_query`` and
+``solution_query``. Extract it from a CTFd database copy with a read-only
+account, for example::
+
+    SELECT JSON_ARRAYAGG(JSON_OBJECT(
+        'id', c.id, 'name', c.name, 'category', c.category,
+        'init_query', s.init_query, 'solution_query', s.solution_query,
+        'grading_policy', s.grading_policy))
+    FROM challenges c JOIN sql_challenge s ON s.id = c.id
+    WHERE c.type = 'sql';
+
+Only challenge definitions are read; no user or submission rows are needed.
+Keep the extracted file outside Git and delete it after the run.
+
+Every challenge is sent to ``/judge`` with the solution as both the solution
+and the user query, so ``match`` must be true. With ``--baseline-url`` the
+same request goes to a second judge (for example the previous
+go-mysql-server build) and the result rows are compared string by string.
+"""
+from __future__ import annotations
+
+import argparse
+import concurrent.futures
+import json
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=__doc__.split("\n\n")[0],
+        epilog=__doc__.split("\n\n", 1)[1],
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--challenges", required=True, type=Path, help="JSON array of challenge definitions")
+    parser.add_argument("--judge-url", default="http://127.0.0.1:8080", help="SQL Judge under test")
+    parser.add_argument("--baseline-url", help="Optional second judge whose result rows are compared")
+    parser.add_argument("--concurrency", type=int, default=1, help="Parallel requests per judge (default 1)")
+    parser.add_argument("--timeout", type=float, default=15.0, help="HTTP timeout per request in seconds")
+    parser.add_argument("--report", type=Path, help="Write the full JSON report to this path")
+    parser.add_argument("--only", help="Comma-separated challenge ids to run")
+    parser.add_argument("--review", action="store_true", help="Add authoring review findings (ordering, ties, numeric format, slowness) to the summary and report")
+    parser.add_argument("--slow-ms", type=int, default=1500, help="Flag a challenge whose judge request exceeds this many milliseconds (default 1500)")
+    return parser.parse_args()
+
+
+def load_challenges(path: Path, only: str | None) -> list[dict]:
+    data = json.loads(path.read_text())
+    if isinstance(data, dict) and "results" in data:  # CTFd API listing shape
+        data = data["results"]
+    if not isinstance(data, list):
+        raise SystemExit("The challenge file must contain a JSON array")
+    challenges = []
+    for item in data:
+        challenges.append(
+            {
+                "id": item.get("id"),
+                "name": item.get("name", ""),
+                "category": item.get("category", ""),
+                "init_query": item.get("init_query") or "",
+                "solution_query": item.get("solution_query") or "",
+                "grading_policy": item.get("grading_policy"),
+            }
+        )
+    if only:
+        wanted = {value.strip() for value in only.split(",")}
+        challenges = [c for c in challenges if str(c["id"]) in wanted]
+    return challenges
+
+
+def call_judge(url: str, challenge: dict, timeout: float) -> dict:
+    if challenge.get("grading_policy") is None:
+        return {"status":"policy_required", "error":"출제자가 정렬·표시 형식 기준을 확인해야 합니다", "elapsed_ms":0}
+    body = json.dumps(
+        {
+            "grading_policy": challenge["grading_policy"],
+            "init_query": challenge["init_query"],
+            "solution_query": challenge["solution_query"],
+            "user_query": challenge["solution_query"],
+            "challenge_id": str(challenge["id"]),
+            "user_id": "regrade",
+        }
+    ).encode()
+    request = urllib.request.Request(f"{url}/judge", data=body, headers={"Content-Type": "application/json"})
+    started = time.perf_counter()
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.load(response)
+            http_status = response.status
+    except urllib.error.HTTPError as error:
+        return {"status": "http_error", "http_status": error.code, "error": error.read().decode(errors="replace")[:300], "elapsed_ms": elapsed(started)}
+    except Exception as error:  # noqa: BLE001 - report every transport failure
+        return {"status": "transport_error", "error": str(error)[:300], "elapsed_ms": elapsed(started)}
+    result = {"elapsed_ms": elapsed(started), "http_status": http_status}
+    if not payload.get("success"):
+        message = payload.get("error", "")
+        result.update({"status": classify_error(message), "error": message[:300]})
+        return result
+    user = payload.get("user_result") or {}
+    rows = user.get("rows") or []
+    result.update(
+        {
+            "status": "ok" if payload.get("match") else "self_mismatch",
+            "rows": rows,
+            "row_count": len(rows),
+            "columns": user.get("columns") or [],
+            "bytes": sum(len(value.encode("utf-8")) if value is not None else 0 for row in rows for value in row),
+        }
+    )
+    return result
+
+
+def elapsed(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)
+
+
+def classify_error(message: str) -> str:
+    lowered = message.lower()
+    if "timed out" in lowered or "deadline" in lowered or "max_execution_time" in lowered or "interrupted" in lowered:
+        return "timeout"
+    if "exceeds configured limit" in lowered or "request body too large" in lowered:
+        return "limit"
+    if "busy" in lowered:
+        return "busy"
+    if "security violation" in lowered:
+        return "blocked"
+    if "init query error" in lowered:
+        return "init_error"
+    return "query_error"
+
+
+def numeric_equal(left: str, right: str) -> bool:
+    """Report only exact numeric equality; rounding can hide a changed answer."""
+    try:
+        left_value, right_value = Decimal(left), Decimal(right)
+    except (InvalidOperation, TypeError, ValueError):
+        return False
+    return left_value.is_finite() and right_value.is_finite() and left_value == right_value
+
+
+def compare(judge: dict, baseline: dict) -> dict:
+    if judge.get("status") != "ok" or baseline.get("status") != "ok":
+        return {"diff": "not_comparable"}
+    left, right = judge["rows"], baseline["rows"]
+    if left == right:
+        return {"diff": "none"}
+    if len(left) != len(right):
+        return {"diff": "row_count", "judge_rows": len(left), "baseline_rows": len(right)}
+    formatting_only = True
+    first = None
+    for index, (row_left, row_right) in enumerate(zip(left, right)):
+        if len(row_left) != len(row_right):
+            return {"diff": "column_count", "row": index}
+        for column, (value_left, value_right) in enumerate(zip(row_left, row_right)):
+            if value_left == value_right:
+                continue
+            if first is None:
+                first = {"row": index, "column": column, "judge": value_left, "baseline": value_right}
+            if not numeric_equal(value_left, value_right):
+                formatting_only = False
+    if first is None:
+        return {"diff": "none"}
+    return {"diff": "numeric_format" if formatting_only else "value", "first": first}
+
+
+def review_findings(challenge: dict, judge: dict, slow_ms: int) -> list[str]:
+    """Authoring findings for one challenge, worded for the person who will fix the problem."""
+    findings = []
+    if judge.get("status") != "ok":
+        findings.append(f"실행 실패({judge.get('status')}): {judge.get('error', '')[:140]}")
+        return findings
+    rows = judge.get("rows") or []
+    if challenge.get("grading_policy") is None:
+        findings.append("채점 기준 미확인: 지문과 정렬·표시 형식 설정을 확인해야 함")
+    if not rows:
+        findings.append("정답 결과가 0행: 의도한 것인지 확인")
+    if judge.get("row_count", 0) >= 500:
+        findings.append(f"결과 {judge.get('row_count')}행: 1,000행 한도에 가까움")
+    if judge.get("elapsed_ms", 0) > slow_ms:
+        findings.append(f"요청 {judge.get('elapsed_ms')}ms: 실행당 2.5초 한도에 가까움, 정답 쿼리 최적화 검토")
+    return findings
+
+
+def run(challenges: list[dict], arguments: argparse.Namespace) -> list[dict]:
+    def one(challenge: dict) -> dict:
+        entry = {"id": challenge["id"], "name": challenge["name"], "category": challenge["category"]}
+        entry["judge"] = call_judge(arguments.judge_url, challenge, arguments.timeout)
+        if arguments.review:
+            entry["review"] = review_findings(challenge, entry["judge"], arguments.slow_ms)
+        if arguments.baseline_url:
+            entry["baseline"] = call_judge(arguments.baseline_url, challenge, arguments.timeout)
+            entry["comparison"] = compare(entry["judge"], entry["baseline"])
+        return entry
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, arguments.concurrency)) as pool:
+        return list(pool.map(one, challenges))
+
+
+def summarize(entries: list[dict], baseline: bool) -> int:
+    header = f"{'id':>5} {'status':14} {'ms':>6} {'rows':>5} {'bytes':>8}" + (f" {'baseline':14} {'diff':14}" if baseline else "") + " name"
+    print(header)
+    failures = 0
+    for entry in entries:
+        judge = entry["judge"]
+        line = f"{str(entry['id']):>5} {judge['status']:14} {judge.get('elapsed_ms', 0):>6} {judge.get('row_count', ''):>5} {judge.get('bytes', ''):>8}"
+        if baseline:
+            line += f" {entry['baseline']['status']:14} {entry['comparison']['diff']:14}"
+        print(line + " " + entry["name"][:50])
+        if judge["status"] != "ok" or (baseline and entry["comparison"]["diff"] not in ("none", "numeric_format")):
+            failures += 1
+        for key in ("judge", "baseline"):
+            if key in entry and entry[key].get("error"):
+                print(f"{'':>5}   {key}: {entry[key]['error'][:160]}")
+        if baseline and entry["comparison"].get("first"):
+            first = entry["comparison"]["first"]
+            print(f"{'':>5}   first diff row {first['row']} col {first['column']}: judge={first['judge']!r} baseline={first['baseline']!r}")
+    reviewed = [entry for entry in entries if entry.get("review")]
+    if any("review" in entry for entry in entries):
+        print(f"\n== 검토 결과: 확인이 필요한 문제 {len(reviewed)} / {len(entries)} ==")
+        for entry in reviewed:
+            print(f"  #{entry['id']} {entry['name'][:50]}")
+            for finding in entry["review"]:
+                print(f"      - {finding}")
+        failures += sum(1 for entry in reviewed if entry["judge"]["status"] != "ok")
+    statuses = {}
+    for entry in entries:
+        statuses[entry["judge"]["status"]] = statuses.get(entry["judge"]["status"], 0) + 1
+    slowest = sorted(entries, key=lambda e: e["judge"].get("elapsed_ms", 0), reverse=True)[:3]
+    print(f"\n{len(entries)} challenges: {statuses}; needs attention: {failures}")
+    print("slowest: " + ", ".join(f"{e['id']} ({e['judge'].get('elapsed_ms', 0)} ms)" for e in slowest))
+    return failures
+
+
+def main() -> None:
+    arguments = parse_arguments()
+    challenges = load_challenges(arguments.challenges, arguments.only)
+    if not challenges:
+        raise SystemExit("No challenges to run")
+    entries = run(challenges, arguments)
+    failures = summarize(entries, bool(arguments.baseline_url))
+    if arguments.report:
+        for entry in entries:  # keep the report small and free of result payloads
+            for key in ("judge", "baseline"):
+                if key in entry:
+                    entry[key].pop("rows", None)
+        arguments.report.write_text(json.dumps({"judge_url": arguments.judge_url, "baseline_url": arguments.baseline_url, "results": entries}, indent=2, ensure_ascii=False))
+        print(f"report written to {arguments.report}")
+    sys.exit(1 if failures else 0)
+
+
+if __name__ == "__main__":
+    main()

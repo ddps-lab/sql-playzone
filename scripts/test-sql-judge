@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repository_root=$(git rev-parse --show-toplevel)
+compose_file="$repository_root/platform/CTFd/plugins/sql_challenges/docker-compose.integration.yml"
+project_name="sql-judge-test-${RANDOM}-$$"
+
+export MYSQL_ROOT_PASSWORD
+MYSQL_ROOT_PASSWORD=$(openssl rand -hex 32)
+
+cleanup() {
+  docker compose --project-name "$project_name" --file "$compose_file" down --volumes --remove-orphans
+}
+trap cleanup EXIT
+
+docker compose --project-name "$project_name" --file "$compose_file" up \
+  --build \
+  --abort-on-container-exit \
+  --exit-code-from test

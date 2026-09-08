@@ -1,0 +1,5 @@
+# Overlay for scripts/review-challenges: expose the judge on localhost only.
+services:
+  judge:
+    ports:
+      - "${SQL_JUDGE_REVIEW_PORT:-18080}:8080"

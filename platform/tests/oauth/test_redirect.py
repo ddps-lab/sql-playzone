@@ -56,13 +56,13 @@ def test_oauth_configured_flow():
         # Users should be able to register now
         assert Users.query.count() == 2
         user = Users.query.filter_by(email="user@examplectf.com").first()
-        assert user.oauth_id == 1337
+        assert user.oauth_id == "1337"
         assert user.team_id == 1
 
         # Teams should be created
         assert Teams.query.count() == 1
         team = Teams.query.filter_by(id=1).first()
-        assert team.oauth_id == 1234
+        assert team.oauth_id == "1234"
 
         client.get("/logout")
 

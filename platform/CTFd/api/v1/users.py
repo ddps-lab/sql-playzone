@@ -33,6 +33,7 @@ from CTFd.utils.decorators.visibility import (
 )
 from CTFd.utils.email import sendmail, user_created_notification
 from CTFd.utils.helpers.models import build_model_filters
+from CTFd.utils.student_ids import StudentIDError
 from CTFd.utils.security.auth import update_user
 from CTFd.utils.user import (
     get_current_user,
@@ -43,6 +44,12 @@ from CTFd.utils.user import (
 )
 
 users_namespace = Namespace("users", description="Endpoint to retrieve Users")
+
+
+@users_namespace.errorhandler(StudentIDError)
+def student_id_error(error):
+    db.session.rollback()
+    return {"success": False, "errors": {"fields": [str(error)]}}, 400
 
 
 UserModel = sqlalchemy_to_pydantic(Users)
@@ -95,6 +102,7 @@ class UserList(Resource):
                         "bracket": "bracket",
                         "affiliation": "affiliation",
                         "email": "email",
+                        "login_id": "login_id",
                     },
                 ),
                 None,
@@ -106,11 +114,12 @@ class UserList(Resource):
         q = query_args.pop("q", None)
         field = str(query_args.pop("field", None))
 
-        if field == "email":
+        # Emails and login IDs are private; only admins may search by them.
+        if field in ("email", "login_id"):
             if is_admin() is False:
                 return {
                     "success": False,
-                    "errors": {"field": "Emails can only be queried by admins"},
+                    "errors": {"field": f"{field} can only be queried by admins"},
                 }, 400
 
         filters = build_model_filters(model=Users, query=q, field=field)

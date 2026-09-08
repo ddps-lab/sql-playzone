@@ -15,6 +15,7 @@ from CTFd.models import Brackets, Teams, UserFieldEntries, UserFields, Users, db
 from CTFd.utils import config, email, get_app_config, get_config
 from CTFd.utils import user as current_user
 from CTFd.utils import validators
+from CTFd.utils.student_ids import StudentIDError
 from CTFd.utils.config import can_send_mail, is_teams_mode
 from CTFd.utils.config.integrations import mlc_registration, google_oauth_only_registration
 from CTFd.utils.config.visibility import registration_visible
@@ -377,6 +378,7 @@ def register():
             with app.app_context():
                 user = Users(
                     name=name,
+                    login_id=login_id_for_new_account(name),
                     email=email_address,
                     password=password,
                     bracket_id=bracket_id,
@@ -390,7 +392,6 @@ def register():
                     user.country = country
 
                 db.session.add(user)
-                db.session.commit()
                 db.session.flush()
 
                 for field_id, value in entries.items():
@@ -398,7 +399,16 @@ def register():
                         field_id=field_id, value=value, user_id=user.id
                     )
                     db.session.add(entry)
-                db.session.commit()
+                try:
+                    db.session.commit()
+                except StudentIDError as error:
+                    db.session.rollback()
+                    return render_template(
+                        "register.html",
+                        errors=[str(error)],
+                        name=name,
+                        email=email_address,
+                    )
 
                 login_user(user)
 
@@ -442,7 +452,9 @@ def register():
 
 
 @auth.route("/login", methods=["POST", "GET"])
-@ratelimit(method="POST", limit=10, interval=5)
+# A whole lecture hall logs in with the form at exam start from one NAT
+# address, so the per-address limit must cover the class.
+@ratelimit(method="POST", limit=120, interval=5)
 def login():
     errors = get_errors()
     if request.method == "POST":
@@ -469,11 +481,12 @@ def login():
                     )
                     return render_template("login.html", errors=errors)
 
-        # Check if the user submitted an email address or a team name
+        # An account is identified by its email address or its login ID; the
+        # display name may repeat, so it never identifies an account.
         if validators.validate_email(name) is True:
             user = Users.query.filter_by(email=name).first()
         else:
-            user = Users.query.filter_by(name=name).first()
+            user = Users.query.filter_by(login_id=name).first()
 
         if user:
             if user.password is None:
@@ -590,7 +603,8 @@ def oauth_redirect():
             }
             api_data = requests.get(url=user_url, headers=headers, timeout=5).json()
 
-            user_id = api_data["id"]
+            # oauth_id is a string column (Google accounts store "google_<id>")
+            user_id = str(api_data["id"])
             user_name = api_data["name"]
             user_email = api_data["email"]
 
@@ -624,7 +638,7 @@ def oauth_redirect():
                     return redirect(url_for("auth.login"))
 
             if get_config("user_mode") == TEAMS_MODE and user.team_id is None:
-                team_id = api_data["team"]["id"]
+                team_id = str(api_data["team"]["id"])
                 team_name = api_data["team"]["name"]
 
                 team = Teams.query.filter_by(oauth_id=team_id).first()
@@ -677,6 +691,67 @@ def oauth_redirect():
         return redirect(url_for("auth.login"))
 
 
+# Google sign-in is for university accounts. Members of a Google Workspace
+# (a university's Google domain) carry the hd claim; consumer accounts, whether
+# Gmail or a Google account registered with any other address, never do.
+# GOOGLE_HOSTED_DOMAIN lists the Workspace domains that may sign in, or "*"
+# for any Workspace domain (the default, so exchange students can use their
+# own university's account). The hd parameter sent to Google only pre-selects
+# accounts; the callback enforces the rule.
+ANY_WORKSPACE_DOMAIN = "*"
+
+
+def google_hosted_domains():
+    """Workspace domains that may sign in, lower-cased; {"*"} means any."""
+    raw = str(get_app_config("GOOGLE_HOSTED_DOMAIN") or "")
+    domains = {part.strip().lower() for part in raw.split(",") if part.strip()}
+    return domains or {ANY_WORKSPACE_DOMAIN}
+
+
+def google_account_allowed(user_data):
+    """Only verified Google Workspace members of an allowed domain.
+
+    A consumer Google account can carry a verified university email address,
+    so the email suffix alone is not proof of membership; the hd claim is.
+    The address must belong to the claimed domain.
+    """
+    domains = google_hosted_domains()
+    hosted = str(user_data.get("hd") or "").strip().lower()
+    email = str(user_data.get("email") or "").strip().lower()
+    return (
+        user_data.get("verified_email") is True
+        and bool(hosted)
+        and email.endswith("@" + hosted)
+        and (ANY_WORKSPACE_DOMAIN in domains or hosted in domains)
+    )
+
+
+def google_account_requirement():
+    """The login page's explanation when an account is rejected."""
+    domains = google_hosted_domains()
+    if ANY_WORKSPACE_DOMAIN in domains:
+        return (
+            "Only verified university Google accounts (Google Workspace) can sign in. "
+            "Personal Google accounts such as Gmail are not accepted."
+        )
+    return f"Only verified {', '.join(sorted(domains))} Google accounts can sign in."
+
+
+def google_login_hint():
+    """Google's account picker hint: the one allowed domain, or * for any Workspace."""
+    domains = google_hosted_domains()
+    if len(domains) == 1 and ANY_WORKSPACE_DOMAIN not in domains:
+        return next(iter(domains))
+    return ANY_WORKSPACE_DOMAIN
+
+
+def login_id_for_new_account(name):
+    """The registration name doubles as the login ID when it is shaped like one and free."""
+    if validators.validate_login_id(name) and Users.query.filter_by(login_id=name).first() is None:
+        return name
+    return None
+
+
 @auth.route("/google/login")
 def google_login():
     google_client_id = get_app_config("GOOGLE_CLIENT_ID") or get_config("google_client_id")
@@ -710,14 +785,16 @@ def google_login():
         f"state={state}&"
         f"access_type=offline&"
         f"prompt=consent&"
-        f"hd=hanyang.ac.kr"
+        f"hd={google_login_hint()}"
     )
     
     return redirect(redirect_url)
 
 
 @auth.route("/google/callback")
-@ratelimit(method="GET", limit=10, interval=60)
+# A lecture hall shares one NAT address, so the per-IP limit must cover a
+# whole class signing up in the same minute of the first lecture.
+@ratelimit(method="GET", limit=300, interval=60)
 def google_callback():
     code = request.args.get("code")
     state = request.args.get("state")
@@ -760,7 +837,18 @@ def google_callback():
             
             if userinfo_response.status_code == 200:
                 user_data = userinfo_response.json()
-                
+
+                if not google_account_allowed(user_data):
+                    log(
+                        "logins",
+                        "[{date}] {ip} - Google account {email} (hd={hd}) rejected: not a verified Workspace account in {domains}",
+                        email=user_data.get("email"),
+                        hd=user_data.get("hd"),
+                        domains=",".join(sorted(google_hosted_domains())),
+                    )
+                    error_for(endpoint="auth.login", message=google_account_requirement())
+                    return redirect(url_for("auth.login"))
+
                 user_email = user_data.get("email")
                 raw_user_name = user_data.get("name", user_email.split("@")[0])
                 
@@ -775,8 +863,12 @@ def google_callback():
                 
                 google_id = user_data.get("id")
                 
-                # Check if user exists
-                user = Users.query.filter_by(email=user_email).first()
+                # Find the account by its Google identity first, then by
+                # email, so an account whose email was edited still matches.
+                user = (
+                    Users.query.filter_by(oauth_id=f"google_{google_id}").first()
+                    or Users.query.filter_by(email=user_email).first()
+                )
                 
                 if user is None:
                     # Check user count limit
@@ -790,17 +882,11 @@ def google_callback():
                     
                     # Check if registration is allowed
                     if registration_visible() or google_oauth_only_registration():
-                        # Generate unique username if needed
-                        user_base_name = user_name
-                        unique_name = user_name.split("|")[0].strip()
-                        counter = 1
-                        
-                        while Users.query.filter_by(name=unique_name).first():
-                            unique_name = f"{user_base_name}_{counter}"
-                            counter += 1
-                        
+                        # The profile name is only the display name; it may
+                        # repeat, so no suffix is added. The login ID is chosen
+                        # during onboarding.
                         user = Users(
-                            name=unique_name,
+                            name=user_name.split("|")[0].strip() or user_email.split("@")[0],
                             email=user_email,
                             oauth_id=f"google_{google_id}",
                             verified=True,
@@ -840,6 +926,9 @@ def google_callback():
                     pass
                 
                 login_user(user)
+                # Lets the onboarding plugin tell a Google-authenticated
+                # session from a later form login (login_user issues a new nonce).
+                session["google_login_nonce"] = session["nonce"]
                 log("logins", "[{date}] {ip} - {name} logged in via Google OAuth", name=user.name)
                 
                 return redirect(url_for("challenges.listing" if not (get_config("user_mode") == TEAMS_MODE and user.team_id is None) else "teams.private"))

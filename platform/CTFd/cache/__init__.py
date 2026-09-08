@@ -6,11 +6,34 @@ from flask import current_app, request
 from flask_caching import Cache, make_template_fragment_key
 
 
+def clear_redis_backend(backend, batch_size=500):
+    if not backend.key_prefix:
+        return bool(backend._write_client.flushdb())
+
+    deleted = 0
+    for key in backend._read_client.scan_iter(
+        match=f"{backend.key_prefix}*", count=batch_size
+    ):
+        # ElastiCache Serverless distributes keys across hash slots and rejects
+        # multi-key DEL when the keys do not share a slot.
+        deleted += backend._write_client.delete(key)
+    return bool(deleted)
+
+
 class CTFdCache(Cache):
     """
     This subclass exists to give flask-caching some additional features
     Ideally likely we should have our own isolated redis connection but that might introduce more issues
     """
+
+    def _set_cache(self, app, config):
+        # Keep the public transport setting (used by locks and events) and the
+        # existing key namespace while selecting the compatible Redis backend.
+        if config["CACHE_TYPE"].lower() in ("redis", "rediscache"):
+            config = dict(
+                config, CACHE_TYPE="CTFd.cache.redis.ClusterCompatibleRedisCache"
+            )
+        return super()._set_cache(app, config)
 
     def inc(self, *args, **kwargs):
         """
@@ -40,6 +63,19 @@ class CTFdCache(Cache):
                 self.set(key=key, value=value, timeout=timeout)
                 return True
             return False
+
+    def clear(self):
+        """
+        Clear Redis cache keys without using KEYS.
+
+        ElastiCache Serverless supports SCAN but rejects KEYS. Preserve the
+        configured cache prefix so clearing the CTFd cache does not remove
+        unrelated keys from a shared Redis database.
+        """
+        if current_app.config["CACHE_TYPE"] != "redis":
+            return super().clear()
+
+        return clear_redis_backend(self.cache)
 
 
 cache = CTFdCache()

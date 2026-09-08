@@ -8,7 +8,8 @@ resource "aws_cloudwatch_log_group" "behavior" {
 }
 
 resource "aws_s3_bucket" "log_archive" {
-  bucket = local.log_bucket_name
+  bucket        = local.log_bucket_name
+  force_destroy = var.deployment_mode == "ephemeral"
 }
 
 resource "aws_s3_bucket_ownership_controls" "log_archive" {

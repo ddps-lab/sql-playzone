@@ -52,6 +52,7 @@ def generate_preset_admin():
         # Create the preset admin user
         user = Users(
             name=preset_admin_name,
+            login_id=preset_admin_name,
             email=preset_admin_email,
             password=preset_admin_password,
             type="admin",
@@ -68,6 +69,11 @@ def generate_preset_admin():
     # If there's already a user, promoting it to an admin represents a mild security risk.
     if user.type != "admin":
         return None
+
+    # An admin from before login IDs existed keeps signing in with its name.
+    if user.login_id is None and Users.query.filter_by(login_id=preset_admin_name).first() is None:
+        user.login_id = preset_admin_name
+        db.session.commit()
 
     return user
 

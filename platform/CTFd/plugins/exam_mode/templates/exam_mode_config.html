@@ -27,9 +27,9 @@
                         <label class="custom-control-label" for="exam_mode_enabled">Enable Exam Mode</label>
                     </div>
                     <small class="form-text text-muted">
-                        When enabled, all users NOT in the allowed list will be <strong>BANNED</strong>.
+                        When enabled, only students in the allowed list can access the site. Admins retain access.
                         <br>
-                        <span class="text-danger">WARNING: Enabling this will modify the 'banned' status of users in the database.</span>
+                        Existing account bans and recorded grades are preserved when this setting is enabled or disabled.
                     </small>
                 </div>
 
@@ -40,6 +40,49 @@
                 </div>
 
                 <button type="submit" class="btn btn-primary float-right">Save & Apply</button>
+            </form>
+        </div>
+    </div>
+
+    <hr class="my-5">
+
+    <div class="row">
+        <div class="col-md-12">
+            <h2>Exam Session Rules</h2>
+            <form method="POST" action="{{ url_for('exam_mode.update_browser') }}">
+                <input type="hidden" name="nonce" value="{{ Session.nonce }}">
+
+                <div class="form-group">
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox" class="custom-control-input" id="exam_browser_required" name="exam_browser_required" {% if exam_browser_required %}checked{% endif %}>
+                        <label class="custom-control-label" for="exam_browser_required">Allow the exam browser only</label>
+                    </div>
+                    <small class="form-text text-muted">
+                        When enabled, everyone except admins is refused (403) unless the browser's User-Agent contains the marker below.
+                        Admins can keep using a normal browser. The login page stays reachable so admins can sign in.
+                        <br>
+                        <span class="text-danger">The User-Agent header can be forged; treat this as a deterrent, not as proof.</span>
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox" class="custom-control-input" id="single_session_required" name="single_session_required" {% if single_session_required %}checked{% endif %}>
+                        <label class="custom-control-label" for="single_session_required">Allow only one session per student</label>
+                    </div>
+                    <small class="form-text text-muted">
+                        When enabled, a student's newer login signs the older session out everywhere (pages and API). Admins are never limited.
+                        Leave it off outside exams so students can move between devices; every login is logged either way.
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label for="exam_browser_marker">User-Agent marker</label>
+                    <input type="text" class="form-control" id="exam_browser_marker" name="exam_browser_marker" value="{{ exam_browser_marker }}">
+                    <small class="form-text text-muted">Case-insensitive substring of the exam browser's User-Agent. Trustlock sends <code>Trustlockbrowser/2.1.1 ...</code>.</small>
+                </div>
+
+                <button type="submit" class="btn btn-primary float-right">Save</button>
             </form>
         </div>
     </div>

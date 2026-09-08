@@ -1,0 +1,9 @@
+prefix               = "sql-2026-s2-dev"
+artifact_prefix      = "sql-2026-s2"
+artifact_channel     = "dev"
+deployment_mode      = "ephemeral"
+domain_name          = "sql-dev.ddps.cloud"
+vpc_cidr             = "10.26.0.0/16"
+public_subnet_cidrs  = ["10.26.10.0/24", "10.26.11.0/24"]
+private_subnet_cidrs = []
+data_subnet_cidrs    = ["10.26.30.0/24", "10.26.31.0/24"]

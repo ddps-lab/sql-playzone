@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from flask import Blueprint
+from flask import Blueprint, g
 from sqlalchemy.exc import IntegrityError
 
 from CTFd.exceptions.challenges import (
@@ -254,6 +254,7 @@ class BaseChallenge(object):
         submission = data["submission"].strip()
 
         solve = Solves(
+            **({"date": g.submission_received_at} if "submission_received_at" in g else {}),
             user_id=user.id,
             team_id=team.id if team else None,
             challenge_id=challenge.id,
@@ -287,6 +288,7 @@ class BaseChallenge(object):
         data = request.form or request.get_json()
         submission = data["submission"].strip()
         wrong = Fails(
+            **({"date": g.submission_received_at} if "submission_received_at" in g else {}),
             user_id=user.id,
             team_id=team.id if team else None,
             challenge_id=challenge.id,

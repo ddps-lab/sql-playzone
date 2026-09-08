@@ -7,7 +7,8 @@
     "build": "vite build",
     "format": "prettier --write assets/",
     "lint": "prettier --check assets/",
-    "verify": "vite build; git diff --quiet --exit-code"
+    "verify": "vite build; git diff --quiet --exit-code",
+    "build:sql": "node build-sql-page.mjs"
   },
   "dependencies": {
     "@ctfdio/ctfd-js": "^0.0.18",

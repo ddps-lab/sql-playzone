@@ -241,6 +241,10 @@ def create_app(config="CTFd.config.Config"):
             db,
         )
 
+        from CTFd.utils.database_secret import configure_database_secret
+
+        configure_database_secret(app)
+
         url = create_database()
 
         # This allows any changes to the SQLALCHEMY_DATABASE_URI to get pushed back in

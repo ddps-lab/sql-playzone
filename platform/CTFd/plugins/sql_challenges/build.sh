@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 
 # Download dependencies
 echo "Downloading Go dependencies..."
-go mod tidy
+go mod download
 
 # Build the server
 echo "Building Go server..."

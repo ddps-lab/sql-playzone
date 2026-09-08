@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+import argparse
+
+from release_registry import AwsClient, AwsConfig, ReleaseRegistry, ReleaseRegistryError
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Select an existing release for a channel")
+    parser.add_argument("--channel", required=True, choices=("dev", "main"))
+    parser.add_argument("--release-id", required=True)
+    parser.add_argument("--artifact-prefix", default="sql-2026-s2")
+    parser.add_argument("--profile", default="hyu-ddps")
+    parser.add_argument("--region", default="ap-northeast-2")
+    arguments = parser.parse_args()
+    registry = ReleaseRegistry(
+        AwsClient(AwsConfig(arguments.profile, arguments.region)),
+        f"/sql-playzone/{arguments.artifact_prefix}",
+    )
+    registry.set_channel_release(arguments.channel, arguments.release_id)
+    print(f"{arguments.channel} current -> {arguments.release_id}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except ReleaseRegistryError as error:
+        raise SystemExit(str(error)) from error

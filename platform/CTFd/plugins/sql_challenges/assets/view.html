@@ -3,6 +3,7 @@
 <input id="challenge-deadline" type="hidden" value="{{ challenge.deadline }}">
 </div>
 <div class="col-12">
+    <p class="alert alert-info">{{ challenge.grading_notice }}</p>
     {% if challenge.deadline %}
     <div class="alert alert-info mb-3" id="deadline-alert">
         <i class="fas fa-clock"></i> <strong>제출 기한:</strong> <span id="deadline-text"></span>

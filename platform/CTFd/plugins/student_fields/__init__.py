@@ -2,7 +2,11 @@
 Plugin to automatically create Student ID Number field on CTFd startup
 """
 
+from sqlalchemy import event
+from sqlalchemy.orm import Session
+
 from CTFd.models import UserFields, db
+from CTFd.utils.student_ids import enforce_student_ids
 
 STUDENT_ID_DESCRIPTION = (
     "HYU Student ID Number(ex:2025123456). "
@@ -12,6 +16,9 @@ STUDENT_ID_DESCRIPTION = (
 
 def load(app):
     """Initialize custom user fields for student registration"""
+    app.config["UNIQUE_STUDENT_IDS"] = True
+    if not event.contains(Session, "before_flush", enforce_student_ids):
+        event.listen(Session, "before_flush", enforce_student_ids)
     
     with app.app_context():
         # Check if Student ID Number field already exists

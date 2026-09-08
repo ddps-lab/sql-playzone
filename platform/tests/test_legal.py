@@ -73,6 +73,30 @@ def test_restricted_accounts_can_read_public_notices(legal_app, restriction):
         assert client.get("/settings").status_code in (302, 403)
 
 
+@pytest.mark.parametrize("signed_in", [False, True])
+def test_exam_and_onboarding_gates_keep_notices_public(legal_app, signed_in):
+    from tests.helpers import gen_page
+    from tests.plugins.test_onboarding import create_google_user, start_session
+
+    with legal_app.app_context():
+        gen_page(db, title="Course only", route="course-only", content="Course material")
+        if signed_in:
+            user_id = create_google_user(legal_app)
+            client = start_session(legal_app, user_id)
+            # Consent has not been given yet; the policy link must still open.
+            assert client.get("/settings").location.endswith("/onboarding/")
+            assert 'href="/privacy"' in client.get("/onboarding/").get_data(as_text=True)
+        else:
+            client = legal_app.test_client()
+        set_config("exam_mode_enabled", "true")
+        set_config("exam_mode_allowed_ids", "9999999999")
+        set_config("exam_browser_required", "true")
+        for path in ("/", "/tos", "/privacy"):
+            assert client.get(path).status_code == 200
+        for path in ("/challenges", "/course-only", "/api/v1/challenges"):
+            assert client.get(path).status_code in (302, 403)
+
+
 def test_legal_settings():
     app = create_ctfd()
     with app.app_context():

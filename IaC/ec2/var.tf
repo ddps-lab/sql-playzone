@@ -10,12 +10,24 @@ variable "on_demand_percentage_above_base" { type = number }
 variable "asg_min_size" { type = number }
 variable "asg_max_size" { type = number }
 variable "asg_desired_capacity" { type = number }
+variable "exam_windows" {
+  type = list(object({
+    name     = string
+    start    = string
+    end      = string
+    capacity = number
+  }))
+}
 variable "key_name" { type = string }
 variable "ondemand_instance_type" { type = string }
 variable "region" { type = string }
 variable "aws_account_id" { type = string }
-variable "ctfd_ecr_repository_name" { type = string }
-variable "sql_judge_ecr_repository_name" { type = string }
+variable "artifact_prefix" { type = string }
+variable "artifact_channel" { type = string }
+variable "artifact_release_id" { type = string }
+variable "ami_id" { type = string }
+variable "ctfd_image" { type = string }
+variable "sql_judge_image" { type = string }
 variable "application_log_group_name" { type = string }
 variable "behavior_log_group_name" { type = string }
 variable "behavior_log_stream_name" { type = string }
@@ -23,3 +35,5 @@ variable "application_secret_name" { type = string }
 variable "rds_master_secret_arn" { type = string }
 variable "rds_endpoint" { type = string }
 variable "elasticache_serverless_endpoint" { type = string }
+variable "upload_bucket_name" { type = string }
+variable "upload_bucket_arn" { type = string }
