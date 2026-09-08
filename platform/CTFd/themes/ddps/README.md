@@ -1,56 +1,23 @@
-# core-beta
+# DDPS 학생 화면 개발 안내
 
-Rewritten version of the CTFd core theme to use Bootstrap 5, Alpine.js, and vite to improve upon the existing CTFd theme structure.
+로그인·설정·SQL 문제 화면에 사용하는 테마입니다. 학생 안내와 시험 설정은 [조교 운영 가이드](../../../../docs/TA_OPERATIONS.md), 코드 테스트는 [개발 가이드](../../../../docs/DEVELOPMENT.md)를 참고해 주세요.
 
-## Subtree Installation
+| 경로 | 내용 |
+|---|---|
+| `templates/` | 서버가 렌더링하는 HTML |
+| `assets/` | JavaScript·스타일 소스 |
+| `static/` | 브라우저에 배포하는 빌드 결과 |
 
-### Add repo to themes folder
+## SQL 화면을 수정했을 때
 
+저장소 루트에서 테마 의존성을 설치한 뒤 SQL 화면 전용 빌드를 실행할 수 있습니다. Yarn Classic과 Node.js가 필요합니다.
+
+```bash
+yarn --cwd platform/CTFd/themes/ddps install --frozen-lockfile
+npm --prefix platform/CTFd/themes/ddps run build:sql
+node --test tests/js/*.test.cjs
 ```
-git subtree add --prefix CTFd/themes/core-beta git@github.com:CTFd/core-beta.git main --squash
-```
 
-### Pull latest changes to subtree
+`build:sql`은 SQL 페이지·행동 tracker의 정적 파일과 manifest를 갱신합니다. 소스와 빌드 결과를 함께 검토해 commit해야 실제 배포에 반영됩니다. 전체 테마를 수정했다면 이 디렉터리의 `yarn build`를 사용할 수 있으며, 생성된 다른 화면 변경도 확인해야 합니다.
 
-```
-git subtree pull --prefix CTFd/themes/core-beta git@github.com:CTFd/core-beta.git main --squash
-```
-
-### Subtree Gotcha
-
-Make sure to use Merge Commits when dealing with the subtree here. For some reason Github's squash and commit uses the wrong line ending which causes issues with the subtree script: https://stackoverflow.com/a/47190256.
-
-## Creating Custom Theme (based on core-beta)
-
-To create a custom theme based on the core-beta one, here are the steps to follow:
-
-1. Clone core-beta theme locally to a seperate folder
-
-   ```
-   git clone https://github.com/CTFd/core-beta.git custom-theme
-   ```
-
-   To clarify the structure of the project, the `./assets` folder contains the uncompiled source files (the ones you can modify), while the `./static` directory contains the compiled ones.
-
-2. Install [Yarn](https://classic.yarnpkg.com/en/) following the [official installation guides](https://classic.yarnpkg.com/en/docs/install).
-
-   - **Yarn** is a dependency management tool used to install and manage project packages
-   - **[Vite](https://vite.dev/guide/)** handles the frontend tooling in CTFd by building optimized assets that are served through Flask.
-
-3. Run `yarn install` in the root of `custom-theme` folder to install the necessary Node packages including `vite`.
-
-4. Run the appropriate yarn build mode:
-
-   - Run `yarn dev` (this will run `vite build --watch`) while developing the theme.
-   - Run `yarn build` (which will run `vite build`) for a one-time build.
-     Vite allows you to preview changes instantly with hot reloading.
-
-5. Now, you can start your modifications in the `assets` folder. Each time you save, Vite will automatically recompile everything (assuming you are using `yarn dev`), and you can directly see the result by importing your compiled theme into a CTFd instance.
-   Note: You do not need the `node_modules` folder, you can simply zip the theme directory without it.
-
-6. When you are ready you can use `yarn build` to build the production copy of your theme.
-
-## Todo
-
-- Document how we are using Vite
-- Create a cookie cutter template package to use with Vite
+로그인·온보딩·마감·Test·Submit에 영향을 주는 변경은 dev에서 학생 계정으로 확인하는 것이 좋습니다. [제출 점검 가이드](../../plugins/sql_challenges/SUBMISSION_REVIEW.md)를 따라 진행할 수 있습니다.
