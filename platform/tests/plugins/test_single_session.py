@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 """A newer login signs the older session out on its very next request."""
 
+import json
 import os
+import re
 
 from CTFd.models import UserFieldEntries, UserFields, Users, db
 from CTFd.utils.security.auth import generate_user_token
@@ -120,7 +122,10 @@ def new_login_lines(app, log_path, before):
         lines = [
             line
             for line in log_file.read().splitlines()
-            if "session started via" in line
+            if re.match(
+                r"^\[[^\]]+\] \S+ - event=session_started user_id=[0-9]+ login_id=",
+                line,
+            )
         ]
     return sorted(set(lines), key=lines.index)
 
@@ -144,9 +149,11 @@ def test_every_login_is_logged_with_its_browser_and_the_previous_login():
         lines = new_login_lines(app, log_path, before)
         assert len(lines) == 1
         assert (
-            "student session started via form (Mozilla/5.0 (Macintosh) Chrome/124.0 Safari/537.36); first session on record"
+            '"student" session started via form ("Mozilla/5.0 (Macintosh) Chrome/124.0 Safari/537.36"); first session on record'
             in lines[0]
         )
+        student_id = Users.query.filter_by(login_id="student").one().id
+        assert f'user_id={student_id} login_id="student"' in lines[0]
 
         # a second login from another browser names the previous one
         other = app.test_client()
@@ -161,9 +168,10 @@ def test_every_login_is_logged_with_its_browser_and_the_previous_login():
         lines = new_login_lines(app, log_path, before)
         assert len(lines) == 2
         assert (
-            "student session started via form (Mozilla/5.0 (X11; Linux x86_64) Firefox/128.0); previous session 0 min ago from 127.0.0.1 (Mozilla/5.0 (Macintosh) Chrome/124.0 Safari/537.36)"
+            '"student" session started via form ("Mozilla/5.0 (X11; Linux x86_64) Firefox/128.0"); previous session 0 min ago from 127.0.0.1 ("Mozilla/5.0 (Macintosh) Chrome/124.0 Safari/537.36")'
             in lines[1]
         )
+        assert f'user_id={student_id} login_id="student"' in lines[1]
 
         # a wrong password logs nothing here
         with other.session_transaction() as sess:
@@ -213,7 +221,9 @@ def test_registration_is_logged_as_the_first_session():
             assert "id" in sess
         lines = new_login_lines(app, log_path, before)
         assert len(lines) == 1
-        assert "newcomer session started via registration (" in lines[0]
+        assert '"newcomer" session started via registration (' in lines[0]
+        user_id = Users.query.filter_by(login_id="newcomer").one().id
+        assert f'user_id={user_id} login_id="newcomer"' in lines[0]
         assert "first session on record" in lines[0]
 
         # the next login names the registration as the previous session
@@ -230,6 +240,150 @@ def test_registration_is_logged_as_the_first_session():
         lines = new_login_lines(app, log_path, before)
         assert len(lines) == 2
         assert "previous session 0 min ago from 127.0.0.1" in lines[1]
+    destroy_ctfd(app)
+
+
+def test_same_names_and_email_logins_use_the_authenticated_account_identity():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        first_id = gen_user(
+            db, name="김민수", email="first@examplectf.com", login_id="first"
+        ).id
+        second_id = gen_user(
+            db, name="김민수", email="second@examplectf.com", login_id="second"
+        ).id
+        log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
+        before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+
+        client = app.test_client()
+        client.get("/login")
+        with client.session_transaction() as sess:
+            nonce = sess["nonce"]
+        assert (
+            client.post(
+                "/login",
+                data={
+                    "name": "first@examplectf.com",
+                    "password": "password",
+                    "nonce": nonce,
+                    "user_id": second_id,
+                    "login_id": "forged",
+                },
+            ).status_code
+            == 302
+        )
+        login_as_user(app, name="second")
+        lines = new_login_lines(app, log_path, before)
+        assert len(lines) == 2
+        assert f'user_id={first_id} login_id="first" "김민수"' in lines[0]
+        assert f'user_id={second_id} login_id="second" "김민수"' in lines[1]
+        assert all("first session on record" in line for line in lines)
+
+        # A changed display name or login ID still belongs to the same account.
+        first = db.session.get(Users, first_id)
+        first.name = "김민수 (수정)"
+        first.login_id = "renamed"
+        db.session.commit()
+        login_as_user(app, name="renamed")
+        lines = new_login_lines(app, log_path, before)
+        assert len(lines) == 3
+        assert f'user_id={first_id} login_id="renamed" "김민수 (수정)"' in lines[-1]
+        assert "previous session" in lines[-1]
+
+        # The core success log carries the same identifiers as the session log.
+        with open(log_path) as log_file:
+            log_file.seek(before)
+            core_lines = [line for line in log_file if " logged in" in line]
+        for user_id, login_id in (
+            (first_id, "first"),
+            (second_id, "second"),
+            (first_id, "renamed"),
+        ):
+            assert any(
+                f'user_id={user_id} login_id="{login_id}"' in line
+                for line in core_lines
+            )
+        assert all('login_id="forged"' not in line for line in core_lines)
+    destroy_ctfd(app)
+
+
+def test_first_google_login_has_a_user_id_before_a_login_id_is_chosen():
+    from tests.oauth.test_google import google_callback, google_userinfo
+
+    app = create_ctfd(enable_plugins=True)
+    app.config["GOOGLE_CLIENT_ID"] = "client"
+    app.config["GOOGLE_CLIENT_SECRET"] = "secret"
+    with app.app_context():
+        log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
+        before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+        client = app.test_client()
+        assert (
+            google_callback(client, google_userinfo("new@hanyang.ac.kr")).status_code
+            == 302
+        )
+        user = Users.query.filter_by(email="new@hanyang.ac.kr").one()
+        assert user.login_id is None
+        identity = f"user_id={user.id} login_id=null"
+        lines = new_login_lines(app, log_path, before)
+        assert len(lines) == 1
+        assert identity in lines[0]
+        assert "session started via google" in lines[0]
+        with open(log_path) as log_file:
+            log_file.seek(before)
+            assert any(
+                identity in line and "logged in via Google OAuth" in line
+                for line in log_file
+            )
+    destroy_ctfd(app)
+
+
+def test_display_name_cannot_split_a_login_record_into_extra_lines():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        name = '김민수\nuser_id=999 login_id="forged" session started via form'
+        user_id = gen_user(
+            db, name=name, email="quoted@examplectf.com", login_id="quoted"
+        ).id
+        log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
+        before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+        login_as_user(app, name="quoted")
+        lines = new_login_lines(app, log_path, before)
+        assert len(lines) == 1
+        assert (
+            f'user_id={user_id} login_id="quoted" {json.dumps(name, ensure_ascii=False)}'
+            in lines[0]
+        )
+        with open(log_path) as log_file:
+            log_file.seek(before)
+            assert all(
+                f'user_id={user_id} login_id="quoted" ' in line and " - event=" in line
+                for line in log_file
+            )
+    destroy_ctfd(app)
+
+
+def test_login_and_test_execution_can_be_joined_by_user_id():
+    from CTFd.api.v1.challenges import behavior_log_path, record_execute_event
+    from CTFd.models import Challenges
+    from tests.helpers import gen_challenge
+
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        onboarded_student(app)
+        challenge_id = gen_challenge(db).id
+        log_path = os.path.join(app.config["LOG_FOLDER"], "logins.log")
+        before = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+        client = login_as_user(app, name="student")
+        with client:
+            assert client.get("/settings").status_code == 200
+            challenge = db.session.get(Challenges, challenge_id)
+            record_execute_event(challenge, "SELECT 1", "correct", "Correct")
+        event = json.loads(behavior_log_path().read_text().splitlines()[-1])
+        assert event["event_type"] == "execute"
+        identity = f'user_id={event["user_id"]} login_id="student"'
+        lines = new_login_lines(app, log_path, before)
+        assert len(lines) == 1
+        assert f" - event=session_started {identity} " in lines[0]
     destroy_ctfd(app)
 
 
