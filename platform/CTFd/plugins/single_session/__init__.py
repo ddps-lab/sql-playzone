@@ -45,8 +45,7 @@ LAST_LOGIN_TTL = 30 * 24 * 3600
 # Set from the Exam Mode admin page (exam_mode plugin).
 SINGLE_SESSION_CONFIG = "single_session_required"
 SIGNED_OUT_MESSAGE = (
-    "This account signed in from another browser, so this session was signed out. "
-    "다른 브라우저에서 로그인되어 이 세션은 로그아웃되었습니다."
+    "This account signed in from another browser, so this session was signed out."
 )
 
 

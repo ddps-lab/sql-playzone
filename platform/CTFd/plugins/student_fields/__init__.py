@@ -9,9 +9,9 @@ from CTFd.models import UserFields, db
 from CTFd.utils.student_ids import enforce_student_ids
 
 STUDENT_ID_DESCRIPTION = (
-    "HYU Student ID Number(ex:2025123456). "
-    "주의: 학번을 잘못 입력하면 제출 답안과 채점 결과를 본인에게 연결하지 못해 "
-    "성적 처리가 어려워질 수 있습니다. 본인의 학번을 반드시 정확하게 입력해 주세요."
+    "HYU Student ID Number (e.g., 2025123456). "
+    "Please enter your student ID number carefully. An incorrect ID may prevent us "
+    "from matching your submissions and scores to you and processing your grade."
 )
 
 def load(app):

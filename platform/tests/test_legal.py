@@ -18,12 +18,12 @@ def legal_app():
 def test_seeded_notices_are_public_and_linked_from_home(legal_app):
     with legal_app.app_context():
         client = legal_app.test_client()
-        for path, heading in (("/tos", "서비스 이용약관"), ("/privacy", "개인정보처리방침")):
+        for path, heading in (("/tos", "Terms of Service"), ("/privacy", "Privacy Policy")):
             response = client.get(path)
             assert response.status_code == 200
             html = response.get_data(as_text=True)
             assert f"<h1>SQL PlayZone {heading}</h1>" in html
-            assert '<article class="col-12 col-lg-9 legal-content" lang="ko">' in html
+            assert '<article class="col-12 col-lg-9 legal-content" lang="en">' in html
             assert client.head(path).status_code == 200
         home = client.get("/")
         assert home.status_code == 200

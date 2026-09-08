@@ -269,7 +269,7 @@ CTFd._internal.challenge.postRender = function() {
         
         if (deadlineText) {
             // Format deadline date in KST
-            deadlineText.textContent = deadline.toLocaleString('ko-KR', {
+            deadlineText.textContent = deadline.toLocaleString('en-US', {
                 year: 'numeric',
                 month: '2-digit',
                 day: '2-digit',
@@ -286,7 +286,7 @@ CTFd._internal.challenge.postRender = function() {
             
             if (diff <= 0) {
                 if (deadlineCountdown) {
-                    deadlineCountdown.innerHTML = '<span class="text-danger">제출 기한이 지났습니다</span>';
+                    deadlineCountdown.innerHTML = '<span class="text-danger">The submission deadline has passed.</span>';
                 }
                 var deadlineAlert = document.getElementById('deadline-alert');
                 if (deadlineAlert) {
@@ -297,7 +297,7 @@ CTFd._internal.challenge.postRender = function() {
                 var submitBtn = document.getElementById('challenge-submit');
                 if (submitBtn) {
                     submitBtn.disabled = true;
-                    submitBtn.innerHTML = '<i class="fas fa-times-circle"></i> 제출 기한 종료';
+                    submitBtn.innerHTML = '<i class="fas fa-times-circle"></i> Submissions closed';
                 }
             } else {
                 var days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -305,9 +305,9 @@ CTFd._internal.challenge.postRender = function() {
                 var minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
                 var seconds = Math.floor((diff % (1000 * 60)) / 1000);
                 
-                var countdownText = '남은 시간: ';
-                if (days > 0) countdownText += days + '일 ';
-                countdownText += hours + '시간 ' + minutes + '분 ' + seconds + '초';
+                var countdownText = 'Time remaining: ';
+                if (days > 0) countdownText += days + 'd ';
+                countdownText += hours + 'h ' + minutes + 'm ' + seconds + 's';
                 
                 if (deadlineCountdown) {
                     deadlineCountdown.textContent = countdownText;

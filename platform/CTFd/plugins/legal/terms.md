@@ -1,31 +1,31 @@
-# SQL PlayZone 서비스 이용약관
+# SQL PlayZone Terms of Service
 
-SQL PlayZone은 SQL을 연습하고 수업의 퀴즈와 시험에 참여할 수 있는 교육용 서비스입니다. 이용 전에 아래 내용을 확인해 주세요.
+SQL PlayZone is an educational service for practicing SQL and taking course quizzes and exams. Please read these terms before using the service.
 
-## 1. 계정과 이용 대상
+## 1. Accounts and eligibility
 
-수업에서 안내받은 학생은 안내된 가입 방법에 따라 계정을 만들 수 있습니다. 학교 Google 계정으로 가입하기 어려운 경우에는 담당 조교에게 계정 발급을 요청해야 합니다.
+Students invited to use the service for a course may create an account by following the registration instructions provided for that course. If you cannot register with a university Google account, you must ask your teaching assistant to create an account for you.
 
-채점 결과를 본인과 연결할 수 있도록 이름과 학번 등 계정 정보를 정확하게 입력해야 합니다. 계정과 비밀번호는 본인만 사용해야 하며 다른 사람에게 빌려주거나 공유할 수 없습니다.
+You must enter accurate account information, including your name and student ID number, so that your scores can be matched to you. Your account and password are for your own use only. You must not lend or share them with anyone else.
 
-## 2. 문제 풀이와 채점
+## 2. Challenges and grading
 
-문제를 풀기 전에 문제 설명과 제출 마감, 제출 횟수 제한을 확인해 주세요. 시험에 필요한 브라우저나 허용 자료가 따로 안내된 경우에는 해당 안내를 따라야 합니다.
+Before attempting a challenge, please check its description, submission deadline, and attempt limit. You must also follow any instructions about the required exam browser or permitted materials.
 
-답안은 문제에서 정한 기준에 따라 채점됩니다. 채점 결과나 문제 설명에 의문이 있으면 문제 이름, 제출 시각, 확인한 현상을 담당 조교에게 알려 주세요.
+Submissions are graded according to the requirements stated in each challenge. If you have a question about a grade or a challenge description, please tell your teaching assistant the challenge name, submission time, and what you observed.
 
-## 3. 이용 규칙
+## 3. Rules of use
 
-시험 중에는 허용된 자료와 도구만 사용해야 합니다. 다른 사람과 답을 주고받거나 허용되지 않은 외부 도구로 답을 생성하는 등 시험 규칙을 위반한 경우에는 수업의 부정행위 처리 기준이 적용됩니다.
+During an exam, you must use only the permitted materials and tools. Violations of exam rules, including sharing answers or generating answers with unauthorized external tools, are subject to the course's academic misconduct procedures.
 
-다른 사람의 계정에 접근하거나 플랫폼과 채점 시스템을 고의로 방해해서는 안 됩니다. 서비스 운영이나 시험 진행을 방해하는 계정은 이용이 제한될 수 있습니다.
+You must not access another person's account or deliberately disrupt the platform or grading system. Accounts that disrupt the service or an exam may have their access restricted.
 
-## 4. 서비스 운영과 문의
+## 4. Service availability and support
 
-점검이나 장애로 서비스 이용이 일시적으로 어려울 수 있습니다. 시험 중 문제가 발생하면 담당 조교에게 즉시 알려 주세요. 제출 기록과 장애 상황을 확인해 수업 운영 기준에 따라 안내합니다.
+Maintenance or technical problems may temporarily affect service availability. If you encounter a problem during an exam, please notify your teaching assistant immediately. The course staff will review submission records and the incident and advise you according to the course procedures.
 
-계정 발급, 이용 제한, 문제 풀이 및 채점에 관한 문의는 수강 중인 수업에서 안내한 담당 조교 연락처로 보내 주세요.
+For questions about account creation, access restrictions, challenges, or grading, please use the teaching assistant contact details provided for your course.
 
-## 5. 개인정보 처리
+## 5. Privacy
 
-계정 정보와 문제 풀이 기록 등 서비스 이용 중 수집하는 정보, 이용 목적 및 문의 방법은 [개인정보처리방침](/privacy)에서 확인할 수 있습니다.
+Please read our [Privacy Policy](/privacy) for information about the account and challenge activity data we collect, how we use it, and how to contact us.

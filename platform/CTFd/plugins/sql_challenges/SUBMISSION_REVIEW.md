@@ -19,8 +19,8 @@
 | 항목 | 점검 설정 |
 |---|---|
 | Points | 10 |
-| 정렬 기준 | `2 desc, 1 asc` |
-| 표시 형식까지 평가하는 열 번호 | 비워 둠 |
+| Sort order | `2 desc, 1 asc` |
+| Column numbers requiring exact formatting | 비워 둠 |
 | Deadline (KST) | 처음에는 비워 둠 |
 | State | Visible — 학생 계정이 열 수 있어야 합니다. |
 | Max Attempts | 2 |
