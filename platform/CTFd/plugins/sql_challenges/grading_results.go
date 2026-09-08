@@ -132,7 +132,9 @@ func compareGradedResults(expected, actual *QueryResult, p GradingPolicy, ranks 
 	return true
 }
 func problemError(err error) error {
-	if gradingErrorKind(err) == "student_query" || studentQueryError(err) {
+	// Only errors tagged at a SQL execution boundary become problem errors.
+	// A connection or session setup error keeps its infrastructure provenance.
+	if gradingErrorKind(err) == "student_query" {
 		return &gradingError{kind: "problem", cause: err}
 	}
 	return err

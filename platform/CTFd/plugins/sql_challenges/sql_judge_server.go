@@ -493,9 +493,6 @@ func (s *Server) executeQuery(parent context.Context, initQueries []string, quer
 	}
 	session, err := s.runInitStatements(executionCtx, resources, initQueries, req)
 	if err != nil {
-		if studentQueryError(err) {
-			return nil, &gradingError{kind: "problem", cause: err}
-		}
 		return nil, err
 	}
 	return s.runGradedQuery(executionCtx, resources, query, session)
@@ -542,7 +539,7 @@ func (s *Server) runInitStatements(ctx context.Context, r executionResources, in
 		}
 		if err := validateSQLQuery(initQuery, req); err != nil {
 			if strings.Contains(err.Error(), "file") || strings.Contains(err.Error(), "system") {
-				return session, fmt.Errorf("security violation in init query: %w", err)
+				return session, &gradingError{kind: "problem", cause: fmt.Errorf("security violation in init query: %w", err)}
 			}
 		}
 		for _, statement := range strings.Split(initQuery, ";") {
@@ -584,7 +581,7 @@ func (s *Server) runInitStatements(ctx context.Context, r executionResources, in
 	for _, statement := range executable {
 		statement = rewriteSchemaAliases(statement, session.schemaAliases, r.database)
 		if _, err := conn.ExecContext(ctx, statement); err != nil {
-			return session, fmt.Errorf("init query error: %w", err)
+			return session, problemError(classifyQueryError(fmt.Errorf("init query error: %w", err)))
 		}
 	}
 	if err := conn.QueryRowContext(ctx, "SELECT @@SESSION.sql_mode").Scan(&session.sqlMode); err != nil {
@@ -1115,7 +1112,8 @@ func main() {
 }
 
 // Fault provenance crosses the HTTP boundary as data, never as a parsed message.
-// Unknown failures are ungraded. A failed reference is never a student mistake.
+// Failures outside SQL execution are ungraded. A failed reference is never a
+// student mistake.
 type gradingError struct {
 	kind  string
 	cause error
@@ -1130,37 +1128,54 @@ func gradingErrorKind(err error) string {
 	}
 	return "system"
 }
-func studentQueryError(err error) bool {
-	if errors.Is(err, errResultLimit) {
-		return true
-	}
-	var serverError *mysql.MySQLError
-	if !errors.As(err, &serverError) {
-		return false
-	}
+func mysqlInfrastructureError(serverError *mysql.MySQLError) bool {
 	state := string(serverError.SQLState[:])
-	// SQLSTATE 21: cardinality violation; 22: data exception;
-	// 42: syntax/access-rule violation.
-	if strings.HasPrefix(state, "21") || strings.HasPrefix(state, "22") || strings.HasPrefix(state, "42") {
+	// Connection/authentication failures, transaction rollback, memory failure
+	// and externally interrupted queries are not evidence of a wrong answer.
+	if strings.HasPrefix(state, "08") || strings.HasPrefix(state, "28") ||
+		strings.HasPrefix(state, "40") || state == "HY001" || state == "HY013" || state == "70100" {
 		return true
 	}
-	// MySQL also reports some invalid SELECTs with the generic HY000 state.
-	// Classify those by documented server codes, never by SQL or message text.
+	// Resource/storage failures also use generic HY000 or syntax-class states.
+	// Match documented infrastructure signals, never SQL or message text.
 	// https://dev.mysql.com/doc/mysql-errors/8.4/en/server-error-reference.html
 	switch serverError.Number {
-	case 1096: // ER_NO_TABLES_USED
-		return true
-	case 1111: // ER_INVALID_GROUP_FUNC_USE
-		return true
-	case 3024: // ER_QUERY_TIMEOUT: MySQL's statement execution-time limit
+	case 1021, // ER_DISK_FULL
+		1030, // ER_GET_ERRNO (storage engine failure)
+		1034, // ER_NOT_KEYFILE (corrupt index)
+		1037, // ER_OUTOFMEMORY
+		1038, // ER_OUT_OF_SORTMEMORY
+		1040, // ER_CON_COUNT_ERROR
+		1041, // ER_OUT_OF_RESOURCES
+		1053, // ER_SERVER_SHUTDOWN
+		1114, // ER_RECORD_FILE_FULL
+		1135, // ER_CANT_CREATE_THREAD
+		1194, // ER_CRASHED_ON_USAGE
+		1195, // ER_CRASHED_ON_REPAIR
+		1203, // ER_TOO_MANY_USER_CONNECTIONS
+		1205, // ER_LOCK_WAIT_TIMEOUT
+		1206, // ER_LOCK_TABLE_FULL
+		1213, // ER_LOCK_DEADLOCK
+		1226, // ER_USER_LIMIT_REACHED
+		1317, // ER_QUERY_INTERRUPTED
+		3168, // ER_SERVER_ISNT_AVAILABLE
+		3169, // ER_SESSION_WAS_KILLED
+		3170: // ER_CAPACITY_EXCEEDED
 		return true
 	default:
-		// Transport cancellation and unknown server errors remain ungraded.
 		return false
 	}
 }
+
+// Call only at the submitted SQL's execution/result boundary. A MySQL error
+// packet is a query failure by default, with its original detail preserved.
+// Connection setup, session setup and non-MySQL failures stay ungraded.
 func classifyQueryError(err error) error {
-	if studentQueryError(err) {
+	if errors.Is(err, errResultLimit) {
+		return &gradingError{kind: "student_query", cause: err}
+	}
+	var serverError *mysql.MySQLError
+	if errors.As(err, &serverError) && !mysqlInfrastructureError(serverError) {
 		return &gradingError{kind: "student_query", cause: err}
 	}
 	return err
