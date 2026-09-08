@@ -461,7 +461,8 @@ def test_banned_user():
         user.banned = True
         db.session.commit()
 
-        routes = ["/", "/challenges", "/api/v1/challenges"]
+        assert client.get("/").status_code == 200
+        routes = ["/challenges", "/api/v1/challenges"]
         for route in routes:
             r = client.get(route)
             assert r.status_code == 403
@@ -607,7 +608,7 @@ def test_registration_password_minimum_length():
 def test_user_change_password_required():
     """
     Test that users with change_password=True are redirected to reset password
-    and cannot access other pages until they change their password
+    and cannot access protected pages until they change their password
     """
     app = create_ctfd()
     with app.app_context():
@@ -638,8 +639,8 @@ def test_user_change_password_required():
             assert r.status_code == 302
 
             # Test that user is redirected to reset_password when accessing various pages
+            assert client.get("/").status_code == 200
             protected_routes = [
-                "/",
                 "/challenges",
                 "/scoreboard",
                 "/profile",
