@@ -68,24 +68,32 @@ def parse_policy(data, current=None, creating=False):
 
 def policy_notice(policy):
     if policy is None:
-        return "출제자가 채점 기준을 확인 중입니다. 확인 전에는 채점하지 않으며 제출 횟수도 차감하지 않습니다."
-    message = "MySQL 8.4 기준: 열 위치와 중복 행 수를 비교합니다. NULL은 문자열 NULL 및 빈 문자열과 구별합니다. 숫자는 정확한 값으로 비교하며 불필요한 끝자리 0은 무시합니다. 문자열의 대소문자·공백은 구별합니다."
+        return (
+            "The challenge author is reviewing the grading requirements. "
+            "Grading is unavailable until the review is complete. No attempts will be deducted."
+        )
+    message = (
+        "Grading uses MySQL 8.4. Column positions and duplicate row counts must match. "
+        "NULL differs from the string 'NULL' and an empty string. "
+        "Numbers are compared by exact value, ignoring unnecessary trailing zeros. "
+        "String comparisons are case-sensitive and preserve whitespace."
+    )
     order = policy["order_by"]
     if order:
         message += (
-            " 정렬: "
+            " Sort order: "
             + ", ".join(
-                f"{key['column']}열 {'오름차순' if key['direction'] == 'asc' else '내림차순'}"
+                f"column {key['column']} {'ascending' if key['direction'] == 'asc' else 'descending'}"
                 for key in order
             )
-            + ". 정렬 기준이 같은 행끼리는 순서가 자유롭습니다."
+            + ". Rows with equal sort keys may appear in any order."
         )
     else:
-        message += " 행 순서는 평가하지 않습니다."
+        message += " Row order is not graded."
     if policy["exact_format_columns"]:
         message += (
-            " 표시 형식까지 일치해야 하는 열: "
+            " Columns requiring exact formatting: "
             + ", ".join(map(str, policy["exact_format_columns"]))
-            + ". 문제에 명시된 소수 자릿수 등 표시 형식을 지켜 주세요."
+            + ". Follow the formatting requirements in the challenge description, such as decimal places."
         )
     return message
