@@ -117,6 +117,28 @@ def test_actual_wrong_answers_consume_attempts(environment, response):
     assert Fails.query.filter_by(user_id=uid).count() == 1
 
 
+def test_student_sql_error_is_shown_in_test_and_submit(environment):
+    _, _, client, uid, make = environment
+    cid = make(max_attempts=1)
+    error = "query error: Error 1096 (HY000): No tables used"
+    response = judged(success=False, error_kind="student_query", error=error)
+    with patch("requests.post", return_value=response) as judge:
+        for is_test in (True, False):
+            result = client.post(
+                "/api/v1/challenges/attempt",
+                json=dict(challenge_id=cid, submission="SELECT *", test=is_test),
+            )
+            data = result.get_json()["data"]
+            assert data["status"] == "incorrect", data
+            assert error in data["message"]
+            assert "temporarily unavailable" not in data["message"]
+            assert judge.call_args.kwargs["json"]["user_query"] == "SELECT *"
+            assert Fails.query.filter_by(user_id=uid).count() == (0 if is_test else 1)
+            assert Solves.query.filter_by(user_id=uid).count() == 0
+        assert submit(client, cid).get_json()["data"]["status"] == "ratelimited"
+        assert judge.call_count == 2
+
+
 @pytest.mark.parametrize("match", [True, False])
 def test_receipt_time_controls_storage_across_global_end(environment, match):
     _, _, client, uid, make = environment

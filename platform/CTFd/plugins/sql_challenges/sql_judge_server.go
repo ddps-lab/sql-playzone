@@ -1139,10 +1139,25 @@ func studentQueryError(err error) bool {
 		return false
 	}
 	state := string(serverError.SQLState[:])
-	// SQLSTATE 42: syntax/access-rule violation; 22: data exception.
-	// 3024: MySQL's statement execution-time limit. Transport cancellation
-	// and unknown server errors remain ungraded rather than guessing blame.
-	return strings.HasPrefix(state, "42") || strings.HasPrefix(state, "22") || serverError.Number == 3024
+	// SQLSTATE 21: cardinality violation; 22: data exception;
+	// 42: syntax/access-rule violation.
+	if strings.HasPrefix(state, "21") || strings.HasPrefix(state, "22") || strings.HasPrefix(state, "42") {
+		return true
+	}
+	// MySQL also reports some invalid SELECTs with the generic HY000 state.
+	// Classify those by documented server codes, never by SQL or message text.
+	// https://dev.mysql.com/doc/mysql-errors/8.4/en/server-error-reference.html
+	switch serverError.Number {
+	case 1096: // ER_NO_TABLES_USED
+		return true
+	case 1111: // ER_INVALID_GROUP_FUNC_USE
+		return true
+	case 3024: // ER_QUERY_TIMEOUT: MySQL's statement execution-time limit
+		return true
+	default:
+		// Transport cancellation and unknown server errors remain ungraded.
+		return false
+	}
 }
 func classifyQueryError(err error) error {
 	if studentQueryError(err) {

@@ -436,8 +436,19 @@ func TestIntegrationGradingErrorKinds(t *testing.T) {
 	server := integrationServer(t)
 	for _, tc := range []struct{ name, init, solution, user, kind string }{
 		{"student syntax", "", "SELECT 1", "SELECT missing_column", "student_query"},
+		{"student no tables", "", "SELECT 1", "SELECT *", "student_query"},
+		{"student invalid aggregate", "", "SELECT 1", "SELECT SUM(COUNT(*))", "student_query"},
+		{"student union width", "", "SELECT 1", "SELECT 1 UNION SELECT 1, 2", "student_query"},
+		{"student operand width", "", "SELECT 1", "SELECT (SELECT 1, 2)", "student_query"},
+		{"student scalar subquery rows", "", "SELECT 1", "SELECT (SELECT 1 UNION ALL SELECT 2)", "student_query"},
 		{"reference syntax", "", "SELECT missing_column", "SELECT 1", "problem"},
+		{"reference no tables", "", "SELECT *", "SELECT 1", "problem"},
+		{"reference invalid aggregate", "", "SELECT SUM(COUNT(*))", "SELECT 1", "problem"},
+		{"reference union width", "", "SELECT 1 UNION SELECT 1, 2", "SELECT 1", "problem"},
+		{"reference operand width", "", "SELECT (SELECT 1, 2)", "SELECT 1", "problem"},
+		{"reference scalar subquery rows", "", "SELECT (SELECT 1 UNION ALL SELECT 2)", "SELECT 1", "problem"},
 		{"init syntax", "CREATE TABLE", "SELECT 1", "SELECT 1", "problem"},
+		{"init no tables", "SELECT *", "SELECT 1", "SELECT 1", "problem"},
 		{"result mismatch", "", "SELECT 1", "SELECT 2", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
