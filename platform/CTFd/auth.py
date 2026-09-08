@@ -23,7 +23,7 @@ from CTFd.utils.crypto import verify_password
 from CTFd.utils.decorators import ratelimit
 from CTFd.utils.decorators.visibility import check_registration_visibility
 from CTFd.utils.helpers import error_for, get_errors, markup
-from CTFd.utils.logging import log
+from CTFd.utils.logging import log, user_log_fields
 from CTFd.utils.modes import TEAMS_MODE
 from CTFd.utils.security.auth import generate_preset_admin, login_user, logout_user
 from CTFd.utils.security.email import (
@@ -500,7 +500,12 @@ def login():
                 session.regenerate()
 
                 login_user(user)
-                log("logins", "[{date}] {ip} - {name} logged in", name=user.name)
+                log(
+                    "logins",
+                    "[{date}] {ip} - event=login_success user_id={user_id} "
+                    "login_id={login_id} {name} logged in",
+                    **user_log_fields(user),
+                )
 
                 db.session.close()
                 if request.args.get("next") and validators.is_safe_url(
@@ -929,7 +934,12 @@ def google_callback():
                 # Lets the onboarding plugin tell a Google-authenticated
                 # session from a later form login (login_user issues a new nonce).
                 session["google_login_nonce"] = session["nonce"]
-                log("logins", "[{date}] {ip} - {name} logged in via Google OAuth", name=user.name)
+                log(
+                    "logins",
+                    "[{date}] {ip} - event=login_success user_id={user_id} "
+                    "login_id={login_id} {name} logged in via Google OAuth",
+                    **user_log_fields(user),
+                )
                 
                 return redirect(url_for("challenges.listing" if not (get_config("user_mode") == TEAMS_MODE and user.team_id is None) else "teams.private"))
             else:

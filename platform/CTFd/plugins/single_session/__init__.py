@@ -8,21 +8,22 @@ after a newer login. The request hook here runs the same check for
 every request. Both apply only while the "one session per student"
 switch on the Exam Mode page is on, and never to admins.
 
-Because only one session is ever alive, the sequence of logins is the
-complete record of who held an account and when. Each login is logged
-with the browser and the previous login of the same account, so an exam
-review only needs the logins stream.
+Each successful login records the account's user_id and login_id, browser,
+and previous login. The stable user_id links these records to SQL execution
+and behavior events, including accounts with the same display name.
 """
 
+import json
 import time
 
 from flask import abort, g, redirect, request, session, url_for
 
 from CTFd.cache import cache
+from CTFd.models import Users
 from CTFd.utils import get_config
-from CTFd.utils.helpers import error_for
 from CTFd.utils.config.pages import is_public_site_info
-from CTFd.utils.logging import log
+from CTFd.utils.helpers import error_for
+from CTFd.utils.logging import log, user_log_fields
 from CTFd.utils.security.auth import logout_user
 from CTFd.utils.user import authed, get_current_user_attrs, get_ip
 
@@ -92,7 +93,12 @@ def record_login(via):
     CTFd writes its own "logged in" line as well; this one reads
     "session started" so a review counts one kind of line only.
     """
-    user = get_current_user_attrs()
+    # UserAttrs has no login_id; read the current identity once per login.
+    user = (
+        Users.query.with_entities(Users.id, Users.login_id, Users.name)
+        .filter_by(id=session.get("id"))
+        .first()
+    )
     if user is None:
         return
     previous = cache.get(last_login_key(user.id))
@@ -100,22 +106,24 @@ def record_login(via):
     if previous:
         log(
             "logins",
-            "[{date}] {ip} - {name} session started via {via} ({browser}); "
+            "[{date}] {ip} - event=session_started user_id={user_id} login_id={login_id} "
+            "{name} session started via {via} ({browser}); "
             "previous session {minutes} min ago from {previous_ip} ({previous_browser})",
-            name=user.name,
             via=via,
-            browser=browser(),
+            browser=json.dumps(browser(), ensure_ascii=False),
             minutes=int((now - previous["at"]) // 60),
             previous_ip=previous["ip"],
-            previous_browser=previous["browser"],
+            previous_browser=json.dumps(previous["browser"], ensure_ascii=False),
+            **user_log_fields(user),
         )
     else:
         log(
             "logins",
-            "[{date}] {ip} - {name} session started via {via} ({browser}); first session on record",
-            name=user.name,
+            "[{date}] {ip} - event=session_started user_id={user_id} login_id={login_id} "
+            "{name} session started via {via} ({browser}); first session on record",
             via=via,
-            browser=browser(),
+            browser=json.dumps(browser(), ensure_ascii=False),
+            **user_log_fields(user),
         )
     cache.set(
         last_login_key(user.id),
@@ -148,7 +156,11 @@ def load(app):
 
     @app.before_request
     def enforce_single_session():
-        if is_public_site_info() or request.endpoint in EXEMPT_ENDPOINTS or not authed():
+        if (
+            is_public_site_info()
+            or request.endpoint in EXEMPT_ENDPOINTS
+            or not authed()
+        ):
             return
         if not single_session_required():
             return
