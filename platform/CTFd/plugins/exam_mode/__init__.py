@@ -8,6 +8,7 @@ from CTFd.plugins import (
 )
 from CTFd.utils import set_config, get_config, get_app_config, validators
 from CTFd.utils.user import is_admin, get_ip, get_current_user
+from CTFd.utils.config.pages import is_public_site_info
 from CTFd.cache import cache
 
 
@@ -135,7 +136,7 @@ def refused_login_response():
 
 
 def exam_browser_exempt():
-    if request.endpoint in EXAM_BROWSER_EXEMPT_ENDPOINTS:
+    if is_public_site_info() or request.endpoint in EXAM_BROWSER_EXEMPT_ENDPOINTS:
         return True
     if request.endpoint == 'views.files':
         # Uploaded files serve both site assets, which the login and error
