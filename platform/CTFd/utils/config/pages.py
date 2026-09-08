@@ -1,4 +1,4 @@
-from flask import current_app
+from flask import current_app, request
 
 from CTFd.cache import cache
 from CTFd.models import Pages, db
@@ -77,3 +77,11 @@ def get_page(route):
         p = Pages(**page)
         return p
     return None
+
+
+def is_public_site_info():
+    """Home and legal notices remain readable before joining an exam."""
+    return request.endpoint in {"views.tos", "views.privacy"} or (
+        request.endpoint == "views.static_html"
+        and (request.view_args or {}).get("route") == "index"
+    )

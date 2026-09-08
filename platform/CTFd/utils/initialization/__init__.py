@@ -20,7 +20,7 @@ from CTFd.utils.config import (
     integrations,
     is_setup,
 )
-from CTFd.utils.config.pages import get_pages
+from CTFd.utils.config.pages import get_pages, is_public_site_info
 from CTFd.utils.dates import isoformat, unix_time, unix_time_millis, unix_time_to_utc
 from CTFd.utils.events import EventManager, RedisEventManager
 from CTFd.utils.humanize.words import pluralize
@@ -284,6 +284,8 @@ def init_request_processors(app):
 
     @app.before_request
     def banned():
+        if is_public_site_info():
+            return
         if request.endpoint in ("views.themes", "views.themes_beta"):
             return
 
@@ -310,6 +312,8 @@ def init_request_processors(app):
 
     @app.before_request
     def change_password():
+        if is_public_site_info():
+            return
         if request.endpoint in (
             "views.themes",
             "views.themes_beta",
