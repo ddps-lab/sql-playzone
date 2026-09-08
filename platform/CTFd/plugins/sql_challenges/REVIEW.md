@@ -9,11 +9,18 @@
 | 준비물 | 확인 방법 |
 |---|---|
 | 서비스 주소와 관리자 계정 | 운영 담당자에게 검사할 환경을 확인해 주세요. |
-| 이 저장소의 소스 | [저장소 내려받기](../../../../README.md)를 참고해 주세요. 운영 담당자가 지정한 검사 버전으로 준비해야 합니다. |
+| 이 저장소의 소스 | 아래 명령으로 내려받을 수 있습니다. 운영 담당자가 지정한 검사 버전으로 준비해야 합니다. |
 | Git, Python 3.12 이상, Docker와 Compose v2, curl, openssl, realpath | Linux 또는 WSL의 Bash 터미널을 기준으로 아래 명령을 실행할 수 있습니다. Docker도 실행 중이어야 합니다. |
 | 비공개 작업 디렉터리 | 문제 파일에는 정답이 들어 있으므로 Git 저장소 밖에 보관해야 합니다. |
 
-**저장소 루트**에서 도구를 확인해 주세요. `platform`, `scripts`, `IaC`가 보이는 디렉터리입니다.
+처음 소스를 받는다면 다음 명령을 실행해 주세요.
+
+```bash
+git clone https://github.com/ddps-lab/sql-playzone.git
+cd sql-playzone
+```
+
+이후에는 **저장소 루트**에서 도구를 확인해 주세요. `platform`, `scripts`, `IaC`가 보이는 디렉터리입니다.
 
 ```bash
 git --version
@@ -101,4 +108,4 @@ Docker 검토 서비스는 선택한 포트를 호스트에 공개합니다. 정
 | 포트 사용 중 | `SQL_JUDGE_REVIEW_PORT`로 비어 있는 포트를 지정할 수 있습니다. |
 | 이미지 빌드·MySQL 기동 실패 | 오류 메시지와 Docker 상태를 개발 담당자에게 전달해 주세요. 토큰과 비공개 문제 내용은 제외해야 합니다. |
 
-검사 결과를 수정한 뒤에는 [제출 점검 가이드](SUBMISSION_REVIEW.md)로 학생 화면의 Test·Submit·성적 반영을 확인할 수 있습니다. 서로 다른 채점 엔진의 결과 비교나 자동 테스트 추가는 [개발 가이드](../../../../docs/DEVELOPMENT.md)를 참고해 주세요.
+검사 결과를 수정한 뒤에는 [제출 점검 가이드](SUBMISSION_REVIEW.md)로 학생 화면의 Test·Submit·성적 반영을 확인할 수 있습니다. 개발 담당자가 다른 채점 엔진과 결과를 비교할 때는 `scripts/regrade-challenges --help`의 `--baseline-url`을 참고할 수 있습니다.

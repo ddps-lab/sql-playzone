@@ -1,5 +1,3 @@
-> SQL Playzone의 출제·시험 운영은 [프로젝트 시작 안내](../README.md)를 참고해 주세요. 아래는 기반 프레임워크인 CTFd의 원본 소개입니다. 이 저장소의 개발·설정 절차는 [개발 가이드](../docs/DEVELOPMENT.md)에 있습니다.
-
 # ![](https://github.com/CTFd/CTFd/blob/master/CTFd/themes/core/static/img/logo.png?raw=true)
 
 ![CTFd MySQL CI](https://github.com/CTFd/CTFd/workflows/CTFd%20MySQL%20CI/badge.svg?branch=master)

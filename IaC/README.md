@@ -1,110 +1,160 @@
-# AWS 운영 가이드
+# SQL Playground Infrastructure as Code
 
-서버 상태 확인, 시험 전 예약 확장, 데이터 보존을 담당하는 사람을 위한 안내입니다. 학생 계정·문제·시험 참여 규칙은 [조교 운영 가이드](../docs/TA_OPERATIONS.md)에서 먼저 확인할 수 있습니다.
+이 프로젝트는 SQL Playground CTFd 플랫폼을 위한 AWS 인프라를 Terraform으로 관리합니다.
 
-AWS 변경에는 **대상 환경 접근 권한, Terraform 설정, 변경 승인**이 필요합니다. 처음 인계받았다면 배포 담당자와 읽기 전용 상태 확인부터 진행하는 것이 좋습니다.
+## 아키텍처
 
-## 1. 어떤 자원을 관리하는가
+- **VPC**: Public/Private/Data 서브넷으로 구성
+- **RDS**: MariaDB 데이터베이스 (프라이빗 서브넷)
+- **EC2**: Auto Scaling Group with ALB
+  - On-demand 인스턴스 1개 (기본)
+  - Auto Scaling으로 스케일 아웃 (기본 On-demand, 선택적으로 Spot)
+- **S3**: CTFd 업로드 파일(문제 첨부 등)은 배포별 버킷에 저장. 인스턴스가 release마다 교체되고 여러 대가 동시에 뜨므로 인스턴스 디스크에는 두지 않음
+- **Route53**: 도메인 연결 (sql-playground.ddps.cloud)
 
-| 구성 | 역할 |
-|---|---|
-| EC2·Auto Scaling Group(ASG) | 웹·채점 서버가 실행되는 인스턴스와 대수 조절 |
-| Application Load Balancer(ALB) | 요청 분산과 서버 상태 검사 |
-| Aurora MySQL | 계정·문제·성적 저장. 비밀번호는 RDS가 관리하며 Secrets Manager에서 조회합니다. |
-| Valkey Serverless | 캐시·로그인 세션 공유 |
-| S3 | 첨부 파일과 로그 저장 |
-| Route 53·VPC | 도메인과 네트워크 |
+## 사전 준비
 
-채점용 MySQL 8.4는 각 서버의 Docker 컨테이너에서 실행됩니다. Aurora는 서비스 기록을 보관하고, 채점용 MySQL은 문제 데이터를 임시 DB에 준비합니다.
+1. AWS CLI 설정 및 프로필 구성
+2. Terraform 설치
+3. `private_var.tf` 파일 생성:
+```bash
+cp private_var.tf.example private_var.tf
+```
 
-## 2. 대상 환경 확인
+4. `private_var.tf`에 다음 값 설정:
+```hcl
+variable "db_username" {
+    type        = string
+    default     = "your_db_username"
+    sensitive   = true
+}
 
-저장소 기본 운영 도메인은 `sql.ddps.cloud`, dev는 `sql-dev.ddps.cloud`입니다. 현재 기동 여부는 AWS 콘솔과 해당 환경의 배포 기록으로 확인해야 합니다.
+variable "db_password" {
+    type        = string
+    default     = "your_secure_password"
+    sensitive   = true
+}
 
-| 설정 | 뜻 |
-|---|---|
-| `prefix` | 개별 환경 자원 이름. dev 예: `sql-2026-s2-dev` |
-| `artifact_prefix` | 학기별 빌드 자원 이름. 예: `sql-2026-s2` |
-| `artifact_channel` | 사용할 배포 버전 경로: `dev` 또는 `main` |
-| `deployment_mode` | 운영용 `persistent` 또는 폐기 가능한 `ephemeral` |
-| backend | Terraform이 AWS 자원 상태를 저장하는 위치 |
-| `TF_DATA_DIR` | 해당 backend 연결 정보를 보관할 로컬 디렉터리 |
-| tfvars | 환경별 설정값을 담은 파일 |
+variable "hosted_zone_id" {
+    type        = string
+    default     = "your_route53_hosted_zone_id"
+}
+```
 
-dev tfvars는 [environments/dev.tfvars](environments/dev.tfvars)에 있습니다. 운영·dev·빌드 기반 자원(foundation)은 각자의 backend와 TF_DATA_DIR를 사용해야 합니다. 초기 연결·새 버전 배포 명령은 [배포 가이드](ARTIFACT_PIPELINE.md)를 따라 주세요.
+## AWS 프로필 설정
 
-## 3. 평상시 상태 확인
+특정 AWS 프로필을 사용하려면:
+```bash
+# var.tf에서 기본값 변경
+variable "aws_profile" {
+  default = "your-profile-name"
+}
 
-1. AWS 콘솔의 대상 ASG에서 현재 대수와 InService 상태를 확인해 주세요.
-2. ALB의 Target groups에서 대상 인스턴스가 healthy인지 확인합니다. 상태 검사 경로는 `/healthcheck`입니다.
-3. 해당 서비스에서 로그인과 점검용 SQL Test를 실행해 보는 것이 좋습니다. 문제·제출 검사는 [제출 점검 가이드](../platform/CTFd/plugins/sql_challenges/SUBMISSION_REVIEW.md)를 사용해 주세요.
-4. 오류가 있으면 CloudWatch의 해당 배포 로그를 확인합니다. 컨테이너 예외가 충분히 보이지 않으면 배포 담당자에게 CTFd·judge의 Docker 로그 확인을 요청해야 합니다.
+# 또는 terraform 실행 시 지정
+terraform plan -var="aws_profile=your-profile-name"
+terraform apply -var="aws_profile=your-profile-name"
+```
 
-초기 기동·교체에는 수 분이 걸릴 수 있습니다. ALB 검사 유예와 인스턴스 교체 준비 시간은 각각 300초로 설정돼 있습니다.
+## 모듈별 관리
 
-## 4. 시험 전 서버 예약 확장 — exam_windows
+### 전체 인프라 배포
+```bash
+terraform init
+terraform plan
+terraform apply
+```
 
-시험 시작에 접속·채점 요청이 몰리기 전에 필요한 서버 수를 확보하는 설정입니다. 기본값은 빈 목록입니다. 시험 일정을 받으면 **시작 30분 전부터 종료 30분 뒤까지** 확보하는 창을 잡는 것이 좋습니다.
+### VPC 모듈만 배포
+```bash
+terraform apply -target=module.vpc
+```
 
-서버 용량은 이 설정에서, 학생 접근 규칙은 Exam Mode에서, 제출 기간은 전체 시험 시간·문제별 Deadline에서 각각 관리해야 합니다.
+### RDS 모듈만 배포 (VPC 필요)
+```bash
+terraform apply -target=module.vpc -target=module.rds
+```
 
-### tfvars에 일정 입력
+### EC2 모듈만 배포 (VPC, RDS 필요)
+```bash
+terraform apply -target=module.ec2
+```
 
-아래는 **2026-10-20 09:00~11:00 KST 시험을 서버 8대로 준비하는 예시**입니다. 대상 환경의 tfvars에 실제 일정과 용량을 입력해 주세요.
+## 모듈별 삭제
+
+### EC2만 삭제 (RDS 유지)
+```bash
+terraform destroy -target=module.ec2
+```
+
+### 전체 삭제 (RDS 보호 중)
+RDS는 `deletion_protection = true`로 설정되어 있어 실수로 삭제되지 않습니다.
+RDS를 삭제하려면:
+
+1. `rds/rds.tf`에서 `deletion_protection = false`로 변경
+2. `terraform apply -target=module.rds`로 설정 업데이트
+3. `terraform destroy`로 전체 삭제
+
+## 운영 관리
+
+### Auto Scaling 설정
+- 기본: On-demand 1개 (`asg_min_size`, `asg_desired_capacity`)
+- 스케일 아웃: 최대 10개 (`asg_max_size`). `on_demand_percentage_above_base`가 100(기본)이면 추가 인스턴스도 On-demand이고, 0으로 두면 Spot으로 늘어납니다.
+- 메트릭: ALB Request Count Per Target (분당 300 requests)
+- ALB 상태 검사는 CTFd의 `/healthcheck`(DB·설정 확인, 200)를 씁니다. 시험 브라우저 제한이나 온보딩 게이트가 걸려도 이 경로는 열려 있어, 제한을 켜도 ASG가 인스턴스를 unhealthy로 보지 않습니다. 이전 경로 `/`는 제한이 켜지면 403이라 dev에서 6분마다 인스턴스가 교체됐습니다.
+- `health_check_grace_period`와 instance refresh의 `instance_warmup`은 300초입니다. 첫 부팅이 MySQL 초기화와 judge healthcheck를 기다리므로, ALB healthy까지 3분 50초가 걸린 실측(2026-09-02, spot t4g.small)에 여유를 둔 값입니다.
+- `desired_capacity`와 `min_size`는 생성 이후 Terraform이 되돌리지 않습니다(`ignore_changes`). 스케일링과 예약 작업이 바꾼 값을 시험 중 apply가 원래대로 줄이지 않게 하기 위한 것이며, 두 값을 바꾸려면 콘솔이나 CLI로 직접 조정합니다.
+
+### 시험·퀴즈 사전 스케일
+target tracking은 인스턴스를 추가하는 데 3~5분이 걸려 시험 시작 직후 burst를 따라가지 못합니다. `exam_windows`에 창을 선언하면 시작 시각에 최소·목표 용량을 `capacity`로 올리고, 종료 시각에 최소 용량만 되돌립니다. 이후 부하가 줄면 target tracking이 서서히 줄입니다.
 
 ```hcl
 exam_windows = [
-  {
-    name     = "midterm"
-    start    = "2026-10-20T08:30:00"
-    end      = "2026-10-20T11:30:00"
-    capacity = 8
-  }
+  { name = "midterm", start = "2026-10-20T08:30:00", end = "2026-10-20T11:30:00", capacity = 8 },
 ]
 ```
 
-| 필드 | 입력 기준 |
-|---|---|
-| `name` | 목록 안에서 고유한 예약 이름. 영문 소문자·숫자로 시작하는 1~31자의 영문 소문자·숫자·하이픈 |
-| `start` | 서버 확보 시작 시각. KST를 예시 형식으로 입력해야 하며 시간대 접미사는 생략합니다. Terraform이 UTC로 변환합니다. |
-| `end` | 확보한 최소 대수 해제 시각. start보다 늦어야 합니다. |
-| `capacity` | 확보할 정수 대수. `asg_min_size`~`asg_max_size` 범위이며 기본 범위는 1~10입니다. |
+- 시각은 KST이며 시간대 접미사를 붙이지 않습니다. 시작은 시험 30분 전, 종료는 시험이 끝나고 30분 뒤로 잡습니다.
+- 창을 추가하거나 고친 뒤 plan을 검토하고 apply해야 예약이 등록됩니다. 등록된 예약은 콘솔의 Auto Scaling group > Automatic scaling > Scheduled actions에서 확인합니다.
+- 지난 창은 plan에서 자동으로 제외되므로 시험이 끝나면 항목을 지웁니다.
+- 창끼리 겹치거나 맞닿으면 안 됩니다. 연달아 보는 시험은 한 창으로 합칩니다. `capacity`는 `asg_min_size` 이상 `asg_max_size`(기본 10) 이하여야 하며, 더 필요하면 `asg_max_size`를 먼저 올립니다.
+- 인스턴스당 채점 상한은 초당 5~8건이며 지난 학기 시험은 8대로 운영했습니다.
 
-겹치거나 끝·시작이 맞닿는 창은 하나로 합쳐야 합니다. 필요 용량은 수강생 수와 실제 문제의 데이터·실행 시간을 기준으로 부하 검사를 거쳐 결정하는 것이 좋습니다.
+### 인스턴스 타입 변경
+`var.tf`에서 수정:
+```hcl
+variable "ondemand_server_instance_class" {
+    default = "t3.small"  # On-demand 인스턴스 타입
+}
+```
 
-### 등록·확인·종료
+### RDS 인스턴스 타입 변경
+```hcl
+variable "database_instance_class" {
+    default = "db.t3.medium"  # RDS 인스턴스 타입
+}
+```
 
-1. [배포 가이드](ARTIFACT_PIPELINE.md)의 환경 연결을 완료하고 대상 tfvars로 새 plan을 만들어 주세요.
-2. plan에서 해당 ASG에 시작·종료 예약 두 개가 추가되는지 시각·용량을 검토한 뒤 승인받아 apply해야 합니다.
-3. AWS 콘솔 **Auto Scaling group → Automatic scaling → Scheduled actions**에서 등록을 확인해 주세요.
-4. 시작 예약은 최소 대수(`min_size`)와 목표 대수(`desired_capacity`)를 capacity로 설정합니다. 시험 시작 전 필요한 대수가 InService이고 ALB target이 healthy인지 확인해야 합니다.
-5. 종료 예약은 최소 대수를 기본값으로 복원합니다. 이후 요청량에 따른 자동 조절(target tracking)이 실제 대수를 점진적으로 줄입니다. 종료 후 상태를 확인하고 지난 일정은 tfvars에서 제거해 다음 plan/apply에 반영해 주세요.
+## 비용 최적화
 
-### 늦게 등록하거나 일정을 취소할 때
+1. **개발 환경**: EC2만 destroy하고 RDS는 유지
+2. **프로덕션**: 평소 On-demand 1개. 스케일 아웃 인스턴스도 기본 On-demand이며(t4g.small 기준 시간당 약 $0.02), Spot으로 바꾸려면 `on_demand_percentage_above_base = 0`으로 둡니다.
+3. **RDS 백업**: 7일 자동 백업 설정
 
-- 각 예약은 지정 날짜에 한 번 실행됩니다. **start 전에 등록을 마쳐야 합니다.** plan 시점에 지난 시작 시각은 제외되며, 종료가 미래라면 종료 예약만 등록될 수 있습니다.
-- 등록을 놓쳤다면 현재 ASG 대수를 확인하고 승인된 수동 확장으로 필요한 서버를 확보해야 합니다.
-- 시작 후 일정을 삭제하면 이미 올라간 최소 대수를 복원할 종료 예약도 사라질 수 있습니다. 진행 중인 창을 바꿀 때는 현재 최소·목표 대수와 종료 예약을 함께 확인해야 합니다.
-- 생성 이후 최소·목표 대수는 예약·자동 조절이 관리하도록 Terraform의 일반 변경에서 보호합니다. 긴급 대수 변경은 승인 후 콘솔·CLI에서 수행할 수 있습니다. 10대보다 큰 용량이 필요하면 `asg_max_size`도 조정해야 합니다.
+## 보안 고려사항
 
-## 5. 비용·데이터 보존
+- RDS는 프라이빗 서브넷에 위치
+- EC2는 ALB를 통해서만 접근 가능
+- SSH 접근 비활성화 (프로덕션)
+- 모든 EBS 볼륨 암호화
+- 업로드 버킷은 public access 차단과 SSE-S3 적용, 인스턴스 role만 객체 읽기·쓰기 가능. persistent 배포에서는 `terraform destroy` 전에 버킷을 비워야 함
+- 첨부 파일 다운로드 링크는 S3 presigned URL이며 리전 호스트(`<bucket>.s3.<region>.amazonaws.com`)로 서명함(`AWS_S3_ADDRESSING_STYLE=virtual`). 기본값(auto)은 글로벌 호스트로 서명하는데, us-east-1 밖의 버킷은 S3가 리전 호스트로 리다이렉트하므로 서명이 어긋나 다운로드가 403이 됨
 
-평소 기본 대수는 온디맨드 1대이며 추가분도 기본 온디맨드입니다. `on_demand_percentage_above_base = 0`이면 추가분에 Spot을 사용합니다. Spot은 AWS가 용량을 회수할 수 있으므로 시험 일정과 비용을 고려해 선택해야 합니다.
+## 문제 해결
 
-운영용 `persistent`는 DB 삭제 보호와 첨부 버킷 보존을 적용합니다. `ephemeral` 환경을 삭제하면 DB와 첨부도 폐기할 수 있습니다. 현재 Aurora 자동 백업 보존 기간은 코드상 **1일**, 삭제 시 최종 스냅샷은 생략하도록 설정돼 있으므로 환경 종료 전 필요한 별도 백업을 확인해야 합니다.
+### RDS 연결 실패
+- Security Group 규칙 확인
+- EC2 인스턴스의 Security Group이 RDS에 허용되어 있는지 확인
 
-첨부는 배포별 비공개·암호화 S3 버킷에 저장합니다. 배포 후 파일을 하나 올려 관리자·학생 계정에서 다운로드해 보는 것이 좋습니다. 기존 서버에 로컬 첨부가 있다면 별도로 옮겨야 합니다.
-
-환경 종료·artifact 정리는 [배포 가이드](ARTIFACT_PIPELINE.md)의 종료 절차를 따라 주세요.
-
-## 6. 자주 발생하는 문제
-
-| 증상 | 확인 순서 |
-|---|---|
-| 도메인 접속 실패 | DNS 응답 → ALB 상태 → 대상 인스턴스 상태. 환경 재생성 직후에는 로컬 DNS 캐시도 확인해 주세요. |
-| 로그인·페이지 500 | CTFd 로그 → Aurora 연결·현재 자격 증명 → DB 구조 변경(migration) 실행 결과 |
-| SQL 판정 불가 | 관리자 Test → judge 상태 → 채점용 MySQL 상태 |
-| 캐시 오류·로그인 유지 실패 | Valkey 연결·배포 버전·CTFd 로그. `CROSSSLOT`이 보이면 캐시 호환 코드가 포함된 버전인지 확인해야 합니다. |
-| 첨부 다운로드 403 | S3 권한과 서명 주소. 배포 설정의 `AWS_S3_ADDRESSING_STYLE=virtual`을 확인해 주세요. |
-
-문의 기록에는 대상 환경·배포 버전·발생 시각·재현 순서·오류 메시지를 남겨 주세요. 비밀 값과 학생 정보는 수업의 비공개 경로로 다뤄야 합니다.
+### 도메인 연결 실패
+- Route53 Hosted Zone ID 확인
+- ALB가 정상적으로 생성되었는지 확인
