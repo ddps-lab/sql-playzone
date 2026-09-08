@@ -147,7 +147,7 @@ def test_duplicate_numbers_in_one_transaction_are_rejected(app):
                 for user in users
             ]
         )
-        with pytest.raises(StudentIDError, match="이미 다른 계정"):
+        with pytest.raises(StudentIDError, match="already registered to another account"):
             db.session.commit()
         db.session.rollback()
         assert UserFieldEntries.query.filter_by(field_id=field_id).count() == 0

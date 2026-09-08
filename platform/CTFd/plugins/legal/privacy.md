@@ -1,45 +1,45 @@
-# SQL PlayZone 개인정보처리방침
+# SQL PlayZone Privacy Policy
 
-SQL PlayZone은 한양대학교 DDPS Lab에서 운영하는 SQL 학습·퀴즈·시험 서비스입니다. 서비스 이용 과정에서 처리하는 개인정보를 아래와 같이 안내합니다.
+SQL PlayZone is a service for learning SQL and taking quizzes and exams, operated by the DDPS Lab at Hanyang University. This policy explains how personal information is handled when you use the service.
 
-## 1. 수집하는 정보와 이용 목적
+## 1. Information we collect and how we use it
 
-| 구분 | 처리하는 정보 | 이용 목적 |
+| Category | Information processed | Purpose |
 | --- | --- | --- |
-| 계정 | 이름, 로그인 아이디, 이메일, 학번, 복원할 수 없도록 변환한 비밀번호, 약관 동의 여부 | 계정 관리, 본인 확인, 수강생과 채점 결과 대조 |
-| Google 로그인 | Google 계정 식별자, 이름, 이메일, 이메일 인증 여부, 학교 계정 도메인 | Google 계정 확인 및 서비스 계정 연결 |
-| 문제 풀이 | 문제 식별 정보, 입력·제출한 SQL, 채점 결과, 기록 시각 | 답안 채점, 성적 처리, 문제 및 채점 오류 확인 |
-| 풀이 화면의 행동 | SQL 입력 내용, 붙여넣은 내용, 창·탭 전환과 화면 복귀, 초기화·실행·제출 관련 기록 | 풀이 과정 확인, 시험 운영, 부정행위 확인 |
-| 접속 | IP 주소, 접속·로그인 시각, 브라우저 정보, 세션 식별 정보 | 로그인 유지, 계정 보호, 장애 및 보안 문제 확인 |
+| Account | Name, login ID, email address, student ID number, password stored as a one-way hash, and acceptance of the Terms of Service | Managing accounts, verifying identity, and matching students to their scores |
+| Google sign-in | Google account identifier, name, email address, email verification status, and university account domain | Verifying Google accounts and linking them to service accounts |
+| Challenge activity | Challenge identifiers, SQL entered and submitted, grading results, and timestamps | Grading answers, processing course grades, and investigating challenge or grading errors |
+| Activity on the challenge page | SQL input, pasted content, window and tab switches and returns, and reset, Test, and Submit activity | Reviewing the solving process, administering exams, and investigating academic misconduct |
+| Access | IP address, access and login times, browser information, and session identifiers | Maintaining login sessions, protecting accounts, and investigating technical or security issues |
 
-정보는 가입·설정 화면에서 직접 입력하거나 Google 로그인 과정에서 전달받습니다. 접속 기록과 풀이 기록은 서비스 이용 중 생성됩니다. 풀이 화면에 입력하거나 붙여넣는 내용도 기록되므로 답안과 관계없는 개인정보는 입력하지 않도록 주의해 주세요.
+You provide information through the registration and settings forms, or it is received during Google sign-in. Access and challenge activity records are generated while you use the service. Content you type or paste into the challenge page is also recorded, so please avoid entering personal information unrelated to your answer.
 
-Google 로그인에는 계정 확인을 위한 이름·이메일·프로필 권한을 사용합니다. Google 계정 식별자는 같은 사용자를 다시 확인하는 데 사용합니다.
+Google sign-in uses name, email, and profile permissions to verify your account. Your Google account identifier is used to recognize you when you return.
 
-수업 개선과 교육 연구에 기록을 활용할 경우에는 개인을 알아볼 수 없도록 처리합니다.
+When records are used to improve courses or conduct educational research, they are processed so that individuals cannot be identified.
 
-## 2. 보관과 열람·정정·삭제 요청
+## 2. Retention and requests to access, correct, or delete information
 
-계정 및 이용 기록은 수업 운영과 성적 처리에 필요한 기간 동안 보관합니다. 자신의 기록을 열람하거나 잘못된 정보를 정정하고 싶을 때, 계정 또는 기록의 삭제를 요청하고 싶을 때는 수강 중인 수업에서 안내한 담당 조교 연락처로 문의해 주세요.
+Account information and usage records are retained for as long as needed to administer the course and process grades. To request access to your records, correct inaccurate information, or request deletion of your account or records, please use the teaching assistant contact details provided for your course.
 
-요청할 때에는 수업명, 이름, 학번과 요청 내용을 알려 주세요. 담당자가 본인 확인 후 요청 사항과 처리 결과를 안내합니다. 성적 확인 등 수업 운영에 필요한 기록이 포함된 경우에는 처리 가능한 범위와 시점을 함께 안내합니다.
+Please include your course name, name, student ID number, and the details of your request. The course staff will verify your identity and explain how your request will be handled and its outcome. If records are needed for course administration, such as grade verification, they will also explain what can be done and when.
 
-## 3. 서비스 제공에 사용하는 외부 서비스
+## 3. External service providers
 
-서비스 서버, 데이터베이스, 파일 및 로그 보관에는 Amazon Web Services(AWS)를 사용합니다. Google 로그인을 선택하면 Google의 인증 화면을 통해 계정을 확인합니다.
+We use Amazon Web Services (AWS) to host the service, its databases, files, and logs. If you choose Google sign-in, your account is verified through Google's authentication page.
 
-방문 현황과 화면 이용 방식을 파악하기 위해 Google Analytics와 Microsoft Clarity를 사용합니다. 이 과정에서 방문한 페이지, 브라우저·기기 정보, 쿠키 식별자와 화면 내 상호작용 정보가 각 서비스로 전송될 수 있습니다. Clarity는 클릭·스크롤 등의 행동을 히트맵과 세션 재생 형태로 분석하는 기능을 제공합니다.
+We use Google Analytics and Microsoft Clarity to understand visits and how people use the site. Visited pages, browser and device information, cookie identifiers, and interactions on the page may be sent to these services. Clarity provides heatmaps and session replay to analyze activity such as clicks, scrolling, and other interactions.
 
-각 제공자의 정보 처리에 관한 자세한 내용은 [Google 개인정보처리방침](https://policies.google.com/privacy?hl=ko), [Microsoft 개인정보처리방침](https://privacy.microsoft.com/ko-kr/privacystatement), [AWS 개인정보 처리방침](https://aws.amazon.com/ko/privacy/)에서 확인할 수 있습니다.
+For more information about these providers' practices, please see the [Google Privacy Policy](https://policies.google.com/privacy?hl=en), [Microsoft Privacy Statement](https://privacy.microsoft.com/en-us/privacystatement), and [AWS Privacy Notice](https://aws.amazon.com/privacy/).
 
-## 4. 쿠키와 브라우저 저장소
+## 4. Cookies and browser storage
 
-서비스는 로그인 상태 유지와 화면 설정 저장 등을 위해 쿠키와 브라우저 저장소를 사용합니다. 방문 분석 서비스도 이용 현황을 측정하기 위해 쿠키를 사용할 수 있습니다.
+The service uses cookies and browser storage to maintain login sessions and remember display settings. Analytics services may also use cookies to measure site usage.
 
-브라우저의 개인정보 설정에서 쿠키를 삭제하거나 차단할 수 있습니다. 로그인에 필요한 쿠키까지 차단하면 로그인과 문제 제출이 정상적으로 동작하지 않을 수 있습니다. Google Analytics 측정은 [Google의 차단 도구](https://tools.google.com/dlpage/gaoptout?hl=ko)를 통해서도 제어할 수 있습니다.
+You can delete or block cookies in your browser's privacy settings. Blocking cookies needed for login may prevent login and challenge submissions from working correctly. You can also control Google Analytics measurement with the [Google Analytics Opt-out Browser Add-on](https://tools.google.com/dlpage/gaoptout?hl=en).
 
-## 5. 문의와 변경 안내
+## 5. Contact and policy updates
 
-개인정보 처리와 관련한 문의는 수강 중인 수업의 담당 조교에게 보내 주세요. 서비스 이용 규칙은 [서비스 이용약관](/tos)에서 확인할 수 있습니다.
+Please direct questions about personal information to your course's teaching assistant. The rules for using the service are described in our [Terms of Service](/tos).
 
-이 방침의 내용이 변경되면 이 페이지에서 변경된 내용을 안내합니다.
+Updates to this policy will be posted on this page.

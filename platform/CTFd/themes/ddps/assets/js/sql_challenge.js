@@ -863,7 +863,7 @@ async function showSubmissionHistory() {
                 data.data.forEach((submission, index) => {
                     // Convert UTC to KST
                     const date = new Date(submission.date);
-                    const formattedDate = date.toLocaleString('ko-KR', {
+                    const formattedDate = date.toLocaleString('en-US', {
                         year: 'numeric',
                         month: '2-digit',
                         day: '2-digit',

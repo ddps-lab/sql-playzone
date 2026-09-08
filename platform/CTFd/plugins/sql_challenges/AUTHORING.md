@@ -72,11 +72,11 @@ WHERE price >= 2.50
 ORDER BY price DESC, id ASC;
 ```
 
-### 정렬 기준 (결과의 열 번호, 1부터)
+### Sort order (result column numbers, starting at 1)
 
 `2 desc, 1 asc`를 입력해 주세요. 결과의 두 번째 열인 가격은 내림차순, 첫 번째 열인 상품 번호는 오름차순으로 평가한다는 뜻입니다.
 
-### 표시 형식까지 평가하는 열 번호
+### Column numbers requiring exact formatting
 
 비워 두세요. 이 지문은 가격의 값과 정렬을 요구하므로 예시의 `2.50`을 `2.5`로 출력해도 같은 숫자 값으로 인정됩니다.
 

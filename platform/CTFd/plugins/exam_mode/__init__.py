@@ -25,8 +25,7 @@ def exam_roster_text():
 # The User-Agent header can be forged, so this is a deterrent, not a proof.
 DEFAULT_EXAM_BROWSER_MARKER = 'Trustlockbrowser'
 EXAM_BROWSER_MESSAGE = (
-    'During the exam this site is only available through the exam browser (Trustlock). '
-    '시험 중에는 시험 전용 브라우저(Trustlock)에서만 접속할 수 있습니다.'
+    'During the exam this site is only available through the exam browser (Trustlock).'
 )
 # Requests that must keep working from any browser: admins log in (or
 # recover their password) from a normal browser, and the load balancer

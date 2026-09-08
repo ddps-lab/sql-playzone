@@ -129,7 +129,7 @@ def test_google_account_without_password_is_sent_to_onboarding():
         assert r.data.count(b'data-terms-checkbox="1"') == 1
         assert STUDENT_ID_FIELD.encode() in r.data
         # the terms are shown inline, rendered from markdown, with a consent checkbox
-        assert "<h1>SQL PlayZone 서비스 이용약관".encode() in r.data
+        assert "<h1>SQL PlayZone Terms of Service".encode() in r.data
         assert b"&lt;h1&gt;" not in r.data
         assert b"I have read and agree to the Terms of Service above." in r.data
 
@@ -434,8 +434,8 @@ def test_terms_are_seeded_and_linked_from_the_footer():
         client = app.test_client()
         r = client.get("/tos")
         assert r.status_code == 200
-        assert "서비스 이용약관".encode() in r.data
-        assert "붙여넣은 내용".encode() in client.get("/privacy").data
+        assert b"Terms of Service" in r.data
+        assert b"pasted content" in client.get("/privacy").data
         field = UserFields.query.filter_by(name=TERMS_FIELD).first()
         assert (field.required, field.editable, field.public) == (True, False, False)
         # the settings page enforces the same minimum length
@@ -559,7 +559,7 @@ def test_consent_field_and_terms_come_back_after_an_import():
         client = start_session(app, user_id)
         r = client.get("/onboarding/")
         assert r.status_code == 200
-        assert "<h1>SQL PlayZone 서비스 이용약관".encode() in r.data
+        assert "<h1>SQL PlayZone Terms of Service".encode() in r.data
         assert UserFields.query.filter_by(name=TERMS_FIELD).count() == 1
         assert "8–128 characters".encode() in r.data
 

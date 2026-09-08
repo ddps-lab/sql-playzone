@@ -368,7 +368,7 @@ def tos():
         return render_template(
             "page.html",
             content=build_markdown(tos_text),
-            title="서비스 이용약관",
+            title="Terms of Service",
             legal_page=True,
         )
     else:
@@ -385,7 +385,7 @@ def privacy():
         return render_template(
             "page.html",
             content=build_markdown(privacy_text),
-            title="개인정보처리방침",
+            title="Privacy Policy",
             legal_page=True,
         )
     else:

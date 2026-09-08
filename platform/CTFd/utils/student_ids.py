@@ -7,8 +7,8 @@ from CTFd.models import UserFieldEntries, UserFields
 
 STUDENT_ID_FIELD_NAME = "Student ID Number"
 DUPLICATE_MESSAGE = (
-    "이미 다른 계정에 등록된 학번입니다. 학번을 확인해 주세요. "
-    "본인의 학번이 맞다면 담당 조교에게 문의해 주세요."
+    "This student ID number is already registered to another account. "
+    "Please check your ID number. If it is correct, contact your teaching assistant."
 )
 
 
@@ -67,7 +67,7 @@ def enforce_student_ids(session, flush_context, instances):
         if entry.value is None:
             continue
         if not isinstance(entry.value, str):
-            raise StudentIDError("학번은 문자열로 입력해 주세요.")
+            raise StudentIDError("Please enter your student ID number as text.")
         entry.value = entry.value.strip()
         if not entry.value:
             continue

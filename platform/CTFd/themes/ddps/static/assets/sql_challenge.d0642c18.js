@@ -38,7 +38,7 @@ let l=null;function p(){const e=document.getElementById("challenge-input"),t=doc
                         <h5>No Submissions Yet</h5>
                         <p class="text-muted">You haven't submitted any solutions for this challenge yet.</p>
                     </div>
-                `;else{let c='<div class="accordion" id="submissionAccordion">';a.data.forEach((n,i)=>{const r=new Date(n.date).toLocaleString("ko-KR",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",timeZone:"Asia/Seoul",hour12:!1}),u=n.type==="correct"?'<i class="fas fa-check-circle text-success"></i>':'<i class="fas fa-times-circle text-danger"></i>',f=n.type==="correct"?"correct":"incorrect",b=n.type==="correct"?"Correct":"Incorrect",h=a.data.length-i,y=`collapse${n.id}`,m=`heading${n.id}`,g=i===0,E=g?"show":"";c+=`
+                `;else{let c='<div class="accordion" id="submissionAccordion">';a.data.forEach((n,i)=>{const r=new Date(n.date).toLocaleString("en-US",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",timeZone:"Asia/Seoul",hour12:!1}),u=n.type==="correct"?'<i class="fas fa-check-circle text-success"></i>':'<i class="fas fa-times-circle text-danger"></i>',f=n.type==="correct"?"correct":"incorrect",b=n.type==="correct"?"Correct":"Incorrect",h=a.data.length-i,y=`collapse${n.id}`,m=`heading${n.id}`,g=i===0,E=g?"show":"";c+=`
                         <div class="accordion-item">
                             <h2 class="accordion-header" id="${m}">
                                 <button class="accordion-button ${g?"":"collapsed"} ${f}" type="button"
