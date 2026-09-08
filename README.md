@@ -9,7 +9,7 @@ SQL PlayZone is an SQL learning and problem-solving platform built on the CTFd f
 ## 조교용 가이드
 
 - [출제 가이드](platform/CTFd/plugins/sql_challenges/AUTHORING.md): 예제 문제와 관리자 화면의 입력 방법
-- [문제 검토 가이드](platform/CTFd/plugins/sql_challenges/REVIEW.md): 문제 세트 일괄 실행과 결과 해석
+- [시험 전 모범답안 일괄 채점하기](platform/CTFd/plugins/sql_challenges/REVIEW.md): 모범답안을 채점해 보고 문제 수정·재확인
 - [제출 점검 가이드](platform/CTFd/plugins/sql_challenges/SUBMISSION_REVIEW.md): 학생 계정으로 실행·제출·성적 확인
 - [성적 내보내기 가이드](platform/CTFd/plugins/submission_export/README.md): CSV 다운로드와 수강생 대조
 

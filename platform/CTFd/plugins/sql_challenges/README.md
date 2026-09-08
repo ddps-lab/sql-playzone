@@ -5,7 +5,7 @@ A CTFd plugin that adds SQL challenge type where users submit SQL queries to sol
 ## Guides for teaching assistants
 
 - [출제 가이드](AUTHORING.md): 예제 문제와 채점 기준 설정
-- [문제 검토 가이드](REVIEW.md): 문제 세트 일괄 검사
+- [시험 전 모범답안 일괄 채점하기](REVIEW.md): 모범답안 채점과 문제 수정·재확인
 - [제출 점검 가이드](SUBMISSION_REVIEW.md): 학생 화면과 성적 반영 확인
 - [성적 내보내기 가이드](../submission_export/README.md): 성적 CSV 확인
 
