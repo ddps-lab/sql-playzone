@@ -15,6 +15,7 @@ from CTFd.models import Brackets, Teams, UserFieldEntries, UserFields, Users, db
 from CTFd.utils import config, email, get_app_config, get_config
 from CTFd.utils import user as current_user
 from CTFd.utils import validators
+from CTFd.utils.student_ids import StudentIDError
 from CTFd.utils.config import can_send_mail, is_teams_mode
 from CTFd.utils.config.integrations import mlc_registration, google_oauth_only_registration
 from CTFd.utils.config.visibility import registration_visible
@@ -391,7 +392,6 @@ def register():
                     user.country = country
 
                 db.session.add(user)
-                db.session.commit()
                 db.session.flush()
 
                 for field_id, value in entries.items():
@@ -399,7 +399,16 @@ def register():
                         field_id=field_id, value=value, user_id=user.id
                     )
                     db.session.add(entry)
-                db.session.commit()
+                try:
+                    db.session.commit()
+                except StudentIDError as error:
+                    db.session.rollback()
+                    return render_template(
+                        "register.html",
+                        errors=[str(error)],
+                        name=name,
+                        email=email_address,
+                    )
 
                 login_user(user)
 

@@ -37,6 +37,7 @@ from CTFd.utils.config.pages import build_markdown, is_public_site_info
 from CTFd.utils.decorators import authed_only, ratelimit
 from CTFd.utils.logging import log
 from CTFd.utils.security.auth import lookup_user_token, update_user
+from CTFd.utils.student_ids import StudentIDError
 from CTFd.utils.user import authed, get_current_user, get_current_user_attrs
 
 # auth.google_callback stores the session nonce it logged in with under this
@@ -479,9 +480,14 @@ def load(app):
                 user, login_id, name, password, password_confirm, credentials, fields
             )
             if not errors:
-                complete_onboarding(
-                    user, login_id, name, password, entries, credentials
-                )
+                try:
+                    complete_onboarding(
+                        user, login_id, name, password, entries, credentials
+                    )
+                except StudentIDError as error:
+                    db.session.rollback()
+                    errors.append(str(error))
+            if not errors:
                 if credentials:
                     # A Google session that only gave consent still owes the
                     # password reset; the hook brings it back here for that.
