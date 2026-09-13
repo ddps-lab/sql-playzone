@@ -3,8 +3,7 @@ resource "aws_cloudwatch_log_group" "application" {
 }
 
 resource "aws_cloudwatch_log_group" "behavior" {
-  name              = local.behavior_log_group_name
-  retention_in_days = 3
+  name = local.behavior_log_group_name
 }
 
 resource "aws_s3_bucket" "log_archive" {
