@@ -60,12 +60,18 @@
           {% if get_app_config('GOOGLE_CLIENT_ID') and not get_config('exam_browser_required') %}
             <hr>
 
-            <p class="text-center text-muted mb-2">
-              {% trans %}First time here, or forgot your password? Use your university Google account (Google Workspace); personal Gmail accounts are not accepted. If your university does not use Google, ask the instructor for an account. A new account picks a user name and password right after; an existing account sets a new password.{% endtrans %}
+            <h5 class="text-center mb-1">
+              {% trans %}New here, or forgot your password?{% endtrans %}
+            </h5>
+            <p class="text-center text-muted small mb-3">
+              {% trans %}Verify with your university Google account. You then choose a user name and password, or set a new password if you already have an account.{% endtrans %}
             </p>
             <a class="btn btn-outline-secondary btn-lg btn-block w-100" href="{{ url_for('auth.google_login') }}">
               <i class="fab fa-google"></i> Sign up or reset password <span class="d-block">with a university Google account</span>
             </a>
+            <p class="text-center text-muted small mt-3 mb-0">
+              {% trans %}Personal Gmail accounts are not accepted. If your university does not use Google Workspace, ask the instructor for an account.{% endtrans %}
+            </p>
           {% endif %}
         </div>
       </div>
