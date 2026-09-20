@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 from freezegun import freeze_time
 
@@ -177,7 +178,9 @@ def test_user_get_logout():
         client = login_as_user(app)
         client.get("/logout", follow_redirects=True)
         r = client.get("/challenges")
-        assert r.location == "/login?next=%2Fchallenges%3F"
+        location = urlsplit(r.location)
+        assert location.path == "/login"
+        assert parse_qs(location.query) == {"next": ["/challenges?"]}
         assert r.status_code == 302
     destroy_ctfd(app)
 

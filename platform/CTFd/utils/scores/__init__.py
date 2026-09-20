@@ -47,6 +47,14 @@ def get_standings(count=None, bracket_id=None, admin=False, fields=None):
     """
     Filter out solves and awards that are before a specific time point.
     """
+    if not admin:
+        scores = scores.join(Users, Solves.user_id == Users.id).filter(
+            Challenges.state == "visible", Users.type != "admin"
+        )
+        if Model is Users:
+            awards = awards.join(Users, Awards.user_id == Users.id).filter(
+                Users.type != "admin"
+            )
     freeze = get_config("freeze")
     if not admin and freeze:
         scores = scores.filter(Solves.date < unix_time_to_utc(freeze))
@@ -161,6 +169,10 @@ def get_team_standings(count=None, bracket_id=None, admin=False, fields=None):
         .group_by(Awards.team_id)
     )
 
+    if not admin:
+        scores = scores.join(Users, Solves.user_id == Users.id).filter(
+            Challenges.state == "visible", Users.type != "admin"
+        )
     freeze = get_config("freeze")
     if not admin and freeze:
         scores = scores.filter(Solves.date < unix_time_to_utc(freeze))
@@ -260,6 +272,13 @@ def get_user_standings(count=None, bracket_id=None, admin=False, fields=None):
         .group_by(Awards.user_id)
     )
 
+    if not admin:
+        scores = scores.join(Users, Solves.user_id == Users.id).filter(
+            Challenges.state == "visible", Users.type != "admin"
+        )
+        awards = awards.join(Users, Awards.user_id == Users.id).filter(
+            Users.type != "admin"
+        )
     freeze = get_config("freeze")
     if not admin and freeze:
         scores = scores.filter(Solves.date < unix_time_to_utc(freeze))

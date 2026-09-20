@@ -532,6 +532,8 @@ class Users(db.Model):
         from CTFd.utils import get_config
 
         solves = Solves.query.filter_by(user_id=self.id).order_by(Solves.date.desc())
+        if not admin:
+            solves = solves.join(Challenges).filter(Challenges.state == "visible")
         freeze = get_config("freeze")
         if freeze and admin is False:
             dt = datetime.datetime.utcfromtimestamp(freeze)
@@ -542,6 +544,8 @@ class Users(db.Model):
         from CTFd.utils import get_config
 
         fails = Fails.query.filter_by(user_id=self.id).order_by(Fails.date.desc())
+        if not admin:
+            fails = fails.join(Challenges).filter(Challenges.state == "visible")
         freeze = get_config("freeze")
         if freeze and admin is False:
             dt = datetime.datetime.utcfromtimestamp(freeze)
@@ -560,6 +564,8 @@ class Users(db.Model):
 
     @cache.memoize()
     def get_score(self, admin=False):
+        if not admin and self.type == "admin":
+            return 0
         score = db.func.sum(Challenges.value).label("score")
         user = (
             db.session.query(Solves.user_id, score)
@@ -572,6 +578,7 @@ class Users(db.Model):
         award = db.session.query(award_score).filter_by(user_id=self.id)
 
         if not admin:
+            user = user.filter(Challenges.state == "visible")
             freeze = Configs.query.filter_by(key="freeze").first()
             if freeze and freeze.value:
                 freeze = int(freeze.value)
@@ -802,6 +809,8 @@ class Teams(db.Model):
         solves = Solves.query.filter(Solves.user_id.in_(member_ids)).order_by(
             Solves.date.desc()
         )
+        if not admin:
+            solves = solves.join(Challenges).filter(Challenges.state == "visible")
 
         freeze = get_config("freeze")
         if freeze and admin is False:
@@ -818,6 +827,8 @@ class Teams(db.Model):
         fails = Fails.query.filter(Fails.user_id.in_(member_ids)).order_by(
             Fails.date.desc()
         )
+        if not admin:
+            fails = fails.join(Challenges).filter(Challenges.state == "visible")
 
         freeze = get_config("freeze")
         if freeze and admin is False:

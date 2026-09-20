@@ -147,6 +147,11 @@ class ServerConfig(object):
         CACHE_THRESHOLD: int = 0
 
     # === SECURITY ===
+    SESSION_COOKIE_SECURE: bool = process_boolean_str(os.getenv("SESSION_COOKIE_SECURE", "true"))
+    MAX_CONTENT_LENGTH: int = int(os.getenv("MAX_CONTENT_LENGTH", "16777216"))
+    MAX_UPLOAD_CONTENT_LENGTH: int = int(os.getenv("MAX_UPLOAD_CONTENT_LENGTH", "268435456"))
+    MAX_IMPORT_CONTENT_LENGTH: int = int(os.getenv("MAX_IMPORT_CONTENT_LENGTH", "536870912"))
+    MAX_IMPORT_EXTRACTED_LENGTH: int = int(os.getenv("MAX_IMPORT_EXTRACTED_LENGTH", "2147483648"))
     SESSION_COOKIE_HTTPONLY: bool = config_ini["security"].getboolean("SESSION_COOKIE_HTTPONLY", fallback=True)
 
     SESSION_COOKIE_SAMESITE: str = empty_str_cast(config_ini["security"]["SESSION_COOKIE_SAMESITE"]) \
@@ -313,6 +318,7 @@ class ServerConfig(object):
 
 
 class TestingConfig(ServerConfig):
+    SESSION_COOKIE_SECURE = False
     SECRET_KEY = "AAAAAAAAAAAAAAAAAAAA"
     PRESERVE_CONTEXT_ON_EXCEPTION = False
     TESTING = True

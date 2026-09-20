@@ -119,7 +119,7 @@ def test_actual_wrong_answers_consume_attempts(environment, response):
 
 def test_student_sql_error_is_shown_in_test_and_submit(environment):
     _, _, client, uid, make = environment
-    cid = make(max_attempts=1)
+    cid = make()
     error = "query error: Error 1096 (HY000): No tables used"
     response = judged(success=False, error_kind="student_query", error=error)
     with patch("requests.post", return_value=response) as judge:
@@ -135,7 +135,6 @@ def test_student_sql_error_is_shown_in_test_and_submit(environment):
             assert judge.call_args.kwargs["json"]["user_query"] == "SELECT *"
             assert Fails.query.filter_by(user_id=uid).count() == (0 if is_test else 1)
             assert Solves.query.filter_by(user_id=uid).count() == 0
-        assert submit(client, cid).get_json()["data"]["status"] == "ratelimited"
         assert judge.call_count == 2
 
 
@@ -205,6 +204,27 @@ def test_individual_deadline_rejection_is_not_an_incorrect_answer(environment):
         response = submit(client, cid)
         assert response.get_json()["data"]["status"] == "closed"
         judge.assert_not_called()
+    assert Fails.query.filter_by(user_id=uid).count() == 0
+
+
+def test_student_test_obeys_deadline_and_ctf_end(environment):
+    _, _, client, _, make = environment
+    expired = make(deadline="2020-01-01T00:00")
+    current = make()
+    with patch("requests.post", return_value=judged()) as judge:
+        assert submit(client, expired, test=True).status_code == 403
+        set_config("end", 1)
+        set_config("view_after_ctf", True)
+        assert submit(client, current, test=True).status_code == 403
+        judge.assert_not_called()
+
+
+def test_unlimited_practice_test_does_not_save_a_grade(environment):
+    _, _, client, uid, make = environment
+    cid = make()
+    with patch("requests.post", return_value=judged()):
+        assert submit(client, cid, test=True).get_json()["data"]["status"] == "correct"
+    assert Solves.query.filter_by(user_id=uid).count() == 0
     assert Fails.query.filter_by(user_id=uid).count() == 0
 
 
@@ -285,15 +305,16 @@ def test_invalid_deadline_keeps_previous_settings(environment):
     assert (after["deadline"], after["value"]) == (before["deadline"], before["value"])
 
 
-def test_test_runs_never_store_grades_or_use_max_attempts(environment):
+def test_test_runs_cannot_bypass_max_attempts(environment):
     _, _, client, uid, make = environment
     cid = make(max_attempts=1)
-    with patch("requests.post", return_value=judged(match=False)):
+    with patch("requests.post", return_value=judged(match=False)) as judge:
         for _ in range(2):
             assert (
                 submit(client, cid, test=True).get_json()["data"]["status"]
-                == "incorrect"
+                == "closed"
             )
+        judge.assert_not_called()
     assert Fails.query.filter_by(user_id=uid).count() == 0
     with patch("requests.post", return_value=judged()):
         assert submit(client, cid).get_json()["data"]["status"] == "correct"
