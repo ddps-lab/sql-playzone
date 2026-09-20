@@ -280,11 +280,15 @@ class SQLChallengeType(BaseChallenge):
                     status="correct",
                     message=prefix + f"✅ Correct! Your query produced the expected result.\n\n[USER_RESULT]\n{user_result}\n[/USER_RESULT]",
                 )
-            expected = json.dumps(result['expected_result'])
-            return ChallengeResponse(
-                status="incorrect",
-                message=prefix + f"❌ Incorrect. Your query did not produce the expected result.\n\n[USER_RESULT]\n{user_result}\n[/USER_RESULT]\n\n[EXPECTED_RESULT]\n{expected}\n[/EXPECTED_RESULT]",
-            )
+            # The reference rows are the answer key. CTFd returns this message
+            # to the browser, so a student reading the response body would get
+            # the expected output of a challenge they have not solved. Only
+            # admins receive it; no student view has ever rendered it.
+            message = prefix + f"❌ Incorrect. Your query did not produce the expected result.\n\n[USER_RESULT]\n{user_result}\n[/USER_RESULT]"
+            if is_admin():
+                expected = json.dumps(result['expected_result'])
+                message += f"\n\n[EXPECTED_RESULT]\n{expected}\n[/EXPECTED_RESULT]"
+            return ChallengeResponse(status="incorrect", message=message)
         except (requests.RequestException, ValueError, TypeError, KeyError):
             return unavailable
 
