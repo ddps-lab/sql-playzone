@@ -1,6 +1,8 @@
 import requests
 import secrets
 import unicodedata
+import hashlib
+import time
 from flask import Blueprint, abort
 from flask import current_app as app
 from flask import redirect, render_template, request, session, url_for
@@ -458,7 +460,28 @@ def register():
 def login():
     errors = get_errors()
     if request.method == "POST":
-        name = request.form["name"]
+        name = request.form["name"].strip()
+
+        # Resolve first so email and login ID share one account budget across
+        # clients and addresses. Increment before hashing to bound concurrent
+        # attempts too; a successful authentication clears this bucket.
+        if validators.validate_email(name) is True:
+            user = Users.query.filter(db.func.lower(Users.email) == name.lower()).first()
+        else:
+            user = Users.query.filter(db.func.lower(Users.login_id) == name.lower()).first()
+        identity = (
+            str(user.id) if user else hashlib.sha256(name.lower().encode()).hexdigest()
+        )
+        login_budget_key = f"login_account:{identity}:{int(time.time()) // 300}"
+        if cache.add(login_budget_key, 1, timeout=600):
+            login_count = 1
+        else:
+            login_count = cache.inc(login_budget_key)
+        if login_count > 10:
+            return render_template(
+                "login.html",
+                errors=["Too many login attempts. Please try again in five minutes."],
+            ), 429
 
         # Check for preset admin credentials first
         preset_admin_name = get_app_config("PRESET_ADMIN_NAME")
@@ -473,6 +496,7 @@ def login():
             ) and password == preset_admin_password:
                 admin = generate_preset_admin()
                 if admin:
+                    cache.delete(login_budget_key)
                     login_user(user=admin)
                     return redirect(url_for("challenges.listing"))
                 else:
@@ -480,13 +504,6 @@ def login():
                         "Preset admin user could not be created. Please contact an administrator"
                     )
                     return render_template("login.html", errors=errors)
-
-        # An account is identified by its email address or its login ID; the
-        # display name may repeat, so it never identifies an account.
-        if validators.validate_email(name) is True:
-            user = Users.query.filter_by(email=name).first()
-        else:
-            user = Users.query.filter_by(login_id=name).first()
 
         if user:
             if user.password is None:
@@ -497,6 +514,7 @@ def login():
                 return render_template("login.html", errors=errors)
 
             if user and verify_password(request.form["password"], user.password):
+                cache.delete(login_budget_key)
                 session.regenerate()
 
                 login_user(user)

@@ -143,7 +143,11 @@ def import_ctf(backup, erase=True, ignore_overrides=False):
     backup = zipfile.ZipFile(backup)
 
     members = backup.namelist()
-    max_content_length = get_app_config("MAX_CONTENT_LENGTH")
+    max_content_length = get_app_config("MAX_IMPORT_CONTENT_LENGTH")
+    max_extracted_length = get_app_config("MAX_IMPORT_EXTRACTED_LENGTH")
+    if sum(info.file_size for info in backup.infolist()) > max_extracted_length:
+        set_import_error("zipfile.LargeZipFile: expanded archive is too large")
+        raise zipfile.LargeZipFile
     for f in members:
         if (
             f.startswith("/")

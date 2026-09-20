@@ -651,6 +651,9 @@ def load(app):
                 'error': 'Not a SQL challenge'
             }), 400
 
+        from .submissions import require_sql_access
+        require_sql_access(challenge)
+
         # Get current user
         user = get_current_user()
         if not user:

@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import weakref
+import tempfile
 from distutils.version import StrictVersion
 
 import jinja2
@@ -30,6 +31,7 @@ from CTFd.utils.initialization import (
 )
 from CTFd.utils.migrations import create_database, migrations, stamp_latest_revision
 from CTFd.utils.sessions import CachingSessionInterface
+from CTFd.utils.security.forms import BoundedFormDataParser
 from CTFd.utils.updates import update_check
 from CTFd.utils.user import get_locale
 
@@ -38,6 +40,22 @@ __channel__ = "oss"
 
 
 class CTFdRequest(Request):
+    form_data_parser_class = BoundedFormDataParser
+    # Bound form memory in addition to the total request body limit.
+    max_form_memory_size = 512 * 1024
+    max_form_parts = 100
+
+    @property
+    def max_content_length(self):
+        # Only the authenticated admission hook may grant a larger body budget.
+        return getattr(self, "_body_limit", super().max_content_length)
+
+    def _get_file_stream(
+        self, total_content_length, content_type, filename=None, content_length=None,
+    ):
+        # Multipart text stays bounded in memory; file payloads go straight to disk.
+        return tempfile.TemporaryFile(mode="wb+")
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """

@@ -368,6 +368,24 @@ def init_request_processors(app):
                 login_user(user)
 
     @app.before_request
+    def admit_file_upload():
+        # Check identity before CSRF accesses request.form and triggers parsing.
+        # Never grant larger limits based only on a URL or Authorization header.
+        limits = {
+            "api.files_files_list": "MAX_UPLOAD_CONTENT_LENGTH",
+            "admin.import_ctf": "MAX_IMPORT_CONTENT_LENGTH",
+            "admin.import_csv": "MAX_CONTENT_LENGTH",
+        }
+        setting = limits.get(request.endpoint)
+        if request.method == "POST" and setting:
+            from CTFd.utils.user import get_current_user
+
+            user = get_current_user()
+            if user is None or user.type != "admin":
+                abort(403)
+            request._body_limit = app.config[setting]
+
+    @app.before_request
     def csrf():
         # TODO: CTFd 4.0 Consider reorganizing this function to only run on non safe methods
         # Early exit: no CSRF for functions explicitly marked as bypassing CSRF
@@ -407,6 +425,8 @@ def init_request_processors(app):
 
     @app.after_request
     def response_headers(response):
+        if request.is_secure:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
         response.headers["Cross-Origin-Opener-Policy"] = get_app_config(
             "CROSS_ORIGIN_OPENER_POLICY", default="same-origin-allow-popups"
         )

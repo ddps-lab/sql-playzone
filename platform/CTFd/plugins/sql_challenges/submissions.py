@@ -94,11 +94,20 @@ def submit_sql(challenge, request, record_execute):
     require_sql_access(challenge)
     if ctf_paused():
         return reply("paused", "Submissions and Test runs are paused", 403)
-    if not is_test:
+    if not is_test or not is_admin():
         if not in_time and not is_admin():
             return reply("closed", "Submissions are closed", 403)
         if challenge.deadline_utc and received_at > challenge.deadline_utc:
             return reply("closed", "Submission deadline has passed", 403)
+
+    # Test exposes the same verdict as Submit. On limited-attempt problems it
+    # would provide a free answer oracle without using any graded attempts.
+    if is_test and challenge.max_attempts and not is_admin():
+        return reply(
+            "closed",
+            "Test is unavailable for problems with an attempt limit. Use Submit for grading.",
+            403,
+        )
 
     user, team = get_current_user(), get_current_team()
     # Test and Submit share an account-wide lock; switching problems cannot
