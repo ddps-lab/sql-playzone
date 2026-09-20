@@ -449,9 +449,9 @@ def test_public_policy_is_the_only_policy_sent_to_judge(environment):
     cid = make(grading_policy=policy)
     detail = client.get(f"/api/v1/challenges/{cid}").get_json()["data"]
     assert detail["grading_policy"] == policy
-    assert "1열 내림차순" in detail["grading_notice"]
+    assert "column 1 descending" in detail["grading_notice"]
     page = client.get(f"/challenges/sql/{cid}").get_data(as_text=True)
-    assert "1열 내림차순" in page
+    assert "column 1 descending" in page
     with patch("requests.post", return_value=judged()) as judge:
         assert (
             submit(client, cid, grading_policy={}).get_json()["data"]["status"]
