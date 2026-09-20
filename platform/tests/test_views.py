@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+from urllib.parse import parse_qs, urlsplit
 
 from flask import url_for
 from freezegun import freeze_time
@@ -83,7 +84,9 @@ def test_page_requiring_auth():
         with app.test_client() as client:
             r = client.get("/this-is-a-route")
             assert r.status_code == 302
-            assert r.location == "/login?next=%2Fthis-is-a-route%3F"
+            location = urlsplit(r.location)
+            assert location.path == "/login"
+            assert parse_qs(location.query) == {"next": ["/this-is-a-route?"]}
 
         register_user(app)
         client = login_as_user(app)
