@@ -56,29 +56,47 @@ def test_cookie_flags_hsts_and_oversized_anonymous_form():
         destroy_ctfd(app)
 
 
-def test_login_budget_shared_by_email_id_case_and_source_ip():
+def login_client(app, address):
+    client = app.test_client()
+    client.environ_base["REMOTE_ADDR"] = address
+
+    def attempt(name, password):
+        # Logging out rotates the session, so read the CSRF nonce each time.
+        client.get("/login")
+        with client.session_transaction() as session:
+            nonce = session["nonce"]
+        return client.post(
+            "/login", data={"name": name, "password": password, "nonce": nonce}
+        )
+
+    attempt.logout = lambda: client.get("/logout")
+    return attempt
+
+
+def test_login_failures_are_budgeted_per_account_and_address():
     app = create_ctfd()
     try:
         with app.app_context(), freeze_time("2026-09-20T12:00:01Z"):
             gen_user(app.db, name="student", email="student@examplectf.com")
-            client = app.test_client()
-            client.get("/login")
-            with client.session_transaction() as session:
-                nonce = session["nonce"]
+            classroom = login_client(app, "192.0.2.1")
+            home = login_client(app, "192.0.2.2")
             for i in range(10):
-                response = client.post("/login", data={
-                    "name": "student" if i % 2 else "STUDENT@examplectf.com",
-                    "password": "wrong", "nonce": nonce,
-                }, environ_overrides={"REMOTE_ADDR": f"192.0.2.{i + 1}"})
-                assert response.status_code == 200
-            response = client.post("/login", data={
-                "name": "student", "password": "password", "nonce": nonce,
-            })
-            assert response.status_code == 429
-        with freeze_time("2026-09-20T12:05:01Z"):
-            response = client.post("/login", data={
-                "name": "student", "password": "password", "nonce": nonce,
-            })
-            assert response.status_code == 302
+                name = "student" if i % 2 else "STUDENT@examplectf.com"
+                assert classroom(name, "wrong").status_code == 200
+            # The eleventh attempt from the same address is refused even with
+            # the right password, but another address is unaffected.
+            assert classroom("student", "password").status_code == 429
+            assert home("student", "password").status_code == 302
+            home.logout()
+            # Successful logins never count and clear earlier failures.
+            for _ in range(9):
+                assert home("student", "wrong").status_code == 200
+            assert home("student", "password").status_code == 302
+            home.logout()
+            for _ in range(10):
+                assert home("student", "wrong").status_code == 200
+            assert home("student", "password").status_code == 429
+        with freeze_time("2026-09-20T12:15:02Z"):
+            assert classroom("student", "password").status_code == 302
     finally:
         destroy_ctfd(app)
