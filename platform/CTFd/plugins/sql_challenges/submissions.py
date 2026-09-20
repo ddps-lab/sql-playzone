@@ -100,15 +100,6 @@ def submit_sql(challenge, request, record_execute):
         if challenge.deadline_utc and received_at > challenge.deadline_utc:
             return reply("closed", "Submission deadline has passed", 403)
 
-    # Test exposes the same verdict as Submit. On limited-attempt problems it
-    # would provide a free answer oracle without using any graded attempts.
-    if is_test and challenge.max_attempts and not is_admin():
-        return reply(
-            "closed",
-            "Test is unavailable for problems with an attempt limit. Use Submit for grading.",
-            403,
-        )
-
     user, team = get_current_user(), get_current_team()
     # Test and Submit share an account-wide lock; switching problems cannot
     # bypass it. The judge HTTP timeout is 10s, shorter than this lease.

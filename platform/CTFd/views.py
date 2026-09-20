@@ -617,7 +617,6 @@ def sql_challenge_page(challenge_id):
             "name": challenge.name,
             "description": description_html,
             "grading_notice": policy_notice(sql_challenge.grading_policy),
-            "test_allowed": not challenge.max_attempts or is_admin(),
             "value": challenge.value,
             "category": challenge.category,
             "init_query": sql_challenge.init_query,

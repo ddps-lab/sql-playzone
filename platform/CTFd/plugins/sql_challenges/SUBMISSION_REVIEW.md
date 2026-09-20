@@ -23,7 +23,7 @@
 | Column numbers requiring exact formatting | 비워 둠 |
 | Deadline (KST) | 처음에는 비워 둠 |
 | State | Visible — 학생 계정이 열 수 있어야 합니다. |
-| Max Attempts | 처음에는 0 (연습용 Test 허용) |
+| Max Attempts | 2 |
 
 전체 시험 시간이 현재 접속을 허용하는지, 일시 중지와 시험 명단·브라우저·단일 세션 제한이 꺼져 있는지 확인해 주세요. 다른 조교가 점검 중이면 설정을 바꾸기 전에 조율해야 합니다.
 
@@ -44,8 +44,6 @@ ORDER BY price DESC, id ASC;
 
 ### 오답을 Submit으로 제출
 
-관리자 화면에서 Max Attempts를 2로 변경하고 학생 화면을 새로 열어 주세요. 횟수 제한 문제에서는 Test가 비활성화되고, API로 직접 요청해도 거부되어야 합니다.
-
 ```sql
 SELECT id, price FROM products WHERE id = 1;
 ```
@@ -60,7 +58,7 @@ SELECT id, price FROM products WHERE id = 1;
 
 ## 4. 공개 채점 기준 확인
 
-학생 화면에 표시된 정렬·표시 형식 기준을 관리자 설정과 대조해 주세요. 아래는 같은 `products` 초기화 데이터를 사용해 **별도 점검용 문제(Max Attempts=0)**로 확인할 수 있는 예입니다. 표의 “정답 SQL”을 관리자 설정에 저장한 뒤 학생 화면에서 “학생 Test”를 실행하면 됩니다.
+학생 화면에 표시된 정렬·표시 형식 기준을 관리자 설정과 대조해 주세요. 아래는 같은 `products` 초기화 데이터를 사용해 **별도 점검용 문제**로 확인할 수 있는 예입니다. 표의 “정답 SQL”을 관리자 설정에 저장한 뒤 학생 화면에서 “학생 Test”를 실행하면 됩니다.
 
 | 확인할 것 | 정답 SQL·설정 | 학생 Test | 예상 결과 |
 |---|---|---|---|

@@ -28,16 +28,29 @@ It does not update the running service automatically.
   GHSA-q34m-jh98-gwm2 is mitigated by explicit aggregate field-byte accounting
   in the application parser, in addition to request caps; this is not a claim
   that all dependency audit findings are removed.
-- Login IDs and email aliases share a per-account budget of 10 attempts per
-  five-minute UTC window, across source IPs. Successful login resets the budget.
-  The existing classroom-wide IP limit remains in force. Production uses Redis
-  atomic add/increment operations across workers.
+- Login IDs and email aliases share a failure budget of 10 wrong passwords per
+  15 minutes, keyed by account and source address. Successful logins do not
+  count and reset the budget; failures from one address never lock the account
+  out from another address. The existing classroom-wide IP limit remains in
+  force. Production uses Redis atomic add/increment operations across workers.
+  The OWASP Authentication Cheat Sheet ("Account Lockout") prefers a
+  per-account counter but warns that lockout can be abused to deny service
+  to other users; the address in the key is that trade-off, and Google
+  re-login remains the recovery path, matching its advice to keep the
+  forgotten-password flow usable while locked. The limit is well inside the
+  NIST SP 800-63B 5.2.2 ceiling of 100 consecutive failures per account.
 - Public profile histories, score totals, and ranking graphs exclude hidden
   and locked challenges. Admin accounts do not contribute to public standings.
   Administrator score views and grade exports retain the original records.
-- Students cannot Test problems with a positive Max Attempts setting. Tests
-  on unlimited practice problems remain ungraded, but obey the deadline and
-  competition end. Administrator Test remains available for problem review.
+- Student Test runs remain ungraded and do not consume Max Attempts, but they
+  obey the deadline and competition end. Administrator Test remains available
+  for problem review at any time.
+
+References:
+
+- https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#account-lockout
+- https://owasp.org/www-community/controls/Blocking_Brute_Force_Attacks
+- https://pages.nist.gov/800-63-3/sp800-63b.html (5.2.2 Rate Limiting)
 
 Upstream advisories:
 

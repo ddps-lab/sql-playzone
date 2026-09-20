@@ -2,7 +2,6 @@ import requests
 import secrets
 import unicodedata
 import hashlib
-import time
 from flask import Blueprint, abort
 from flask import current_app as app
 from flask import redirect, render_template, request, session, url_for
@@ -453,6 +452,15 @@ def register():
         return render_template("register.html", errors=errors)
 
 
+LOGIN_FAILURE_LIMIT = 10
+LOGIN_FAILURE_WINDOW = 15 * 60
+
+
+def count_login_failure(key):
+    if not cache.add(key, 1, timeout=LOGIN_FAILURE_WINDOW):
+        cache.inc(key)
+
+
 @auth.route("/login", methods=["POST", "GET"])
 # A whole lecture hall logs in with the form at exam start from one NAT
 # address, so the per-address limit must cover the class.
@@ -462,9 +470,17 @@ def login():
     if request.method == "POST":
         name = request.form["name"].strip()
 
-        # Resolve first so email and login ID share one account budget across
-        # clients and addresses. Increment before hashing to bound concurrent
-        # attempts too; a successful authentication clears this bucket.
+        # Resolve first so email and login ID share one failure budget.
+        # OWASP warns that account lockout "could be used to cause a denial of
+        # service by locking out other users' accounts", so the budget is keyed
+        # by account and source address: failures from one address never lock
+        # the account out elsewhere. Only failed passwords count; a successful
+        # login clears the budget. The cost is that a distributed guesser gets
+        # ten tries per address, far below the NIST SP 800-63B 5.2.2 ceiling of
+        # 100 consecutive failures per account, and passwords are at least
+        # eight characters with letters and digits.
+        # https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#account-lockout
+        # https://pages.nist.gov/800-63-3/sp800-63b.html (5.2.2 Rate Limiting)
         if validators.validate_email(name) is True:
             user = Users.query.filter(db.func.lower(Users.email) == name.lower()).first()
         else:
@@ -472,15 +488,11 @@ def login():
         identity = (
             str(user.id) if user else hashlib.sha256(name.lower().encode()).hexdigest()
         )
-        login_budget_key = f"login_account:{identity}:{int(time.time()) // 300}"
-        if cache.add(login_budget_key, 1, timeout=600):
-            login_count = 1
-        else:
-            login_count = cache.inc(login_budget_key)
-        if login_count > 10:
+        login_budget_key = f"login_fail:{identity}:{current_user.get_ip()}"
+        if (cache.get(login_budget_key) or 0) >= LOGIN_FAILURE_LIMIT:
             return render_template(
                 "login.html",
-                errors=["Too many login attempts. Please try again in five minutes."],
+                errors=["Too many failed login attempts. Please try again in 15 minutes."],
             ), 429
 
         # Check for preset admin credentials first
@@ -539,12 +551,14 @@ def login():
                     "[{date}] {ip} - submitted invalid password for {name}",
                     name=user.name,
                 )
+                count_login_failure(login_budget_key)
                 errors.append("Your username or password is incorrect")
                 db.session.close()
                 return render_template("login.html", errors=errors)
         else:
             # This user just doesn't exist
             log("logins", "[{date}] {ip} - submitted invalid account information")
+            count_login_failure(login_budget_key)
             errors.append("Your username or password is incorrect")
             db.session.close()
             return render_template("login.html", errors=errors)
