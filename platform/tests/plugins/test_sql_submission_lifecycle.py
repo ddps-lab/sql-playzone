@@ -119,7 +119,7 @@ def test_actual_wrong_answers_consume_attempts(environment, response):
 
 def test_student_sql_error_is_shown_in_test_and_submit(environment):
     _, _, client, uid, make = environment
-    cid = make()
+    cid = make(max_attempts=1)
     error = "query error: Error 1096 (HY000): No tables used"
     response = judged(success=False, error_kind="student_query", error=error)
     with patch("requests.post", return_value=response) as judge:
@@ -135,6 +135,7 @@ def test_student_sql_error_is_shown_in_test_and_submit(environment):
             assert judge.call_args.kwargs["json"]["user_query"] == "SELECT *"
             assert Fails.query.filter_by(user_id=uid).count() == (0 if is_test else 1)
             assert Solves.query.filter_by(user_id=uid).count() == 0
+        assert submit(client, cid).get_json()["data"]["status"] == "ratelimited"
         assert judge.call_count == 2
 
 
@@ -305,16 +306,15 @@ def test_invalid_deadline_keeps_previous_settings(environment):
     assert (after["deadline"], after["value"]) == (before["deadline"], before["value"])
 
 
-def test_test_runs_cannot_bypass_max_attempts(environment):
+def test_test_runs_never_store_grades_or_use_max_attempts(environment):
     _, _, client, uid, make = environment
     cid = make(max_attempts=1)
-    with patch("requests.post", return_value=judged(match=False)) as judge:
+    with patch("requests.post", return_value=judged(match=False)):
         for _ in range(2):
             assert (
                 submit(client, cid, test=True).get_json()["data"]["status"]
-                == "closed"
+                == "incorrect"
             )
-        judge.assert_not_called()
     assert Fails.query.filter_by(user_id=uid).count() == 0
     with patch("requests.post", return_value=judged()):
         assert submit(client, cid).get_json()["data"]["status"] == "correct"
