@@ -208,12 +208,27 @@ def test_individual_deadline_rejection_is_not_an_incorrect_answer(environment):
     assert Fails.query.filter_by(user_id=uid).count() == 0
 
 
-def test_student_test_obeys_deadline_and_ctf_end(environment):
+@pytest.mark.parametrize("as_admin", [False, True])
+@pytest.mark.parametrize("match", [False, True])
+def test_test_after_problem_deadline_is_ungraded(environment, as_admin, match):
+    _, admin, student, _, make = environment
+    cid = make(deadline="2020-01-01T00:00", max_attempts=1)
+    client = admin if as_admin else student
+    with patch("requests.post", return_value=judged(match=match)) as judge:
+        response = submit(client, cid, test=True)
+        assert response.status_code == 200
+        assert response.get_json()["data"]["status"] == ("correct" if match else "incorrect")
+        judge.assert_called_once()
+        assert submit(client, cid).status_code == 403
+        assert judge.call_count == 1
+    assert Solves.query.filter_by(challenge_id=cid).count() == 0
+    assert Fails.query.filter_by(challenge_id=cid).count() == 0
+
+
+def test_student_test_obeys_ctf_end(environment):
     _, _, client, _, make = environment
-    expired = make(deadline="2020-01-01T00:00")
     current = make()
     with patch("requests.post", return_value=judged()) as judge:
-        assert submit(client, expired, test=True).status_code == 403
         set_config("end", 1)
         set_config("view_after_ctf", True)
         assert submit(client, current, test=True).status_code == 403
