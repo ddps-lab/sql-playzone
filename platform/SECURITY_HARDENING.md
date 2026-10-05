@@ -42,9 +42,11 @@ It does not update the running service automatically.
 - Public profile histories, score totals, and ranking graphs exclude hidden
   and locked challenges. Admin accounts do not contribute to public standings.
   Administrator score views and grade exports retain the original records.
-- Student Test runs remain ungraded and do not consume Max Attempts, but they
-  obey the deadline and competition end. Administrator Test remains available
-  for problem review at any time.
+- Student Test runs remain available after the problem deadline, do not save
+  grades, and do not consume Max Attempts. Graded
+  submissions still obey the problem deadline; student Test still obeys the
+  competition end and pause settings. Administrator Test remains available
+  for problem review after deadlines, unless the service is paused.
 
 References:
 

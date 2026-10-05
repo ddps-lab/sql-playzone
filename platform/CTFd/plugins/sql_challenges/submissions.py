@@ -94,11 +94,15 @@ def submit_sql(challenge, request, record_execute):
     require_sql_access(challenge)
     if ctf_paused():
         return reply("paused", "Submissions and Test runs are paused", 403)
-    if not is_test or not is_admin():
-        if not in_time and not is_admin():
-            return reply("closed", "Submissions are closed", 403)
-        if challenge.deadline_utc and received_at > challenge.deadline_utc:
-            return reply("closed", "Submission deadline has passed", 403)
+    if not in_time and not is_admin():
+        return reply("closed", "Submissions are closed", 403)
+    # The problem deadline closes graded submissions, not ungraded practice.
+    if (
+        not is_test
+        and challenge.deadline_utc
+        and received_at > challenge.deadline_utc
+    ):
+        return reply("closed", "Submission deadline has passed", 403)
 
     user, team = get_current_user(), get_current_team()
     # Test and Submit share an account-wide lock; switching problems cannot
