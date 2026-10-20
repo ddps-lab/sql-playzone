@@ -84,10 +84,20 @@ function initSQLEditor() {
     console.log('SQL Editor: Initializing CodeMirror');
     
     try {
+        // The judge runs MySQL, and the generic text/x-sql mode leaves LEFT, INNER, WITH, CASE,
+        // EXISTS and similar keywords unhighlighted. Use the MySQL mode and add SOME/ANY,
+        // which it does not list.
+        var sqlMode = CodeMirror.resolveMode('text/x-mysql');
+        if (sqlMode && sqlMode.keywords) {
+            sqlMode = Object.assign({}, sqlMode, {
+                keywords: Object.assign({}, sqlMode.keywords, { some: true, any: true })
+            });
+        }
+
         // Create CodeMirror instance
         var editor = CodeMirror(container, {
             value: textarea.value || '',
-            mode: 'text/x-sql',
+            mode: sqlMode || 'text/x-mysql',
             theme: 'monokai',
             lineNumbers: true,
             indentUnit: 4,
