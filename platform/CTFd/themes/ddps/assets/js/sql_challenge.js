@@ -67,10 +67,20 @@ function initSQLEditor() {
     const savedCode = localStorage.getItem(storageKey);
     const initialValue = savedCode || textarea.value || '';
     
+    // The judge runs MySQL, and the generic text/x-sql mode leaves LEFT, INNER, WITH, CASE,
+    // EXISTS and similar keywords unhighlighted. Use the MySQL mode and add SOME/ANY,
+    // which it does not list.
+    let sqlMode = CodeMirror.resolveMode('text/x-mysql');
+    if (sqlMode && sqlMode.keywords) {
+        sqlMode = Object.assign({}, sqlMode, {
+            keywords: Object.assign({}, sqlMode.keywords, { some: true, any: true })
+        });
+    }
+
     // Create CodeMirror instance WITHOUT initial value
     sqlEditor = CodeMirror(container, {
         value: '',  // Start with empty
-        mode: 'text/x-sql',
+        mode: sqlMode || 'text/x-mysql',
         theme: 'monokai',
         lineNumbers: true,
         indentUnit: 4,
