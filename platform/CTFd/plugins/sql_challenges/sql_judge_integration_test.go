@@ -483,11 +483,11 @@ func TestIntegrationGradingErrorKinds(t *testing.T) {
 func TestIntegrationMySQLFailureDiagnostics(t *testing.T) {
 	server := integrationServer(t)
 	for _, tc := range []struct {
-		name, query, code string
+		name, query, kind string
 		number            uint16
 	}{
-		{"EXCEPT CTE engine failure", "WITH a AS (SELECT id FROM x EXCEPT SELECT id FROM y) SELECT COUNT(*) FROM a a1 JOIN a a2 ON a1.id=a2.id", "mysql_engine_error", 1030},
-		{"unsupported LIMIT in IN subquery", "SELECT id FROM x WHERE id IN (SELECT id FROM y LIMIT 1)", "mysql_unsupported", 1235},
+		{"EXCEPT CTE engine failure", "WITH a AS (SELECT id FROM x EXCEPT SELECT id FROM y) SELECT COUNT(*) FROM a a1 JOIN a a2 ON a1.id=a2.id", "system", 1030},
+		{"unsupported LIMIT in IN subquery", "SELECT id FROM x WHERE id IN (SELECT id FROM y LIMIT 1)", "student_query", 1235},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body, _ := json.Marshal(QueryRequest{
@@ -502,9 +502,42 @@ func TestIntegrationMySQLFailureDiagnostics(t *testing.T) {
 			if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
 				t.Fatal(err)
 			}
-			if result.Success || result.ErrorKind != "system" || result.ErrorCode != tc.code || result.MySQLNumber != tc.number || len(result.SQLState) != 5 {
+			if result.Success || result.ErrorKind != tc.kind || result.MySQLNumber != tc.number || len(result.SQLState) != 5 {
 				t.Fatalf("MySQL failure was graded or its diagnostics were lost: %+v", result)
 			}
 		})
+	}
+}
+
+func TestIntegrationReviewedMySQLInputErrors(t *testing.T) {
+	server := integrationServer(t)
+	init := "CREATE TABLE t (id INT, v INT); INSERT INTO t VALUES (1,2),(1,3)"
+	for _, tc := range []struct {
+		number uint16
+		query  string
+	}{
+		{1353, "WITH q(a,b) AS (SELECT 1) SELECT * FROM q"},
+		{3065, "SELECT DISTINCT id FROM t ORDER BY v"},
+		{1525, "SELECT DATE '2023'"},
+		{3029, "SELECT id FROM t ORDER BY COUNT(*)"},
+	} {
+		for _, reference := range []bool{false, true} {
+			req := QueryRequest{InitQuery: init, SolutionQuery: "SELECT 1", UserQuery: tc.query}
+			kind := "student_query"
+			if reference {
+				req.SolutionQuery, req.UserQuery = tc.query, "SELECT 1"
+				kind = "problem"
+			}
+			body, _ := json.Marshal(req)
+			recorder := httptest.NewRecorder()
+			server.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/judge", bytes.NewReader(body)))
+			var result QueryResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Success || result.ErrorKind != kind || result.MySQLNumber != tc.number || result.SQLState != "HY000" {
+				t.Errorf("number=%d reference=%v: %+v", tc.number, reference, result)
+			}
+		}
 	}
 }
