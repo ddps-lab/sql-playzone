@@ -210,7 +210,9 @@ func (s *Server) judgeQueries(parent context.Context, req *QueryRequest) (expect
 		err = &gradingError{kind: "student_query", cause: e}
 		return
 	}
-	userCtx, userCancel := context.WithTimeout(parent, s.config.QueryTimeout)
+	// MySQL stops the statement at QueryTimeout (3024, a student verdict). The
+	// margin keeps this deadline from racing it; it fires only if MySQL hangs.
+	userCtx, userCancel := context.WithTimeout(parent, s.config.QueryTimeout+studentDeadlineMargin)
 	defer userCancel()
 	actual, err = s.runGradedQuery(userCtx, resources, req.UserQuery, session)
 	return

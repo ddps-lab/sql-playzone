@@ -542,7 +542,7 @@ func TestIntegrationReviewedMySQLInputErrors(t *testing.T) {
 	}
 }
 
-func TestIntegrationSlowStudentQueryReportsTheDeadline(t *testing.T) {
+func TestIntegrationSlowStudentQueryEndsAsMySQLTimeout(t *testing.T) {
 	server := integrationServer(t)
 	init := "CREATE TABLE n (v INT PRIMARY KEY); INSERT INTO n WITH RECURSIVE s(v) AS (SELECT 1 UNION ALL SELECT v+1 FROM s WHERE v < 400) SELECT v FROM s"
 	for i := 0; i < 6; i++ {
@@ -554,10 +554,9 @@ func TestIntegrationSlowStudentQueryReportsTheDeadline(t *testing.T) {
 		if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
 			t.Fatal(err)
 		}
-		// MySQL may stop the statement first (3024); otherwise the deadline must be reported.
-		if result.Success || !(result.ErrorKind == "student_query" && result.MySQLNumber == 3024 ||
-			result.ErrorKind == "system" && result.DeadlineExceeded) {
-			t.Fatalf("run %d: slow query lost its deadline cause: %+v", i, result)
+		// The same slow query must always get the same verdict: MySQL 3024.
+		if result.Success || result.ErrorKind != "student_query" || !strings.Contains(result.Error, "Error 3024") {
+			t.Fatalf("run %d: slow query did not end as MySQL 3024: %+v", i, result)
 		}
 	}
 }

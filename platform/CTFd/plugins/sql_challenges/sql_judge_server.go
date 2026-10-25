@@ -27,6 +27,8 @@ const (
 	temporaryDatabasePrefix = "ctfd_tmp_"
 	temporaryUserPrefix     = "ct_"
 	temporaryCollation      = "utf8mb4_0900_ai_ci" // MySQL 8 default, so results match a local MySQL 8 install
+	// A slow student statement must end as MySQL 3024, never as a judge deadline.
+	studentDeadlineMargin = time.Second
 )
 
 var (
@@ -215,8 +217,8 @@ func loadConfig(getenv func(string) string) (Config, error) {
 	if cfg.QueryTimeout >= cfg.RequestTimeout {
 		return Config{}, errors.New("SQL_JUDGE_QUERY_TIMEOUT must be shorter than SQL_JUDGE_REQUEST_TIMEOUT")
 	}
-	if 2*(cfg.QueryTimeout+cfg.CleanupTimeout) > cfg.RequestTimeout {
-		return Config{}, errors.New("two query and cleanup budgets must fit within SQL_JUDGE_REQUEST_TIMEOUT")
+	if 2*(cfg.QueryTimeout+cfg.CleanupTimeout)+studentDeadlineMargin > cfg.RequestTimeout {
+		return Config{}, errors.New("two query and cleanup budgets plus the student deadline margin must fit within SQL_JUDGE_REQUEST_TIMEOUT")
 	}
 	return cfg, nil
 }
@@ -512,8 +514,9 @@ func (s *Server) openRunner(user, password, database string) (*sql.DB, error) {
 	runnerConfig.DBName = database
 	runnerConfig.Collation = temporaryCollation
 	runnerConfig.Timeout = s.config.QueryTimeout
-	runnerConfig.ReadTimeout = s.config.QueryTimeout
-	runnerConfig.WriteTimeout = s.config.QueryTimeout
+	// Socket timeouts must outlast max_execution_time so MySQL reports 3024.
+	runnerConfig.ReadTimeout = s.config.QueryTimeout + studentDeadlineMargin
+	runnerConfig.WriteTimeout = s.config.QueryTimeout + studentDeadlineMargin
 	runnerConfig.MultiStatements = false
 	runnerConfig.ParseTime = false
 
