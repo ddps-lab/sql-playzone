@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	mysql "github.com/go-sql-driver/mysql"
 )
@@ -143,5 +144,22 @@ func TestFailureDiagnosticsDoNotChangeTheVerdict(t *testing.T) {
 				t.Fatalf("unnecessary public taxonomy remains: %s", b)
 			}
 		})
+	}
+}
+
+func TestDeadlineCauseRecognizesConnectionsClosedAtTheDeadline(t *testing.T) {
+	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	closed := fmt.Errorf("query error: %w", mysql.ErrInvalidConn)
+	if err := deadlineCause(expired, closed); !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, mysql.ErrInvalidConn) ||
+		gradingErrorKind(err) != "system" || !gradingFailure(err).DeadlineExceeded {
+		t.Fatalf("connection closed at the deadline lost its cause: %v", err)
+	}
+	if err := deadlineCause(context.Background(), closed); errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("connection failure without a deadline was labeled a deadline: %v", err)
+	}
+	timeout := classifyQueryError(&mysql.MySQLError{Number: 3024})
+	if err := deadlineCause(expired, timeout); err != timeout {
+		t.Fatalf("student verdict changed: %v", err)
 	}
 }

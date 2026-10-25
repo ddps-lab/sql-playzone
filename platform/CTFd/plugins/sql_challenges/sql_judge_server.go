@@ -712,7 +712,8 @@ func appendUnique(values []string, value string) []string {
 	return append(values, value)
 }
 
-func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query string, session initSession) (*QueryResult, error) {
+func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query string, session initSession) (_ *QueryResult, err error) {
+	defer func() { err = deadlineCause(ctx, err) }()
 	queryDB, err := s.openRunner(r.queryUser, r.queryPassword, r.database)
 	if err != nil {
 		return nil, err
@@ -1183,6 +1184,17 @@ func classifyQueryError(err error) error {
 		return &gradingError{kind: "student_query", cause: err}
 	}
 	return err
+}
+
+// The driver may report a connection it closed at the deadline as "invalid
+// connection". The execution context records the actual cause; the verdict
+// stays system, so only the diagnostic changes.
+func deadlineCause(ctx context.Context, err error) error {
+	if err == nil || gradingErrorKind(err) != "system" || errors.Is(err, context.DeadlineExceeded) ||
+		!errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", err, context.DeadlineExceeded)
 }
 
 // Diagnostics describe the existing verdict without changing its classification.

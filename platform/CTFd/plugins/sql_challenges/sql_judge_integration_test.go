@@ -541,3 +541,23 @@ func TestIntegrationReviewedMySQLInputErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestIntegrationSlowStudentQueryReportsTheDeadline(t *testing.T) {
+	server := integrationServer(t)
+	init := "CREATE TABLE n (v INT PRIMARY KEY); INSERT INTO n WITH RECURSIVE s(v) AS (SELECT 1 UNION ALL SELECT v+1 FROM s WHERE v < 400) SELECT v FROM s"
+	for i := 0; i < 6; i++ {
+		body, _ := json.Marshal(QueryRequest{InitQuery: init, SolutionQuery: "SELECT COUNT(*) FROM n",
+			UserQuery: "SELECT COUNT(*) FROM n a, n b, n c, n d WHERE a.v + b.v = c.v + d.v + 1"})
+		recorder := httptest.NewRecorder()
+		server.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/judge", bytes.NewReader(body)))
+		var result QueryResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		// MySQL may stop the statement first (3024); otherwise the deadline must be reported.
+		if result.Success || !(result.ErrorKind == "student_query" && result.MySQLNumber == 3024 ||
+			result.ErrorKind == "system" && result.DeadlineExceeded) {
+			t.Fatalf("run %d: slow query lost its deadline cause: %+v", i, result)
+		}
+	}
+}
