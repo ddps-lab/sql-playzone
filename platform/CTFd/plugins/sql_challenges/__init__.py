@@ -278,7 +278,8 @@ class SQLChallengeType(BaseChallenge):
                 # changes only the message for an already ungraded failure.
                 return unavailable("judge_response", result.get('error', 'No error detail'),
                                    kind=result.get('error_kind'), mysql_number=result.get('mysql_number'),
-                                   sql_state=result.get('sql_state'), deadline_exceeded=result.get('deadline_exceeded') is True)
+                                   sql_state=result.get('sql_state'), deadline_exceeded=result.get('deadline_exceeded') is True,
+                                   busy=result.get('busy') is True)
             if result.get('success') is not True or not isinstance(result.get('match'), bool):
                 return unavailable("judge_invalid_response", "Missing success/match verdict")
             for key in ('user_result', 'expected_result'):

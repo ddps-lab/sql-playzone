@@ -139,6 +139,20 @@ def test_student_sql_error_is_shown_in_test_and_submit(environment):
         assert judge.call_count == 2
 
 
+def test_busy_judge_asks_to_wait_and_retry(environment):
+    _, _, client, uid, make = environment
+    cid = make(max_attempts=1)
+    response = judged(success=False, error_kind="system", busy=True, error="SQL judge is busy; please retry")
+    with patch("requests.post", return_value=response):
+        for is_test in (True, False):
+            result = submit(client, cid, test=is_test).get_json()["data"]
+            assert result["status"] == "error"
+            assert "Grading server is busy" in result["message"]
+            assert "Wait a few seconds and retry" in result["message"]
+            assert "No attempt was deducted" in result["message"]
+    assert Fails.query.filter_by(user_id=uid).count() == 0
+
+
 @pytest.mark.parametrize("kind,number,deadline,label", [
     ("system", 1030, False, "MySQL engine failure"),
     ("system", 1040, False, "Grading is temporarily unavailable"),

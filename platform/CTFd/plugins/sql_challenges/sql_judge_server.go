@@ -66,6 +66,7 @@ type QueryResponse struct {
 	Error            string      `json:"error,omitempty"`
 	ErrorKind        string      `json:"error_kind,omitempty"`
 	DeadlineExceeded bool        `json:"deadline_exceeded,omitempty"`
+	Busy             bool        `json:"busy,omitempty"`
 	MySQLNumber      uint16      `json:"mysql_number,omitempty"`
 	SQLState         string      `json:"sql_state,omitempty"`
 }
@@ -456,7 +457,7 @@ func (s *Server) handleJudge(w http.ResponseWriter, r *http.Request) {
 	case s.slots <- struct{}{}:
 		defer func() { <-s.slots }()
 	case <-queueTimer.C:
-		writeGradingFailure(w, &req, QueryResponse{Success: false, ErrorKind: "system", Error: "SQL judge is busy; please retry"})
+		writeGradingFailure(w, &req, QueryResponse{Success: false, ErrorKind: "system", Busy: true, Error: "SQL judge is busy; please retry"})
 		return
 	case <-ctx.Done():
 		writeGradingFailure(w, &req, gradingFailure(fmt.Errorf("wait for grading worker: %w", ctx.Err())))

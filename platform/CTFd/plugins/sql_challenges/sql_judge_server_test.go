@@ -79,7 +79,7 @@ func TestHandleJudgeRejectsOversizedAndBusyRequestsBeforeDatabaseWork(t *testing
 	if err := json.Unmarshal(busy.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Success || !strings.Contains(response.Error, "busy") {
+	if response.Success || !response.Busy || !strings.Contains(response.Error, "busy") {
 		t.Fatalf("unexpected busy response: %+v", response)
 	}
 }
