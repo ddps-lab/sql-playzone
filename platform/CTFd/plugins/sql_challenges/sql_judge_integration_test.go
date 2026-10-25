@@ -479,3 +479,32 @@ func TestIntegrationGradingErrorKinds(t *testing.T) {
 		t.Fatalf("closed control connection classified as %+v", result)
 	}
 }
+
+func TestIntegrationMySQLFailureDiagnostics(t *testing.T) {
+	server := integrationServer(t)
+	for _, tc := range []struct {
+		name, query, code string
+		number            uint16
+	}{
+		{"EXCEPT CTE engine failure", "WITH a AS (SELECT id FROM x EXCEPT SELECT id FROM y) SELECT COUNT(*) FROM a a1 JOIN a a2 ON a1.id=a2.id", "mysql_engine_error", 1030},
+		{"unsupported LIMIT in IN subquery", "SELECT id FROM x WHERE id IN (SELECT id FROM y LIMIT 1)", "mysql_unsupported", 1235},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := json.Marshal(QueryRequest{
+				RequestID:     "0123456789abcdef0123456789abcdef",
+				InitQuery:     "CREATE TABLE x(id INT PRIMARY KEY); CREATE TABLE y(id INT PRIMARY KEY); INSERT INTO x VALUES(1),(2),(3),(4),(5); INSERT INTO y VALUES(3)",
+				SolutionQuery: "SELECT COUNT(*) FROM x WHERE id NOT IN (SELECT id FROM y)",
+				UserQuery:     tc.query,
+			})
+			recorder := httptest.NewRecorder()
+			server.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/judge", bytes.NewReader(body)))
+			var result QueryResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Success || result.ErrorKind != "system" || result.ErrorCode != tc.code || result.MySQLNumber != tc.number || len(result.SQLState) != 5 {
+				t.Fatalf("MySQL failure was graded or its diagnostics were lost: %+v", result)
+			}
+		})
+	}
+}

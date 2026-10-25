@@ -5,6 +5,7 @@ import time
 import subprocess
 import atexit
 import socket
+from uuid import uuid4
 from datetime import datetime, timezone
 import pytz
 from flask import Blueprint, request, jsonify, abort
@@ -15,6 +16,7 @@ from CTFd.utils.decorators import admins_only, authed_only
 from CTFd.utils.user import get_ip, is_admin
 
 from .policy import parse_policy, policy_notice
+from .diagnostics import grading_failure
 
 # Set KST timezone
 KST = pytz.timezone('Asia/Seoul')
@@ -236,16 +238,18 @@ class SQLChallengeType(BaseChallenge):
         is_test = data.get("test", False)
         user = get_current_user()
         prefix = "[TEST]\n" if is_test else ""
-        unavailable = ChallengeResponse(
-            status="error",
-            message=prefix + "Grading is temporarily unavailable. No attempt was deducted. Please retry.",
-        )
+        request_id = uuid4().hex
+
+        def unavailable(code, detail, **diagnostics):
+            return grading_failure(prefix, request_id, code, detail,
+                                   user_id=user.id, challenge_id=challenge.id, **diagnostics)
         if challenge.grading_policy is None:
             return ChallengeResponse(status="error", message=policy_notice(None))
         try:
             response = requests.post(
                 os.environ.get('SQL_JUDGE_SERVER_URL', 'http://localhost:8080') + '/judge',
                 json={
+                    'request_id': request_id,
                     'grading_policy': challenge.grading_policy,
                     'init_query': challenge.init_query,
                     'solution_query': challenge.solution_query,
@@ -258,22 +262,35 @@ class SQLChallengeType(BaseChallenge):
                 timeout=10,
             )
             if response.status_code != 200:
-                return unavailable
-            result = response.json()
+                return unavailable("judge_http_failure", f"HTTP {response.status_code}")
+            try:
+                result = response.json()
+            except ValueError as error:
+                # requests.JSONDecodeError is also a RequestException; decoding
+                # failures must not be mislabeled as connection failures.
+                return unavailable("judge_invalid_response", error)
             if not isinstance(result, dict):
-                return unavailable
+                return unavailable("judge_invalid_response", "Expected a JSON object")
             if result.get('success') is False:
                 if result.get('error_kind') == 'student_query':
-                    return ChallengeResponse(status="incorrect", message=prefix + str(result.get('error', 'SQL query failed')))
+                    # An old judge has no error_code. Its student verdict remains
+                    # supported; contradictory new diagnostics fail ungraded.
+                    code = result.get('error_code', 'sql_error')
+                    labels = {"sql_error": "SQL execution error", "query_timeout": "Query time limit exceeded", "result_limit": "Query result limit exceeded"}
+                    if not isinstance(code, str) or code not in labels or not isinstance(result.get('error'), str):
+                        return unavailable("judge_invalid_response", "Invalid student-query error metadata")
+                    return ChallengeResponse(status="incorrect", message=prefix + f"{labels[code]}. {result['error']} [Code: {code}; reference: {request_id}]")
                 # Older judges and unknown error kinds fail without a penalty.
                 # Never expose reference-query or infrastructure errors to students.
-                return unavailable
+                code = "problem_error" if result.get('error_kind') == 'problem' else result.get('error_code', 'judge_unavailable')
+                return unavailable(code, result.get('error', 'No error detail'),
+                                   mysql_number=result.get('mysql_number'), sql_state=result.get('sql_state'))
             if result.get('success') is not True or not isinstance(result.get('match'), bool):
-                return unavailable
+                return unavailable("judge_invalid_response", "Missing success/match verdict")
             for key in ('user_result', 'expected_result'):
                 rows = result.get(key)
                 if not isinstance(rows, dict) or not isinstance(rows.get('rows'), list) or not isinstance(rows.get('columns'), list):
-                    return unavailable
+                    return unavailable("judge_invalid_response", f"Invalid {key} shape")
             user_result = json.dumps(result['user_result'])
             if result['match']:
                 return ChallengeResponse(
@@ -284,13 +301,17 @@ class SQLChallengeType(BaseChallenge):
             # to the browser, so a student reading the response body would get
             # the expected output of a challenge they have not solved. Only
             # admins receive it; no student view has ever rendered it.
-            message = prefix + f"❌ Incorrect. Your query did not produce the expected result.\n\n[USER_RESULT]\n{user_result}\n[/USER_RESULT]"
+            message = prefix + f"❌ Result mismatch. Your query ran successfully, but its result did not match the expected result.\n\n[USER_RESULT]\n{user_result}\n[/USER_RESULT]"
             if is_admin():
                 expected = json.dumps(result['expected_result'])
                 message += f"\n\n[EXPECTED_RESULT]\n{expected}\n[/EXPECTED_RESULT]"
             return ChallengeResponse(status="incorrect", message=message)
-        except (requests.RequestException, ValueError, TypeError, KeyError):
-            return unavailable
+        except requests.Timeout as error:
+            return unavailable("judge_connection_timeout", error)
+        except requests.RequestException as error:
+            return unavailable("judge_connection_failure", error)
+        except (ValueError, TypeError, KeyError) as error:
+            return unavailable("judge_invalid_response", error)
 
     @classmethod
     def execute_and_compare_with_details(cls, init_query, solution_query, user_query):
