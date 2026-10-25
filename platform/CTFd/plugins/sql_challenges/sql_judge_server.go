@@ -46,6 +46,8 @@ var (
 	// for example CREATE DATABASE /*!32312 IF NOT EXISTS*/ `world`.
 	versionedCommentPattern = regexp.MustCompile(`/\*!\d*\s*|\*/`)
 	errResultLimit          = errors.New("query result exceeds configured limit")
+	// Infrastructure delay, not a student verdict: the statement never ran.
+	errStatementSetupDelayed = errors.New("connection setup left less than the full student query time limit")
 )
 
 type QueryRequest struct {
@@ -146,7 +148,7 @@ func newExecutionResources() (executionResources, error) {
 var dangerousFunctions = []string{
 	"LOAD_FILE", "BENCHMARK", "SLEEP", "GET_LOCK", "RELEASE_LOCK",
 	"MASTER_POS_WAIT", "IS_FREE_LOCK", "IS_USED_LOCK", "SYS_EXEC", "SYS_EVAL",
-	"MAX_EXECUTION_TIME",
+	"MAX_EXECUTION_TIME", "SET_VAR",
 }
 
 func defaultConfig() Config {
@@ -502,7 +504,7 @@ func (s *Server) executeQuery(parent context.Context, initQueries []string, quer
 	if err != nil {
 		return nil, err
 	}
-	return s.runGradedQuery(executionCtx, resources, query, session)
+	return s.runGradedQuery(executionCtx, resources, query, session, false)
 }
 
 func (s *Server) openRunner(user, password, database string) (*sql.DB, error) {
@@ -716,7 +718,10 @@ func appendUnique(values []string, value string) []string {
 	return append(values, value)
 }
 
-func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query string, session initSession) (_ *QueryResult, err error) {
+// A student statement (fullLimit) always gets the whole QueryTimeout so a 3024
+// verdict means the SQL itself was slow. If connection setup used the margin,
+// the run ends ungraded instead of shortening the student's limit.
+func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query string, session initSession, fullLimit bool) (_ *QueryResult, err error) {
 	defer func() { err = deadlineCause(ctx, err) }()
 	queryDB, err := s.openRunner(r.queryUser, r.queryPassword, r.database)
 	if err != nil {
@@ -732,8 +737,12 @@ func (s *Server) runGradedQuery(ctx context.Context, r executionResources, query
 
 	maxExecutionMilliseconds := s.config.QueryTimeout.Milliseconds()
 	if deadline, ok := ctx.Deadline(); ok {
-		if remaining := time.Until(deadline).Milliseconds(); remaining < maxExecutionMilliseconds {
-			maxExecutionMilliseconds = remaining
+		remaining := time.Until(deadline)
+		if fullLimit && remaining < s.config.QueryTimeout+studentDeadlineMargin/2 {
+			return nil, errStatementSetupDelayed
+		}
+		if remaining.Milliseconds() < maxExecutionMilliseconds {
+			maxExecutionMilliseconds = remaining.Milliseconds()
 		}
 	}
 	if maxExecutionMilliseconds < 1 {

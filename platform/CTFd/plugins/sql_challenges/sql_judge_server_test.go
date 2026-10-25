@@ -91,6 +91,7 @@ func TestValidateSQLQueryPreservesDangerousQueryBlocks(t *testing.T) {
 		"GRANT ALL ON *.* TO attacker",
 		"SELECT * FROM mysql.user",
 		"SELECT /*+ MAX_EXECUTION_TIME(100000) */ COUNT(*) FROM students",
+		"SELECT /*+ SET_VAR(max_execution_time=0) */ COUNT(*) FROM students",
 	} {
 		if err := validateSQLQuery(query, nil); err == nil {
 			t.Fatalf("validateSQLQuery(%q) unexpectedly succeeded", query)

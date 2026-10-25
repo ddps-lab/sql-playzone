@@ -560,3 +560,46 @@ func TestIntegrationSlowStudentQueryEndsAsMySQLTimeout(t *testing.T) {
 		}
 	}
 }
+
+func TestIntegrationDelayedSetupNeverShortensTheStudentLimit(t *testing.T) {
+	server := integrationServer(t)
+	resources, err := newExecutionResources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	defer server.cleanupExecution(resources)
+	if err := server.createExecutionResources(ctx, resources); err != nil {
+		t.Fatal(err)
+	}
+	session, err := server.runInitStatements(ctx, resources, []string{"CREATE TABLE t (id INT); INSERT INTO t VALUES (1)"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A context left with less than the full limit stands in for slow connection setup.
+	delayed, cancel := context.WithTimeout(ctx, server.config.QueryTimeout)
+	defer cancel()
+	if _, err := server.runGradedQuery(delayed, resources, "SELECT id FROM t", session, true); !errors.Is(err, errStatementSetupDelayed) || gradingErrorKind(err) != "system" {
+		t.Fatalf("delayed setup shortened the student limit or was graded: %v", err)
+	}
+	full, fullCancel := context.WithTimeout(ctx, server.config.QueryTimeout+studentDeadlineMargin)
+	defer fullCancel()
+	if result, err := server.runGradedQuery(full, resources, "SELECT id FROM t", session, true); err != nil || result.RowCount != 1 {
+		t.Fatalf("student statement with the full budget failed: %v", err)
+	}
+}
+
+func TestIntegrationStudentCannotLiftTheTimeLimitWithAHint(t *testing.T) {
+	server := integrationServer(t)
+	body, _ := json.Marshal(QueryRequest{InitQuery: "CREATE TABLE t (id INT)", SolutionQuery: "SELECT id FROM t",
+		UserQuery: "SELECT /*+ SET_VAR(max_execution_time=0) */ id FROM t"})
+	recorder := httptest.NewRecorder()
+	server.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/judge", bytes.NewReader(body)))
+	var result QueryResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || result.ErrorKind != "student_query" || !strings.Contains(result.Error, "SET_VAR") {
+		t.Fatalf("SET_VAR hint was not rejected: %+v", result)
+	}
+}
