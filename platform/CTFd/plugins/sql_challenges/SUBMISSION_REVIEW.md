@@ -174,6 +174,10 @@ npm --prefix platform/CTFd/themes/ddps run build:sql
 | 캐시·세션 | Valkey의 여러 키 조회는 GET pipeline을 사용합니다. 배포 뒤 기존 세션이 유지되고 CTFd 로그에 `CROSSSLOT` 오류가 없는지 확인해야 합니다. |
 | 행동 로그 | 요청당 최대 1,000개, 클라이언트 배치당 최대 50개 이벤트의 필드·크기 제한과 재시도를 확인합니다. `platform/tests/plugins/test_behavior_events.py`와 JS 검사를 사용하고, dev에서 CloudWatch 도착도 확인해야 합니다. 브라우저 종료·장기 오프라인의 유실 가능성은 서버 기록과 함께 검토해야 합니다. |
 
+채점 실패 안내는 MySQL 내부 오류·미지원 기능·원인 불명 DB 오류, 문제 설정 오류, 서버 혼잡·시간 제한, HTTP·통신·응답 형식 오류를 구분합니다. 학생에게는 오류 종류와 MySQL 번호/SQLSTATE(있는 경우), 문의용 reference ID를 표시합니다. 같은 ID로 CTFd와 judge 로그에서 원래 오류를 확인할 수 있으며, 정답 쿼리나 서버 내부 오류 전문은 학생에게 전달하지 않습니다.
+
+SQLSTATE가 입력 오류를 나타내거나 명시적으로 확인된 SQL 오류만 `student_query`로 처리합니다. 미지원 기능과 원인이 확인되지 않은 MySQL 오류는 오답으로 기록하지 않고 제출 횟수를 보존합니다. 오류 없이 잘못된 결과를 반환하는 DB 버그를 탐지하거나 SQL 사용 형태를 차단하는 기능은 포함하지 않습니다. 시간 제한과 결과 비교 방식도 기존과 같습니다.
+
 dev 배포는 CTFd·judge를 같은 release로 준비하고 [배포 절차](../../../../IaC/ARTIFACT_PIPELINE.md)에 따라 plan 검토·승인·apply 후 진행해야 합니다. 현재 dev 기동 상태는 배포 담당자에게 확인해 주세요. 기술 검증 결과와 위 조교 점검 결과를 함께 기록하면 됩니다.
 
 </details>

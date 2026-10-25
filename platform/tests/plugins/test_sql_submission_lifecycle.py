@@ -139,6 +139,72 @@ def test_student_sql_error_is_shown_in_test_and_submit(environment):
         assert judge.call_count == 2
 
 
+@pytest.mark.parametrize("kind,code,number,label", [
+    ("system", "mysql_engine_error", 1030, "MySQL engine failure"),
+    ("system", "mysql_unsupported", 1235, "Unsupported MySQL feature"),
+    ("system", "mysql_failure", 1105, "MySQL execution failure"),
+    ("system", "judge_busy", None, "Grading service busy"),
+    ("system", "judge_timeout", None, "Grading service timeout"),
+    ("problem", "problem_error", 1064, "Problem configuration error"),
+    ("future_kind", "future_code", None, "Grading service failure"),
+])
+def test_failure_messages_are_actionable_private_and_unpenalized(environment, kind, code, number, label):
+    import re
+
+    app, _, client, uid, make = environment
+    cid = make(max_attempts=1)
+    raw = "SELECT hidden_answer FROM ctfd_tmp_private; host=internal-db password=private"
+    response = judged(success=False, error_kind=kind, error_code=code,
+                      mysql_number=number, sql_state="HY000", error=raw)
+    with patch("requests.post", return_value=response) as judge, patch.object(app.logger, "error") as logged:
+        for is_test in (True, False):
+            result = submit(client, cid, test=is_test).get_json()["data"]
+            assert result["status"] == "error"
+            assert label in result["message"]
+            assert "No attempt was deducted" in result["message"]
+            assert "not graded" in result["message"]
+            assert raw not in result["message"]
+            assert "hidden_answer" not in result["message"]
+            request_id = judge.call_args.kwargs["json"]["request_id"]
+            assert re.fullmatch(r"[0-9a-f]{32}", request_id)
+            assert request_id in result["message"]
+            assert request_id in str(logged.call_args)
+            if number:
+                assert f"MySQL {number}" in result["message"]
+            assert Fails.query.filter_by(user_id=uid).count() == 0
+            assert Solves.query.filter_by(user_id=uid).count() == 0
+
+
+@pytest.mark.parametrize("fault,label", [
+    ("timeout", "Grading connection timeout"),
+    ("connection", "Grading connection failure"),
+    ("http", "Grading HTTP failure"),
+    ("malformed", "Invalid grading response"),
+])
+def test_transport_failure_reasons_remain_distinct(environment, fault, label):
+    import requests
+
+    _, _, client, uid, make = environment
+    cid = make(max_attempts=1)
+    response = judged()
+    side_effect = None
+    if fault == "timeout":
+        side_effect = requests.Timeout("internal host")
+    elif fault == "connection":
+        side_effect = requests.ConnectionError("internal host")
+    elif fault == "http":
+        response.status_code = 502
+    else:
+        response.json.side_effect = requests.exceptions.JSONDecodeError("private invalid response", "not JSON", 0)
+    with patch("requests.post", return_value=response, side_effect=side_effect):
+        data = submit(client, cid).get_json()["data"]
+    assert data["status"] == "error"
+    assert label in data["message"]
+    assert "internal host" not in data["message"]
+    assert "private invalid" not in data["message"]
+    assert Fails.query.filter_by(user_id=uid).count() == 0
+
+
 @pytest.mark.parametrize("match", [True, False])
 def test_receipt_time_controls_storage_across_global_end(environment, match):
     _, _, client, uid, make = environment
