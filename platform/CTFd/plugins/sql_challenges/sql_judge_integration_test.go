@@ -483,11 +483,11 @@ func TestIntegrationGradingErrorKinds(t *testing.T) {
 func TestIntegrationMySQLFailureDiagnostics(t *testing.T) {
 	server := integrationServer(t)
 	for _, tc := range []struct {
-		name, query, code string
+		name, query, kind string
 		number            uint16
 	}{
-		{"EXCEPT CTE engine failure", "WITH a AS (SELECT id FROM x EXCEPT SELECT id FROM y) SELECT COUNT(*) FROM a a1 JOIN a a2 ON a1.id=a2.id", "mysql_engine_error", 1030},
-		{"unsupported LIMIT in IN subquery", "SELECT id FROM x WHERE id IN (SELECT id FROM y LIMIT 1)", "mysql_unsupported", 1235},
+		{"EXCEPT CTE engine failure", "WITH a AS (SELECT id FROM x EXCEPT SELECT id FROM y) SELECT COUNT(*) FROM a a1 JOIN a a2 ON a1.id=a2.id", "system", 1030},
+		{"unsupported LIMIT in IN subquery", "SELECT id FROM x WHERE id IN (SELECT id FROM y LIMIT 1)", "student_query", 1235},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body, _ := json.Marshal(QueryRequest{
@@ -502,9 +502,104 @@ func TestIntegrationMySQLFailureDiagnostics(t *testing.T) {
 			if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
 				t.Fatal(err)
 			}
-			if result.Success || result.ErrorKind != "system" || result.ErrorCode != tc.code || result.MySQLNumber != tc.number || len(result.SQLState) != 5 {
+			if result.Success || result.ErrorKind != tc.kind || result.MySQLNumber != tc.number || len(result.SQLState) != 5 {
 				t.Fatalf("MySQL failure was graded or its diagnostics were lost: %+v", result)
 			}
 		})
+	}
+}
+
+func TestIntegrationReviewedMySQLInputErrors(t *testing.T) {
+	server := integrationServer(t)
+	init := "CREATE TABLE t (id INT, v INT); INSERT INTO t VALUES (1,2),(1,3)"
+	for _, tc := range []struct {
+		number uint16
+		query  string
+	}{
+		{1353, "WITH q(a,b) AS (SELECT 1) SELECT * FROM q"},
+		{3065, "SELECT DISTINCT id FROM t ORDER BY v"},
+		{1525, "SELECT DATE '2023'"},
+		{3029, "SELECT id FROM t ORDER BY COUNT(*)"},
+	} {
+		for _, reference := range []bool{false, true} {
+			req := QueryRequest{InitQuery: init, SolutionQuery: "SELECT 1", UserQuery: tc.query}
+			kind := "student_query"
+			if reference {
+				req.SolutionQuery, req.UserQuery = tc.query, "SELECT 1"
+				kind = "problem"
+			}
+			body, _ := json.Marshal(req)
+			recorder := httptest.NewRecorder()
+			server.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/judge", bytes.NewReader(body)))
+			var result QueryResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Success || result.ErrorKind != kind || result.MySQLNumber != tc.number || result.SQLState != "HY000" {
+				t.Errorf("number=%d reference=%v: %+v", tc.number, reference, result)
+			}
+		}
+	}
+}
+
+func TestIntegrationSlowStudentQueryEndsAsMySQLTimeout(t *testing.T) {
+	server := integrationServer(t)
+	init := "CREATE TABLE n (v INT PRIMARY KEY); INSERT INTO n WITH RECURSIVE s(v) AS (SELECT 1 UNION ALL SELECT v+1 FROM s WHERE v < 400) SELECT v FROM s"
+	for i := 0; i < 6; i++ {
+		body, _ := json.Marshal(QueryRequest{InitQuery: init, SolutionQuery: "SELECT COUNT(*) FROM n",
+			UserQuery: "SELECT COUNT(*) FROM n a, n b, n c, n d WHERE a.v + b.v = c.v + d.v + 1"})
+		recorder := httptest.NewRecorder()
+		server.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/judge", bytes.NewReader(body)))
+		var result QueryResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		// The same slow query must always get the same verdict: MySQL 3024.
+		if result.Success || result.ErrorKind != "student_query" || !strings.Contains(result.Error, "Error 3024") {
+			t.Fatalf("run %d: slow query did not end as MySQL 3024: %+v", i, result)
+		}
+	}
+}
+
+func TestIntegrationDelayedSetupNeverShortensTheStudentLimit(t *testing.T) {
+	server := integrationServer(t)
+	resources, err := newExecutionResources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	defer server.cleanupExecution(resources)
+	if err := server.createExecutionResources(ctx, resources); err != nil {
+		t.Fatal(err)
+	}
+	session, err := server.runInitStatements(ctx, resources, []string{"CREATE TABLE t (id INT); INSERT INTO t VALUES (1)"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A context left with less than the full limit stands in for slow connection setup.
+	delayed, cancel := context.WithTimeout(ctx, server.config.QueryTimeout)
+	defer cancel()
+	if _, err := server.runGradedQuery(delayed, resources, "SELECT id FROM t", session, true); !errors.Is(err, errStatementSetupDelayed) || gradingErrorKind(err) != "system" {
+		t.Fatalf("delayed setup shortened the student limit or was graded: %v", err)
+	}
+	full, fullCancel := context.WithTimeout(ctx, server.config.QueryTimeout+studentDeadlineMargin)
+	defer fullCancel()
+	if result, err := server.runGradedQuery(full, resources, "SELECT id FROM t", session, true); err != nil || result.RowCount != 1 {
+		t.Fatalf("student statement with the full budget failed: %v", err)
+	}
+}
+
+func TestIntegrationStudentCannotLiftTheTimeLimitWithAHint(t *testing.T) {
+	server := integrationServer(t)
+	body, _ := json.Marshal(QueryRequest{InitQuery: "CREATE TABLE t (id INT)", SolutionQuery: "SELECT id FROM t",
+		UserQuery: "SELECT /*+ SET_VAR(max_execution_time=0) */ id FROM t"})
+	recorder := httptest.NewRecorder()
+	server.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/judge", bytes.NewReader(body)))
+	var result QueryResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || result.ErrorKind != "student_query" || !strings.Contains(result.Error, "SET_VAR") {
+		t.Fatalf("SET_VAR hint was not rejected: %+v", result)
 	}
 }

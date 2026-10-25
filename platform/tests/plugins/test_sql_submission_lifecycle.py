@@ -130,7 +130,7 @@ def test_student_sql_error_is_shown_in_test_and_submit(environment):
             )
             data = result.get_json()["data"]
             assert data["status"] == "incorrect", data
-            assert error in data["message"]
+            assert data["message"] == (("[TEST]\n" + error) if is_test else (error + " You have 0 tries remaining."))
             assert "temporarily unavailable" not in data["message"]
             assert judge.call_args.kwargs["json"]["user_query"] == "SELECT *"
             assert Fails.query.filter_by(user_id=uid).count() == (0 if is_test else 1)
@@ -139,22 +139,34 @@ def test_student_sql_error_is_shown_in_test_and_submit(environment):
         assert judge.call_count == 2
 
 
-@pytest.mark.parametrize("kind,code,number,label", [
-    ("system", "mysql_engine_error", 1030, "MySQL engine failure"),
-    ("system", "mysql_unsupported", 1235, "Unsupported MySQL feature"),
-    ("system", "mysql_failure", 1105, "MySQL execution failure"),
-    ("system", "judge_busy", None, "Grading service busy"),
-    ("system", "judge_timeout", None, "Grading service timeout"),
-    ("problem", "problem_error", 1064, "Problem configuration error"),
-    ("future_kind", "future_code", None, "Grading service failure"),
+def test_busy_judge_asks_to_wait_and_retry(environment):
+    _, _, client, uid, make = environment
+    cid = make(max_attempts=1)
+    response = judged(success=False, error_kind="system", busy=True, error="SQL judge is busy; please retry")
+    with patch("requests.post", return_value=response):
+        for is_test in (True, False):
+            result = submit(client, cid, test=is_test).get_json()["data"]
+            assert result["status"] == "error"
+            assert "Grading server is busy" in result["message"]
+            assert "Wait a few seconds and retry" in result["message"]
+            assert "No attempt was deducted" in result["message"]
+    assert Fails.query.filter_by(user_id=uid).count() == 0
+
+
+@pytest.mark.parametrize("kind,number,deadline,label", [
+    ("system", 1030, False, "MySQL engine failure"),
+    ("system", 1040, False, "Grading is temporarily unavailable"),
+    ("system", None, True, "Grading time limit reached"),
+    ("problem", 1064, False, "Problem configuration error"),
+    ("future_kind", None, False, "Grading is temporarily unavailable"),
 ])
-def test_failure_messages_are_actionable_private_and_unpenalized(environment, kind, code, number, label):
+def test_failure_messages_are_actionable_private_and_unpenalized(environment, kind, number, deadline, label):
     import re
 
     app, _, client, uid, make = environment
     cid = make(max_attempts=1)
     raw = "SELECT hidden_answer FROM ctfd_tmp_private; host=internal-db password=private"
-    response = judged(success=False, error_kind=kind, error_code=code,
+    response = judged(success=False, error_kind=kind, deadline_exceeded=deadline,
                       mysql_number=number, sql_state="HY000", error=raw)
     with patch("requests.post", return_value=response) as judge, patch.object(app.logger, "error") as logged:
         for is_test in (True, False):
@@ -162,29 +174,31 @@ def test_failure_messages_are_actionable_private_and_unpenalized(environment, ki
             assert result["status"] == "error"
             assert label in result["message"]
             assert "No attempt was deducted" in result["message"]
-            assert "not graded" in result["message"]
             assert raw not in result["message"]
             assert "hidden_answer" not in result["message"]
             request_id = judge.call_args.kwargs["json"]["request_id"]
             assert re.fullmatch(r"[0-9a-f]{32}", request_id)
             assert request_id in result["message"]
             assert request_id in str(logged.call_args)
-            if number:
-                assert f"MySQL {number}" in result["message"]
+            assert "Code:" not in result["message"]
+            if number == 1030:
+                assert "MySQL 1030" in result["message"]
+            if deadline:
+                assert "Please retry" not in result["message"]
             assert Fails.query.filter_by(user_id=uid).count() == 0
             assert Solves.query.filter_by(user_id=uid).count() == 0
 
 
-@pytest.mark.parametrize("fault,label", [
-    ("timeout", "Grading connection timeout"),
-    ("connection", "Grading connection failure"),
-    ("http", "Grading HTTP failure"),
-    ("malformed", "Invalid grading response"),
+@pytest.mark.parametrize("fault,reason", [
+    ("timeout", "judge_connection_timeout"),
+    ("connection", "judge_connection_failure"),
+    ("http", "judge_http_failure"),
+    ("malformed", "judge_invalid_response"),
 ])
-def test_transport_failure_reasons_remain_distinct(environment, fault, label):
+def test_transport_reasons_are_distinct_only_in_operator_logs(environment, fault, reason):
     import requests
 
-    _, _, client, uid, make = environment
+    app, _, client, uid, make = environment
     cid = make(max_attempts=1)
     response = judged()
     side_effect = None
@@ -196,13 +210,49 @@ def test_transport_failure_reasons_remain_distinct(environment, fault, label):
         response.status_code = 502
     else:
         response.json.side_effect = requests.exceptions.JSONDecodeError("private invalid response", "not JSON", 0)
-    with patch("requests.post", return_value=response, side_effect=side_effect):
+    with patch("requests.post", return_value=response, side_effect=side_effect), patch.object(app.logger, "error") as logged:
         data = submit(client, cid).get_json()["data"]
     assert data["status"] == "error"
-    assert label in data["message"]
+    assert data["message"].split(" [Reference:")[0] == "Grading is temporarily unavailable. No attempt was deducted. Please retry; if this persists, contact course staff."
+    assert reason in str(logged.call_args)
     assert "internal host" not in data["message"]
     assert "private invalid" not in data["message"]
     assert Fails.query.filter_by(user_id=uid).count() == 0
+
+
+@pytest.mark.parametrize("number,detail", [
+    (1353, "View's SELECT and view's field list have different column counts"),
+    (3065, "Expression of ORDER BY clause is not in SELECT list"),
+    (1525, "Incorrect DATE value: '2023'"),
+    (3029, "Expression of ORDER BY contains aggregate function"),
+    (1235, "This version of MySQL doesn't yet support 'LIMIT & IN/ALL/ANY/SOME subquery'"),
+])
+def test_mysql_input_error_text_is_unchanged(environment, number, detail):
+    _, _, client, uid, make = environment
+    cid = make(max_attempts=1)
+    error = f"query error: Error {number} (HY000): {detail}"
+    with patch("requests.post", return_value=judged(success=False, error_kind="student_query", error=error, mysql_number=number)):
+        for is_test in (True, False):
+            data = submit(client, cid, test=is_test).get_json()["data"]
+            expected = ("[TEST]\n" if is_test else "") + error
+            if not is_test:
+                expected += " You have 0 tries remaining."
+            assert data["message"] == expected
+            assert data["status"] == "incorrect"
+    assert Fails.query.filter_by(user_id=uid).count() == 1
+
+
+def test_result_mismatch_copy_is_unchanged(environment):
+    import json
+
+    _, _, client, _, make = environment
+    cid = make()
+    response = judged(match=False)
+    user_result = json.dumps(response.json.return_value["user_result"])
+    with patch("requests.post", return_value=response):
+        for is_test in (True, False):
+            data = submit(client, cid, test=is_test).get_json()["data"]
+            assert data["message"] == ("[TEST]\n" if is_test else "") + f"❌ Incorrect. Your query did not produce the expected result.\n\n[USER_RESULT]\n{user_result}\n[/USER_RESULT]"
 
 
 @pytest.mark.parametrize("match", [True, False])

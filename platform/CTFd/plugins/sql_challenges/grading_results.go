@@ -164,7 +164,7 @@ func (s *Server) judgeQueries(parent context.Context, req *QueryRequest) (expect
 		err = problemError(e)
 		return
 	}
-	expected, err = s.runGradedQuery(refCtx, resources, req.SolutionQuery, session)
+	expected, err = s.runGradedQuery(refCtx, resources, req.SolutionQuery, session, false)
 	if err != nil {
 		err = problemError(err)
 		return
@@ -184,7 +184,7 @@ func (s *Server) judgeQueries(parent context.Context, req *QueryRequest) (expect
 		}
 		ordering := strings.Join(keys, ",")
 		query := "SELECT r.*, DENSE_RANK() OVER (ORDER BY " + ordering + ") AS ctfd_rank FROM (\n" + strings.TrimSuffix(strings.TrimSpace(req.SolutionQuery), ";") + "\n) AS r(" + strings.Join(aliases, ",") + ") ORDER BY " + ordering
-		ranked, e := s.runGradedQuery(refCtx, resources, query, session)
+		ranked, e := s.runGradedQuery(refCtx, resources, query, session, false)
 		if e != nil {
 			err = problemError(e)
 			return
@@ -210,8 +210,10 @@ func (s *Server) judgeQueries(parent context.Context, req *QueryRequest) (expect
 		err = &gradingError{kind: "student_query", cause: e}
 		return
 	}
-	userCtx, userCancel := context.WithTimeout(parent, s.config.QueryTimeout)
+	// MySQL stops the statement at QueryTimeout (3024, a student verdict). The
+	// margin keeps this deadline from racing it; it fires only if MySQL hangs.
+	userCtx, userCancel := context.WithTimeout(parent, s.config.QueryTimeout+studentDeadlineMargin)
 	defer userCancel()
-	actual, err = s.runGradedQuery(userCtx, resources, req.UserQuery, session)
+	actual, err = s.runGradedQuery(userCtx, resources, req.UserQuery, session, true)
 	return
 }

@@ -273,18 +273,13 @@ class SQLChallengeType(BaseChallenge):
                 return unavailable("judge_invalid_response", "Expected a JSON object")
             if result.get('success') is False:
                 if result.get('error_kind') == 'student_query':
-                    # An old judge has no error_code. Its student verdict remains
-                    # supported; contradictory new diagnostics fail ungraded.
-                    code = result.get('error_code', 'sql_error')
-                    labels = {"sql_error": "SQL execution error", "query_timeout": "Query time limit exceeded", "result_limit": "Query result limit exceeded"}
-                    if not isinstance(code, str) or code not in labels or not isinstance(result.get('error'), str):
-                        return unavailable("judge_invalid_response", "Invalid student-query error metadata")
-                    return ChallengeResponse(status="incorrect", message=prefix + f"{labels[code]}. {result['error']} [Code: {code}; reference: {request_id}]")
-                # Older judges and unknown error kinds fail without a penalty.
-                # Never expose reference-query or infrastructure errors to students.
-                code = "problem_error" if result.get('error_kind') == 'problem' else result.get('error_code', 'judge_unavailable')
-                return unavailable(code, result.get('error', 'No error detail'),
-                                   mysql_number=result.get('mysql_number'), sql_state=result.get('sql_state'))
+                    return ChallengeResponse(status="incorrect", message=prefix + str(result.get('error', 'SQL query failed')))
+                # The existing verdict controls attribution; diagnostic metadata
+                # changes only the message for an already ungraded failure.
+                return unavailable("judge_response", result.get('error', 'No error detail'),
+                                   kind=result.get('error_kind'), mysql_number=result.get('mysql_number'),
+                                   sql_state=result.get('sql_state'), deadline_exceeded=result.get('deadline_exceeded') is True,
+                                   busy=result.get('busy') is True)
             if result.get('success') is not True or not isinstance(result.get('match'), bool):
                 return unavailable("judge_invalid_response", "Missing success/match verdict")
             for key in ('user_result', 'expected_result'):
@@ -301,7 +296,7 @@ class SQLChallengeType(BaseChallenge):
             # to the browser, so a student reading the response body would get
             # the expected output of a challenge they have not solved. Only
             # admins receive it; no student view has ever rendered it.
-            message = prefix + f"❌ Result mismatch. Your query ran successfully, but its result did not match the expected result.\n\n[USER_RESULT]\n{user_result}\n[/USER_RESULT]"
+            message = prefix + f"❌ Incorrect. Your query did not produce the expected result.\n\n[USER_RESULT]\n{user_result}\n[/USER_RESULT]"
             if is_admin():
                 expected = json.dumps(result['expected_result'])
                 message += f"\n\n[EXPECTED_RESULT]\n{expected}\n[/EXPECTED_RESULT]"
