@@ -47,6 +47,7 @@ var (
 )
 
 type QueryRequest struct {
+	RequestID     string        `json:"request_id,omitempty"`
 	GradingPolicy GradingPolicy `json:"grading_policy"`
 	InitQuery     string        `json:"init_query"`
 	SolutionQuery string        `json:"solution_query"`
@@ -64,6 +65,9 @@ type QueryResponse struct {
 	ExpectedResult QueryResult `json:"expected_result"`
 	Error          string      `json:"error,omitempty"`
 	ErrorKind      string      `json:"error_kind,omitempty"`
+	ErrorCode      string      `json:"error_code,omitempty"`
+	MySQLNumber    uint16      `json:"mysql_number,omitempty"`
+	SQLState       string      `json:"sql_state,omitempty"`
 }
 
 type QueryResult struct {
@@ -452,10 +456,10 @@ func (s *Server) handleJudge(w http.ResponseWriter, r *http.Request) {
 	case s.slots <- struct{}{}:
 		defer func() { <-s.slots }()
 	case <-queueTimer.C:
-		writeJSON(w, QueryResponse{Success: false, ErrorKind: "system", Error: "SQL judge is busy; please retry"})
+		writeGradingFailure(w, &req, QueryResponse{Success: false, ErrorKind: "system", ErrorCode: "judge_busy", Error: "SQL judge is busy; please retry"})
 		return
 	case <-ctx.Done():
-		writeJSON(w, QueryResponse{Success: false, ErrorKind: "system", Error: "SQL judge request timed out while waiting"})
+		writeGradingFailure(w, &req, QueryResponse{Success: false, ErrorKind: "system", ErrorCode: "judge_timeout", Error: "SQL judge request timed out while waiting"})
 		return
 	}
 
@@ -464,7 +468,7 @@ func (s *Server) handleJudge(w http.ResponseWriter, r *http.Request) {
 		req.UserID, req.UserName, req.ClientIP, req.ChallengeID)
 	expectedResult, userResult, ranks, err := s.judgeQueries(ctx, &req)
 	if err != nil {
-		writeJSON(w, QueryResponse{Success: false, ErrorKind: gradingErrorKind(err), Error: err.Error()})
+		writeGradingFailure(w, &req, gradingFailure(err))
 		return
 	}
 	writeJSON(w, QueryResponse{Success: true, Match: compareGradedResults(expectedResult, userResult, req.GradingPolicy, ranks), UserResult: *userResult, ExpectedResult: *expectedResult})
@@ -1167,16 +1171,77 @@ func mysqlInfrastructureError(serverError *mysql.MySQLError) bool {
 	}
 }
 
-// Call only at the submitted SQL's execution/result boundary. A MySQL error
-// packet is a query failure by default, with its original detail preserved.
-// Connection setup, session setup and non-MySQL failures stay ungraded.
+func mysqlUnsupportedError(err *mysql.MySQLError) bool {
+	return err.Number == 1235 || strings.HasPrefix(string(err.SQLState[:]), "0A")
+}
+
+// A server error packet alone does not prove that the student's SQL is wrong.
+// Recognize SQL input errors; keep unknown/internal/unsupported failures ungraded.
+func mysqlStudentError(err *mysql.MySQLError) bool {
+	if mysqlInfrastructureError(err) || mysqlUnsupportedError(err) || err.Number == 1105 {
+		return false
+	}
+	state := string(err.SQLState[:])
+	for _, class := range []string{"21", "22", "23", "42"} {
+		if strings.HasPrefix(state, class) {
+			return true
+		}
+	}
+	// These documented query errors use the generic HY000 state.
+	switch err.Number {
+	case 1096, 1111, 1210, 1241, 1242, 3024, 3696:
+		return true
+	}
+	return false
+}
+
+// Call only at the submitted SQL's execution/result boundary. Connection and
+// session setup failures must never be reclassified as student SQL errors.
 func classifyQueryError(err error) error {
 	if errors.Is(err, errResultLimit) {
 		return &gradingError{kind: "student_query", cause: err}
 	}
 	var serverError *mysql.MySQLError
-	if errors.As(err, &serverError) && !mysqlInfrastructureError(serverError) {
+	if errors.As(err, &serverError) && mysqlStudentError(serverError) {
 		return &gradingError{kind: "student_query", cause: err}
 	}
 	return err
+}
+
+// Additive diagnostic fields preserve the verdict contract for older clients.
+// Error contains private operator detail; CTFd exposes only student SQL errors.
+func gradingFailure(err error) QueryResponse {
+	r := QueryResponse{ErrorKind: gradingErrorKind(err), Error: err.Error(), ErrorCode: "judge_unavailable"}
+	var serverError *mysql.MySQLError
+	if errors.As(err, &serverError) {
+		r.MySQLNumber = serverError.Number
+		r.SQLState = strings.Trim(string(serverError.SQLState[:]), "\x00")
+		r.ErrorCode = "mysql_failure"
+		if mysqlUnsupportedError(serverError) {
+			r.ErrorCode = "mysql_unsupported"
+		} else if serverError.Number == 1030 || serverError.Number == 1034 {
+			r.ErrorCode = "mysql_engine_error"
+		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		r.ErrorCode = "judge_timeout"
+	}
+	if r.ErrorKind == "problem" {
+		r.ErrorCode = "problem_error"
+	} else if r.ErrorKind == "student_query" {
+		r.ErrorCode = "sql_error"
+		if errors.Is(err, errResultLimit) {
+			r.ErrorCode = "result_limit"
+		} else if serverError != nil && serverError.Number == 3024 {
+			r.ErrorCode = "query_timeout"
+		}
+	}
+	return r
+}
+
+func writeGradingFailure(w http.ResponseWriter, req *QueryRequest, response QueryResponse) {
+	// Quote request fields and errors so SQL text cannot forge log lines.
+	log.Printf("Grading failure request_id=%q user_id=%q challenge_id=%q kind=%s code=%s mysql_number=%d sql_state=%q error=%q",
+		req.RequestID, req.UserID, req.ChallengeID, response.ErrorKind, response.ErrorCode, response.MySQLNumber, response.SQLState, response.Error)
+	writeJSON(w, response)
 }

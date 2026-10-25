@@ -58,19 +58,16 @@ func TestOnlyStudentQueryErrorsArePenalized(t *testing.T) {
 	}
 }
 
-func TestMySQLQueryErrorsPassThroughWithoutAStudentErrorList(t *testing.T) {
+func TestRecognizedMySQLQueryErrorsRetainTheirDetails(t *testing.T) {
 	for _, tc := range []struct {
 		code  uint16
 		state string
 	}{
-		{1096, "HY000"},  // no tables
-		{1111, "HY000"},  // invalid aggregate
-		{1052, "23000"},  // ambiguous column
-		{1242, "21000"},  // scalar subquery returns multiple rows
-		{3696, "HY000"},  // invalid regular expression
-		{1105, "HY000"},  // generic MySQL error packet
-		{60000, "HY000"}, // a code the judge has never enumerated
-		{60001, "ZZ999"}, // a state the judge has never enumerated
+		{1096, "HY000"}, // no tables
+		{1111, "HY000"}, // invalid aggregate
+		{1052, "23000"}, // ambiguous column
+		{1242, "21000"}, // scalar subquery returns multiple rows
+		{3696, "HY000"}, // invalid regular expression
 	} {
 		t.Run(fmt.Sprint(tc.code), func(t *testing.T) {
 			var state [5]byte
@@ -89,6 +86,49 @@ func TestMySQLQueryErrorsPassThroughWithoutAStudentErrorList(t *testing.T) {
 				t.Fatal("reference query error was assigned to the student")
 			}
 		})
+	}
+}
+
+func TestUnsupportedAndUnknownMySQLFailuresAreNotStudentErrors(t *testing.T) {
+	for _, tc := range []struct {
+		number uint16
+		state  string
+	}{
+		{1030, "HY000"}, // reproduced EXCEPT CTE storage-engine failure
+		{1235, "42000"}, // unsupported feature despite syntax-class SQLSTATE
+		{1105, "HY000"}, // unspecified server error
+		{60000, "HY000"}, {60001, "ZZ999"}, {60002, "0A000"},
+	} {
+		var state [5]byte
+		copy(state[:], tc.state)
+		original := &mysql.MySQLError{Number: tc.number, SQLState: state, Message: "internal detail"}
+		if err := classifyQueryError(original); gradingErrorKind(err) != "system" || !errors.Is(err, original) {
+			t.Fatalf("unrecognized/unsupported MySQL failure was penalized or lost: %v", err)
+		}
+	}
+}
+
+func TestGradingFailureDiagnosticsPreserveCauseAndSeparateVerdicts(t *testing.T) {
+	engine := classifyQueryError(&mysql.MySQLError{Number: 1030, SQLState: [5]byte{'H', 'Y', '0', '0', '0'}, Message: "Wrong index given to function"})
+	response := gradingFailure(engine)
+	if response.Success || response.ErrorKind != "system" || response.ErrorCode != "mysql_engine_error" || response.MySQLNumber != 1030 || response.SQLState != "HY000" {
+		t.Fatalf("engine diagnostics lost: %+v", response)
+	}
+	for _, tc := range []struct {
+		err        error
+		kind, code string
+	}{
+		{classifyQueryError(&mysql.MySQLError{Number: 1235}), "system", "mysql_unsupported"},
+		{classifyQueryError(&mysql.MySQLError{Number: 3024}), "student_query", "query_timeout"},
+		{classifyQueryError(errResultLimit), "student_query", "result_limit"},
+		{context.DeadlineExceeded, "system", "judge_timeout"},
+		{driver.ErrBadConn, "system", "judge_unavailable"},
+		{problemError(classifyQueryError(&mysql.MySQLError{Number: 1111})), "problem", "problem_error"},
+	} {
+		r := gradingFailure(tc.err)
+		if r.ErrorKind != tc.kind || r.ErrorCode != tc.code {
+			t.Fatalf("%v: got %+v, want %s/%s", tc.err, r, tc.kind, tc.code)
+		}
 	}
 }
 
