@@ -457,8 +457,10 @@ LOGIN_FAILURE_WINDOW = 15 * 60
 
 
 def count_login_failure(key):
-    if not cache.add(key, 1, timeout=LOGIN_FAILURE_WINDOW):
-        cache.inc(key)
+    # Redis INCR must create the counter. cachelib 0.9 pickles every value
+    # that add() or set() writes, and INCR rejects a pickled value.
+    if cache.inc(key) == 1:
+        cache.expire(key, LOGIN_FAILURE_WINDOW)
 
 
 @auth.route("/login", methods=["POST", "GET"])
@@ -488,7 +490,8 @@ def login():
         identity = (
             str(user.id) if user else hashlib.sha256(name.lower().encode()).hexdigest()
         )
-        login_budget_key = f"login_fail:{identity}:{current_user.get_ip()}"
+        # A new prefix: counters left pickled by the old add() expire unread.
+        login_budget_key = f"login_failures:{identity}:{current_user.get_ip()}"
         if (cache.get(login_budget_key) or 0) >= LOGIN_FAILURE_LIMIT:
             return render_template(
                 "login.html",
