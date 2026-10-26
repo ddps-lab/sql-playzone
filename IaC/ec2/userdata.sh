@@ -37,6 +37,13 @@ cat << 'CWCONFIG' | tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-a
             "timezone": "Local"
           },
           {
+            "file_path": "/opt/sql-playzone/platform/.data/CTFd/logs/app-errors.log",
+            "log_group_name": "${APPLICATION_LOG_GROUP_NAME}",
+            "log_stream_name": "app-errors",
+            "timezone": "Local",
+            "multi_line_start_pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2} "
+          },
+          {
             "file_path": "/opt/sql-playzone/platform/.data/CTFd/logs/sql-judge.log",
             "log_group_name": "${APPLICATION_LOG_GROUP_NAME}",
             "log_stream_name": "sql-judge",

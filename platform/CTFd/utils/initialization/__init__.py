@@ -190,6 +190,33 @@ def init_logs(app):
     logger_logins.propagate = 0
     logger_registrations.propagate = 0
 
+    init_error_log(log_dir)
+
+
+ERROR_LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+
+
+def init_error_log(log_dir):
+    """Copy warnings and errors, with tracebacks, to a file the CloudWatch
+    agent ships. Flask logs request exceptions only to stderr, which is lost
+    when an instance is replaced or scaled in."""
+    path = os.path.join(log_dir, "app-errors.log")
+    root = logging.getLogger()
+    for handler in root.handlers:
+        if getattr(handler, "baseFilename", None) == os.path.abspath(path):
+            return
+    try:
+        handler = logging.handlers.RotatingFileHandler(
+            path, maxBytes=10485760, backupCount=5
+        )
+    except IOError:
+        return
+    handler.setLevel(logging.WARNING)
+    # Each record starts with this timestamp; the agent joins traceback lines
+    # to the record that precedes them.
+    handler.setFormatter(logging.Formatter(ERROR_LOG_FORMAT, "%Y-%m-%d %H:%M:%S"))
+    root.addHandler(handler)
+
 
 def init_events(app):
     if app.config.get("CACHE_TYPE") == "redis":
