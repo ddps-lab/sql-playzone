@@ -252,3 +252,27 @@ def test_students_cannot_log_in_from_another_browser_during_the_exam():
         assert statuses == {403, 429}
         assert login(CHROME, "student")[0] == 429
     destroy_ctfd(app)
+
+
+def test_the_exam_roster_sends_signed_out_visitors_to_the_login_page():
+    app = create_ctfd(enable_plugins=True)
+    with app.app_context():
+        client = student_client(app)
+        set_config("exam_mode_allowed_ids", "2025000009")
+        set_config("exam_mode_enabled", "true")
+        # A homework link opened before signing in leads to the login page,
+        # not to a refusal that names an account the visitor has not used yet.
+        anonymous = app.test_client()
+        r = anonymous.get("/challenges")
+        assert r.status_code == 302
+        assert "/login" in r.headers["Location"]
+        assert client.get("/challenges").status_code == 200
+
+        set_config("exam_mode_allowed_ids", "2025000010")
+        r = client.get("/challenges")
+        assert r.status_code == 403
+        assert "2025000009" in r.get_data(as_text=True)
+        r = client.get("/api/v1/users/me")
+        assert r.status_code == 403
+        assert "2025000009" in r.get_json()["data"]["message"]
+    destroy_ctfd(app)

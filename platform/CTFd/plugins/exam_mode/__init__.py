@@ -212,15 +212,24 @@ def load(app):
         if get_config('exam_mode_enabled') is not True or exam_browser_exempt() or is_admin():
             return
         user = get_current_user()
+        if user is None:
+            # Signed-out visitors (e.g. from a homework link) are sent to the
+            # login page by the view itself. Telling them their account is not
+            # on the list, before they have signed in, only confused students.
+            return
         allowed = set(exam_roster_text().splitlines())
-        entry = None
-        if user:
-            entry = UserFieldEntries.query.join(UserFields, UserFieldEntries.field_id == UserFields.id).filter(
-                UserFields.name == 'Student ID Number', UserFieldEntries.user_id == user.id,
-            ).first()
+        entry = UserFieldEntries.query.join(UserFields, UserFieldEntries.field_id == UserFields.id).filter(
+            UserFields.name == 'Student ID Number', UserFieldEntries.user_id == user.id,
+        ).first()
         if entry and entry.value in allowed:
             return
-        message = 'This account is not on the allowed student list for the current exam.'
+        if entry and entry.value:
+            message = (
+                f'Your student ID ({entry.value}) is not on the allowed student list for the current exam. '
+                'Ask the exam staff.'
+            )
+        else:
+            message = 'This account has no student ID, so it is not on the allowed student list for the current exam. Ask the exam staff.'
         if request.is_json or str(request.endpoint or '').startswith('api.'):
             return jsonify({'success': False, 'data': {'status': 'forbidden', 'message': message}}), 403
         return render_template('errors/403.html', error=message), 403
