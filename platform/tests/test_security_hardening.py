@@ -2,8 +2,11 @@
 
 from io import BytesIO
 
+import pytest
 from freezegun import freeze_time
+from redis.exceptions import ConnectionError
 
+from CTFd.config import TestingConfig
 from CTFd.models import Users
 from CTFd.utils.scores import get_standings
 from tests.helpers import (
@@ -98,5 +101,38 @@ def test_login_failures_are_budgeted_per_account_and_address():
             assert home("student", "password").status_code == 429
         with freeze_time("2026-09-20T12:15:02Z"):
             assert classroom("student", "password").status_code == 302
+    finally:
+        destroy_ctfd(app)
+
+
+def test_login_failures_count_on_redis():
+    # Production caches in Valkey, where a counter written by add() is pickled
+    # and INCR on it failed: every second wrong password was a 500.
+    class RedisConfig(TestingConfig):
+        REDIS_URL = "redis://localhost:6379/1"
+        CACHE_REDIS_URL = "redis://localhost:6379/1"
+        CACHE_TYPE = "redis"
+
+    try:
+        app = create_ctfd(config=RedisConfig)
+    except ConnectionError:
+        pytest.skip("Redis is not available")
+    try:
+        with app.app_context():
+            from CTFd.cache import cache
+
+            gen_user(app.db, name="student", email="student@examplectf.com")
+            classroom = login_client(app, "192.0.2.1")
+            for _ in range(10):
+                assert classroom("student", "wrong").status_code == 200
+            key = "login_failures:2:192.0.2.1"
+            assert cache.get(key) == 10
+            ttl = cache.cache._read_client.ttl(cache.cache.key_prefix + key)
+            assert 0 < ttl <= 15 * 60
+            assert classroom("student", "password").status_code == 429
+            home = login_client(app, "192.0.2.2")
+            assert home("student", "wrong").status_code == 200
+            assert home("student", "password").status_code == 302
+            assert cache.get("login_failures:2:192.0.2.2") is None
     finally:
         destroy_ctfd(app)
